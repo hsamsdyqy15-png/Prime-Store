@@ -1,0 +1,358 @@
+package com.example.ui
+
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.components.NavigationDrawerContent
+import com.example.ui.components.PrimeBottomNavBar
+import com.example.ui.screens.AdminPanelScreen
+import com.example.ui.screens.AppDetailsScreen
+import com.example.ui.screens.CategoriesScreen
+import com.example.ui.screens.DownloadsScreen
+import com.example.ui.screens.FavoritesScreen
+import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.SearchScreen
+import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.SplashScreen
+import com.example.ui.theme.NeonBorderGlow
+import com.example.ui.theme.PrimeBackground
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+@Composable
+fun PrimeStoreApp(
+    viewModel: PrimeStoreViewModel = viewModel()
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val uiState by viewModel.uiState.collectAsState()
+    val apps by viewModel.apps.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
+    val downloads by viewModel.downloads.collectAsState()
+    val reviews by viewModel.reviews.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val searchHistory by viewModel.searchHistory.collectAsState()
+
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var activeToast by remember { mutableStateOf<String?>(null) }
+
+    // Collect Toast events
+    LaunchedEffect(Unit) {
+        viewModel.toastEvents.collect { message ->
+            activeToast = message
+            delay(2800)
+            if (activeToast == message) {
+                activeToast = null
+            }
+        }
+    }
+
+    // Force Arabic RTL layout direction for authentic Arabic experience
+    val layoutDirection = if (uiState.currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(PrimeBackground)
+        ) {
+            // First: Splash Screen on launch
+            if (uiState.showSplash) {
+                SplashScreen(
+                    onDismiss = { viewModel.dismissSplash() }
+                )
+            } else {
+                // Main Application with Navigation Drawer and Bottom Bar
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    gesturesEnabled = !uiState.isSearching && uiState.selectedAppId == null,
+                    drawerContent = {
+                        ModalDrawerSheet(
+                            drawerContainerColor = Color(0xFF120C1D),
+                            drawerContentColor = Color.White
+                        ) {
+                            NavigationDrawerContent(
+                                userProfile = uiState.userProfile,
+                                currentTab = uiState.currentTab,
+                                onTabSelected = { tab ->
+                                    viewModel.selectTab(tab)
+                                    scope.launch { drawerState.close() }
+                                },
+                                onCategorySelected = { category ->
+                                    viewModel.openCategory(category)
+                                    scope.launch { drawerState.close() }
+                                },
+                                onCloseDrawer = {
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                        }
+                    }
+                ) {
+                    Scaffold(
+                        bottomBar = {
+                            if (uiState.selectedAppId == null && !uiState.isSearching && !uiState.showAdminPanel) {
+                                PrimeBottomNavBar(
+                                    currentTab = uiState.currentTab,
+                                    onTabSelected = { tab -> viewModel.selectTab(tab) }
+                                )
+                            }
+                        },
+                        containerColor = PrimeBackground
+                    ) { innerPadding ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                        ) {
+                            // Sub-screen 0: Admin Panel Screen
+                            if (uiState.showAdminPanel) {
+                                AdminPanelScreen(
+                                    adminEmail = ADMIN_EMAIL,
+                                    apps = apps,
+                                    onSaveApp = { id, name, category, rating, size, description, features, iconUrl, fileUrl, screenshots ->
+                                        viewModel.saveAppFromAdmin(
+                                            id,
+                                            name,
+                                            category,
+                                            rating,
+                                            size,
+                                            description,
+                                            features,
+                                            iconUrl,
+                                            fileUrl,
+                                            screenshots
+                                        )
+                                    },
+                                    onDeleteApp = { appId ->
+                                        viewModel.deleteAppFromAdmin(appId)
+                                    },
+                                    onBackClick = { viewModel.closeAdminPanel() }
+                                )
+                            }
+                            // Sub-screen 1: App Details Screen
+                            else if (uiState.selectedAppId != null) {
+                                val selectedApp = apps.find { it.id == uiState.selectedAppId }
+                                if (selectedApp != null) {
+                                    AppDetailsScreen(
+                                        app = selectedApp,
+                                        isFavorite = favorites.contains(selectedApp.id),
+                                        downloadItem = downloads.find { it.appId == selectedApp.id },
+                                        reviews = reviews[selectedApp.id] ?: emptyList(),
+                                        onBackClick = { viewModel.closeAppDetails() },
+                                        onSearchClick = { viewModel.openSearch() },
+                                        onToggleFavorite = { viewModel.toggleFavorite(selectedApp.id) },
+                                        onDownloadClick = { viewModel.startDownload(selectedApp.id) },
+                                        onCancelDownload = { viewModel.cancelDownload(selectedApp.id) },
+                                        onAddReview = { rating, comment ->
+                                            viewModel.addReview(selectedApp.id, rating, comment)
+                                        },
+                                        onScreenshotClick = { /* preview */ },
+                                        onShareClick = {
+                                            viewModel.emitToast("تم نسخ رابط ${selectedApp.nameAr}")
+                                        }
+                                    )
+                                } else {
+                                    viewModel.closeAppDetails()
+                                }
+                            }
+                            // Sub-screen 2: Search Screen
+                            else if (uiState.isSearching) {
+                                SearchScreen(
+                                    query = uiState.searchQuery,
+                                    searchResults = searchResults,
+                                    searchHistory = searchHistory,
+                                    onQueryChange = { q -> viewModel.updateSearchQuery(q) },
+                                    onSearchTagClick = { tag -> viewModel.selectSearchQuery(tag) },
+                                    onRemoveHistoryItem = { item -> viewModel.removeSearchHistory(item) },
+                                    onClearHistory = { viewModel.clearSearchHistory() },
+                                    onAppClick = { appId -> viewModel.openAppDetails(appId) },
+                                    onCloseSearch = { viewModel.closeSearch() }
+                                )
+                            }
+                            // Main Tabs
+                            else {
+                                Crossfade(
+                                    targetState = uiState.currentTab,
+                                    label = "TabCrossfade"
+                                ) { tab ->
+                                    when (tab) {
+                                        MainTab.HOME -> {
+                                            HomeScreen(
+                                                apps = apps,
+                                                onAppClick = { appId -> viewModel.openAppDetails(appId) },
+                                                onCategoryClick = { category -> viewModel.openCategory(category) },
+                                                onSearchClick = { viewModel.openSearch() },
+                                                onMenuClick = {
+                                                    scope.launch {
+                                                        if (drawerState.isClosed) drawerState.open()
+                                                        else drawerState.close()
+                                                    }
+                                                },
+                                                onDownloadClick = { appId -> viewModel.startDownload(appId) }
+                                            )
+                                        }
+
+                                        MainTab.CATEGORIES -> {
+                                            CategoriesScreen(
+                                                selectedCategory = uiState.selectedCategory,
+                                                allApps = apps,
+                                                sortOrder = uiState.categorySortOrder,
+                                                onCategoryClick = { cat -> viewModel.openCategory(cat) },
+                                                onBackClick = {
+                                                    if (uiState.selectedCategory != null) {
+                                                        viewModel.clearSelectedCategory()
+                                                    } else {
+                                                        viewModel.selectTab(MainTab.HOME)
+                                                    }
+                                                },
+                                                onSearchClick = { viewModel.openSearch() },
+                                                onAppClick = { appId -> viewModel.openAppDetails(appId) },
+                                                onDownloadClick = { appId -> viewModel.startDownload(appId) },
+                                                onSortChange = { order -> viewModel.setSortOrder(order) }
+                                            )
+                                        }
+
+                                        MainTab.FAVORITES -> {
+                                            FavoritesScreen(
+                                                favoriteIds = favorites,
+                                                allApps = apps,
+                                                onAppClick = { appId -> viewModel.openAppDetails(appId) },
+                                                onRemoveFavorite = { appId -> viewModel.toggleFavorite(appId) }
+                                            )
+                                        }
+
+                                        MainTab.DOWNLOADS -> {
+                                            DownloadsScreen(
+                                                downloads = downloads,
+                                                filterTab = uiState.downloadFilterTab,
+                                                onFilterChange = { filter -> viewModel.setDownloadFilterTab(filter) },
+                                                onPauseDownload = { id -> viewModel.pauseDownload(id) },
+                                                onResumeDownload = { id -> viewModel.resumeDownload(id) },
+                                                onCancelDownload = { id -> viewModel.cancelDownload(id) },
+                                                onClearAll = { viewModel.clearDownloads() },
+                                                onAppClick = { appId -> viewModel.openAppDetails(appId) }
+                                            )
+                                        }
+
+                                        MainTab.SETTINGS -> {
+                                            SettingsScreen(
+                                                currentLanguage = uiState.currentLanguage,
+                                                isDarkMode = uiState.isDarkMode,
+                                                notificationsEnabled = uiState.notificationsEnabled,
+                                                cacheSize = uiState.cacheSize,
+                                                userProfile = uiState.userProfile,
+                                                isAdmin = uiState.isAdmin,
+                                                onToggleLanguage = { viewModel.toggleLanguage() },
+                                                onToggleDarkMode = { viewModel.toggleDarkMode() },
+                                                onToggleNotifications = { viewModel.toggleNotifications() },
+                                                onClearCache = { viewModel.clearCache() },
+                                                onShareApp = {
+                                                    viewModel.emitToast("تم نسخ رابط تطبيق Prime Store 🔗")
+                                                },
+                                                onRateApp = {
+                                                    viewModel.emitToast("شكراً لدعمك وتقييمك 5 نجوم ⭐⭐⭐⭐⭐")
+                                                },
+                                                onLogoutClick = {
+                                                    viewModel.logout()
+                                                },
+                                                onOpenAdminPanel = {
+                                                    viewModel.openAdminPanel()
+                                                },
+                                                onAdminLogin = { email, pass ->
+                                                    viewModel.loginAdmin(email, pass)
+                                                },
+                                                onToast = { msg ->
+                                                    viewModel.emitToast(msg)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Top Floating Toast Banner
+            AnimatedVisibility(
+                visible = activeToast != null,
+                enter = slideInVertically { -it } + fadeIn(),
+                exit = slideOutVertically { -it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 48.dp, start = 20.dp, end = 20.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFF221538), RoundedCornerShape(16.dp))
+                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = activeToast.orEmpty(),
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+    }
+
+    // Comprehensive Back Button Handling
+    BackHandler(enabled = true) {
+        if (uiState.showSplash) {
+            viewModel.dismissSplash()
+        } else if (uiState.showAdminPanel) {
+            viewModel.closeAdminPanel()
+        } else if (drawerState.isOpen) {
+            scope.launch { drawerState.close() }
+        } else if (uiState.selectedAppId != null) {
+            viewModel.closeAppDetails()
+        } else if (uiState.isSearching) {
+            viewModel.closeSearch()
+        } else if (uiState.selectedCategory != null) {
+            viewModel.clearSelectedCategory()
+        } else if (uiState.currentTab != MainTab.HOME) {
+            viewModel.selectTab(MainTab.HOME)
+        } else {
+            (context as? android.app.Activity)?.finish()
+        }
+    }
+}

@@ -1,0 +1,2961 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Prime Store | متجر التطبيقات والألعاب</title>
+    
+    <!-- خط Cairo العربي من Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- مكتبة Supabase JS v2 عبر CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        /* ==========================================================================
+           1. نظام الألوان والهوية البصرية (Prime Store Neon Theme)
+           ========================================================================== */
+        :root {
+            --bg-color: #0B0614;
+            --surface-color: #16101F;
+            --surface-hover: #1E162A;
+            --surface-card: #1C1329;
+            --border-color: #3B2456;
+            --border-glow: #8B5CF6;
+            --primary-purple: #7C3AED;
+            --primary-neon: #A855F7;
+            --primary-glow: rgba(168, 85, 247, 0.45);
+            --text-primary: #FFFFFF;
+            --text-secondary: #9E98AB;
+            --text-muted: #6B6478;
+            --accent-gold: #FBBF24;
+            --accent-green: #10B981;
+            --accent-red: #EF4444;
+            --font-main: 'Cairo', system-ui, -apple-system, sans-serif;
+            --radius-sm: 10px;
+            --radius-md: 16px;
+            --radius-lg: 22px;
+            --bottom-nav-height: 64px;
+        }
+
+        /* الوضع الفاتح (Light Mode) */
+        body.light-theme {
+            --bg-color: #F5F3FF;
+            --surface-color: #FFFFFF;
+            --surface-hover: #EDE9FE;
+            --surface-card: #F8FAFC;
+            --border-color: #DDD6FE;
+            --border-glow: #7C3AED;
+            --text-primary: #1E1035;
+            --text-secondary: #5B4D75;
+            --text-muted: #8C80A5;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: #05020A;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        /* حاوية الجوال المركزية (Mobile Frame) */
+        #app-container {
+            width: 100%;
+            max-width: 480px;
+            height: 100vh;
+            max-height: 940px;
+            background-color: var(--bg-color);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(124, 58, 237, 0.35);
+        }
+
+        @media (min-width: 500px) {
+            #app-container {
+                border-radius: 36px;
+                border: 2px solid var(--border-color);
+                height: 94vh;
+            }
+        }
+
+        /* شريط الحالة العلوي */
+        .status-bar {
+            height: 38px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            z-index: 10;
+        }
+
+        .screen-content {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 80px;
+            scroll-behavior: smooth;
+        }
+
+        .screen-content::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* الشريط السفلي الثابت (Bottom Navigation) */
+        .bottom-nav {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: var(--bottom-nav-height);
+            background: #0F0A1A;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 50;
+            padding-bottom: env(safe-area-inset-bottom, 4px);
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: all 0.25s ease;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 12px;
+        }
+
+        .nav-item svg {
+            width: 22px;
+            height: 22px;
+            fill: currentColor;
+            transition: transform 0.2s ease;
+        }
+
+        .nav-item.active {
+            color: var(--primary-neon);
+            text-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .nav-item.active svg {
+            transform: scale(1.1);
+            filter: drop-shadow(0 0 6px var(--primary-neon));
+        }
+
+        /* بطاقات وأزرار نيون */
+        .neon-card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .neon-card:hover {
+            border-color: var(--border-glow);
+            box-shadow: 0 0 18px var(--primary-glow);
+        }
+
+        .btn-neon-gradient {
+            background: linear-gradient(135deg, var(--primary-purple), var(--primary-neon));
+            color: #FFFFFF;
+            border: 1px solid var(--border-glow);
+            padding: 12px 20px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 0 16px var(--primary-glow);
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+
+        .btn-neon-gradient:active {
+            transform: scale(0.97);
+        }
+
+        .btn-neon-outline {
+            background: transparent;
+            color: var(--primary-neon);
+            border: 1px solid var(--primary-neon);
+            padding: 8px 16px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-neon-outline:hover {
+            background: rgba(168, 85, 247, 0.15);
+        }
+
+        /* شاشات العرض التفاعلية */
+        .app-screen {
+            display: none;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            animation: fadeIn 0.25s ease-in-out;
+        }
+
+        .app-screen.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* شاشة البداية Splash */
+        #splash-screen {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, #260E45 0%, #120624 60%, #0B0614 100%);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .splash-crown {
+            width: 90px;
+            height: 90px;
+            margin-bottom: 8px;
+            filter: drop-shadow(0 0 24px var(--primary-neon));
+            animation: floatCrown 2.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes floatCrown {
+            from { transform: translateY(0); }
+            to { transform: translateY(-8px); }
+        }
+
+        .splash-title {
+            font-size: 34px;
+            font-weight: 900;
+            margin-top: 6px;
+        }
+
+        .splash-title span.store {
+            color: var(--primary-neon);
+            text-shadow: 0 0 16px var(--primary-glow);
+        }
+
+        .splash-subtitle {
+            font-size: 16px;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin-top: 4px;
+        }
+
+        .splash-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 80%;
+            margin: 14px 0 28px;
+        }
+
+        .splash-divider::before, .splash-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+        }
+
+        .splash-divider span {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .splash-controller {
+            width: 170px;
+            height: 170px;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.3) 0%, transparent 70%);
+            border: 2px solid var(--border-glow);
+            border-radius: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 78px;
+            box-shadow: 0 0 35px var(--primary-glow);
+            animation: pulseController 2s infinite ease-in-out;
+            margin-bottom: 24px;
+        }
+
+        @keyframes pulseController {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 25px var(--primary-glow); }
+            50% { transform: scale(1.05); box-shadow: 0 0 45px rgba(168, 85, 247, 0.7); }
+        }
+
+        .splash-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(168, 85, 247, 0.2);
+            border-top-color: var(--primary-neon);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* الشريط العلوي */
+        .home-top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            cursor: pointer;
+            padding: 8px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* البانر السلايدر التلقائي */
+        .hero-banner {
+            margin: 8px 16px 14px;
+            height: 195px;
+            border-radius: var(--radius-lg);
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border-glow);
+            box-shadow: 0 0 24px rgba(124, 58, 237, 0.35);
+            background: linear-gradient(180deg, #1A0D30 0%, #0E071A 100%);
+            cursor: pointer;
+        }
+
+        .hero-banner-bg {
+            position: absolute;
+            inset: 0;
+            background: url('https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80') center/cover;
+            opacity: 0.55;
+            mix-blend-mode: luminosity;
+            transition: opacity 0.5s ease;
+        }
+
+        .hero-banner-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, #0B0614 10%, rgba(11, 6, 20, 0.4) 60%, transparent 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 16px;
+        }
+
+        .carousel-dots {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #4B4656;
+            transition: all 0.2s ease;
+        }
+
+        .dot.active {
+            background: #FFFFFF;
+            width: 14px;
+            border-radius: 6px;
+        }
+
+        /* شبكة أقسام المتجر 4x2 */
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 16px 10px;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .quick-categories-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            padding: 0 16px 18px;
+        }
+
+        .quick-cat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .quick-cat-icon {
+            width: 64px;
+            height: 64px;
+            background: #16101F;
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        .quick-cat-item:hover .quick-cat-icon {
+            border-color: var(--primary-neon);
+            box-shadow: 0 0 16px var(--primary-glow);
+            transform: translateY(-2px);
+        }
+
+        .quick-cat-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* القوائم الأفقية للبطاقات */
+        .horizontal-cards-row {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding: 4px 16px 18px;
+        }
+
+        .horizontal-cards-row::-webkit-scrollbar {
+            display: none;
+        }
+
+        .featured-game-card {
+            min-width: 130px;
+            width: 130px;
+            height: 172px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .featured-game-card:hover {
+            border-color: var(--primary-neon);
+            box-shadow: 0 0 16px var(--primary-glow);
+        }
+
+        .game-badge-icon {
+            width: 58px;
+            height: 58px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            background: #251838;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .game-badge-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* شاشة الأقسام الكبيرة */
+        .category-large-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            margin-bottom: 12px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .category-large-card:hover {
+            border-color: var(--primary-neon);
+            box-shadow: 0 0 18px var(--primary-glow);
+        }
+
+        .cat-big-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 16px;
+            background: #221535;
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+        }
+
+        /* تفاصيل التطبيق */
+        .details-header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 20px 20px;
+            text-align: center;
+        }
+
+        .details-app-icon {
+            width: 96px;
+            height: 96px;
+            border-radius: 24px;
+            background: #1B351F;
+            border: 1.5px solid var(--border-glow);
+            box-shadow: 0 0 25px var(--primary-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+
+        .details-app-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .details-tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 10px 0 18px;
+        }
+
+        .tag-pill {
+            background: #251A36;
+            color: var(--primary-neon);
+            border: 1px solid var(--border-color);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .tab-bar {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            margin: 0 16px 14px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px 0;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .tab-btn.active {
+            color: #FFFFFF;
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--primary-neon);
+            box-shadow: 0 0 10px var(--primary-neon);
+        }
+
+        /* أشرطة التحميل والمحاكاة */
+        .segmented-control {
+            display: flex;
+            background: #16101F;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 4px;
+            margin: 10px 16px 14px;
+        }
+
+        .seg-btn {
+            flex: 1;
+            padding: 8px 0;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .seg-btn.active {
+            background: var(--primary-purple);
+            color: #FFFFFF;
+            box-shadow: 0 0 12px var(--primary-glow);
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: #281C38;
+            border-radius: 3px;
+            margin: 6px 0;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-purple), var(--primary-neon));
+            box-shadow: 0 0 8px var(--primary-neon);
+            transition: width 0.3s ease;
+        }
+
+        /* شاشة المفضلة */
+        .favorite-item-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            margin-bottom: 10px;
+        }
+
+        .trash-btn {
+            background: none;
+            border: none;
+            color: var(--primary-neon);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 8px;
+            transition: transform 0.2s ease;
+        }
+
+        .trash-btn:hover {
+            transform: scale(1.15);
+        }
+
+        /* شاشة البحث */
+        .search-input-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #16101F;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+            margin: 10px 16px 14px;
+        }
+
+        .search-input-box:focus-within {
+            border-color: var(--border-glow);
+            box-shadow: 0 0 14px var(--primary-glow);
+        }
+
+        .search-input-box input {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        .search-chips-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 0 16px 18px;
+        }
+
+        .search-chip {
+            background: #16101F;
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 8px 16px;
+            font-size: 13px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .search-chip:hover {
+            border-color: var(--primary-neon);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        /* شاشة الإعدادات */
+        .settings-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .settings-item:hover {
+            border-color: var(--border-glow);
+        }
+
+        /* القائمة الجانبية (Drawer) */
+        .side-drawer {
+            position: absolute;
+            top: 0;
+            right: -320px;
+            width: 300px;
+            height: 100%;
+            background: #120C1D;
+            border-left: 1px solid var(--border-color);
+            z-index: 90;
+            transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 18px;
+            box-shadow: -10px 0 40px rgba(0,0,0,0.8);
+        }
+
+        .side-drawer.open {
+            right: 0;
+        }
+
+        .drawer-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 85;
+            display: none;
+        }
+
+        .drawer-overlay.active {
+            display: block;
+        }
+
+        /* النوافذ المنبثقة (Modals) */
+        .modal-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(11, 6, 20, 0.85);
+            backdrop-filter: blur(6px);
+            z-index: 150;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-card {
+            background: #16101F;
+            border: 1px solid var(--border-glow);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 440px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 22px;
+            box-shadow: 0 0 35px var(--primary-glow);
+            position: relative;
+        }
+
+        .modal-input {
+            width: 100%;
+            background: #1E162A;
+            border: 1px solid var(--border-color);
+            color: #FFFFFF;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            font-family: inherit;
+            font-size: 13px;
+            margin-top: 6px;
+            outline: none;
+        }
+
+        .modal-input:focus {
+            border-color: var(--primary-neon);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        /* رسائل Toast */
+        #toast-notification {
+            position: absolute;
+            top: 48px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-30px);
+            background: #25133E;
+            border: 1px solid var(--border-glow);
+            color: #FFFFFF;
+            padding: 10px 22px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: 0 0 20px var(--primary-glow);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            z-index: 250;
+            white-space: nowrap;
+        }
+
+        #toast-notification.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* تأثير Skeleton أثناء التحميل */
+        .skeleton {
+            background: linear-gradient(90deg, #1C1329 25%, #2C1B42 50%, #1C1329 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 8px;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <!-- شريط الحالة (Status Bar) -->
+    <div class="status-bar">
+        <span>9:41</span>
+        <div style="display: flex; gap: 6px; align-items: center;">
+            <span style="color: var(--primary-neon);">5G</span>
+            <span>📶</span>
+            <span>🔋</span>
+        </div>
+    </div>
+
+    <!-- رسائل Toast -->
+    <div id="toast-notification">تمت العملية بنجاح! ✨</div>
+
+    <!-- قناع القائمة الجانبية -->
+    <div id="drawer-overlay" class="drawer-overlay" onclick="toggleDrawer(false)"></div>
+
+    <!-- 1. القائمة الجانبية (Drawer) -->
+    <div id="side-drawer" class="side-drawer">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <img src="crown.png" alt="Crown" style="width: 28px; height: 28px;" onerror="this.outerHTML='👑'">
+                <span style="font-weight: 900; font-size: 18px;">Prime Store</span>
+            </div>
+            <button class="icon-btn" onclick="toggleDrawer(false)">✕</button>
+        </div>
+
+        <div class="neon-card" style="margin-bottom: 20px; display: flex; align-items: center; gap: 12px;" onclick="openAuthModal()">
+            <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-purple), var(--primary-neon)); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 20px;" id="drawer-user-avatar">ز</div>
+            <div>
+                <div style="font-weight: 700; font-size: 14px;" id="drawer-user-name">زائر (تسجيل الدخول)</div>
+                <div style="font-size: 11px; color: var(--text-muted);" id="drawer-user-email">انقر لتسجيل الدخول أو إنشاء حساب</div>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="neon-card" onclick="switchTab('home'); toggleDrawer(false)">🏠 الرئيسية</div>
+            <div class="neon-card" onclick="switchTab('categories'); toggleDrawer(false)">⊞ الأقسام والتصنيفات</div>
+            <div class="neon-card" onclick="switchTab('favorites'); toggleDrawer(false)">❤️ المفضلة</div>
+            <div class="neon-card" onclick="switchTab('downloads'); toggleDrawer(false)">📥 تحميلاتي النشطة</div>
+            <div class="neon-card" onclick="switchTab('settings'); toggleDrawer(false)">⚙️ الإعدادات</div>
+            <div class="neon-card" id="drawer-admin-btn" style="display: none; border-color: var(--primary-neon);" onclick="openAdminPanel(); toggleDrawer(false)">🛠️ لوحة تحكم التطبيقات</div>
+        </div>
+
+        <div style="margin-top: auto; font-size: 11px; color: var(--text-muted); text-align: center;">
+            Prime Store v2.5.0 • متصل بـ Supabase
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         2. شاشة البداية (Splash Screen) - مطابقة للصورة 1
+         ========================================================================== -->
+    <div id="splash-screen" onclick="dismissSplash()">
+        <img src="crown.png" alt="Crown" class="splash-crown" onerror="this.outerHTML='<div class=\'splash-crown\' style=\'font-size:60px;\'>👑</div>'">
+        <div class="splash-title">Prime <span class="store">Store</span></div>
+        <div class="splash-subtitle">متجر التطبيقات والألعاب</div>
+        
+        <div class="splash-divider">
+            <span>كل ما تحتاجه في مكان واحد</span>
+        </div>
+
+        <div class="splash-controller">🎮</div>
+
+        <div class="splash-spinner"></div>
+        <div style="font-size: 13px; color: var(--text-muted); font-weight: 600;">جاري التحميل ...</div>
+    </div>
+
+    <!-- ==========================================================================
+         3. الشاشة الرئيسية (Home Screen) - مطابقة للصورة 2
+         ========================================================================== -->
+    <div id="screen-home" class="app-screen active">
+        <div class="home-top-bar">
+            <button class="icon-btn" onclick="toggleDrawer(true)">☰</button>
+            <div style="font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 6px;">
+                <img src="crown.png" alt="Logo" style="width: 22px; height: 22px;" onerror="this.outerHTML='👑'">
+                <span dir="ltr"><span>Prime </span><span style="color: var(--primary-neon);">Store</span></span>
+            </div>
+            <button class="icon-btn" onclick="openSearch()">🔍</button>
+        </div>
+
+        <div class="screen-content">
+            <!-- بانر السلايدر التلقائي -->
+            <div class="hero-banner" id="hero-banner" onclick="openFeaturedAppFromBanner()">
+                <div class="hero-banner-bg" id="hero-banner-bg"></div>
+                <div class="hero-banner-overlay">
+                    <div style="font-weight: 900; line-height: 1.1;">
+                        <div style="font-size: 12px; letter-spacing: 1px;" id="hero-tag">GRAND THEFT AUTO</div>
+                        <div style="font-size: 26px; color: var(--accent-gold);" id="hero-title">Grand Theft Auto V</div>
+                    </div>
+                    <div style="align-self: flex-end;">
+                        <button class="btn-neon-gradient" onclick="event.stopPropagation(); startDownload(heroActiveAppId)">
+                            تحميل الآن ←
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- مؤشرات السلايدر -->
+            <div class="carousel-dots" id="carousel-dots">
+                <div class="dot active"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+
+            <!-- أقسام المتجر (شبكة 4x2) -->
+            <div class="section-header">
+                <span>⊞</span>
+                <span>أقسام المتجر</span>
+            </div>
+
+            <div class="quick-categories-grid">
+                <div class="quick-cat-item" onclick="openCategoryFilter('games')">
+                    <div class="quick-cat-icon">🎮</div>
+                    <div class="quick-cat-label">ألعاب</div>
+                </div>
+                <div class="quick-cat-item" onclick="openCategoryFilter('apps')">
+                    <div class="quick-cat-icon">🤖</div>
+                    <div class="quick-cat-label">تطبيقات</div>
+                </div>
+                <div class="quick-cat-item" onclick="openCategoryFilter('trending')">
+                    <div class="quick-cat-icon">⭐</div>
+                    <div class="quick-cat-label">الأكثر شهرة</div>
+                </div>
+                <div class="quick-cat-item" onclick="openCategoryFilter('games', 'newest')">
+                    <div class="quick-cat-icon">🔥</div>
+                    <div class="quick-cat-label">الألعاب الجديدة</div>
+                </div>
+                <div class="quick-cat-item" onclick="openCategoryFilter('music')">
+                    <div class="quick-cat-icon">🎵</div>
+                    <div class="quick-cat-label">موسيقى</div>
+                </div>
+                <div class="quick-cat-item" onclick="openCategoryFilter('video')">
+                    <div class="quick-cat-icon">▶️</div>
+                    <div class="quick-cat-label">فيديو</div>
+                </div>
+                <div class="quick-cat-item" onclick="openCategoryFilter('tools')">
+                    <div class="quick-cat-icon">🔧</div>
+                    <div class="quick-cat-label">أدوات</div>
+                </div>
+                <div class="quick-cat-item" onclick="switchTab('categories')">
+                    <div class="quick-cat-icon">⊞</div>
+                    <div class="quick-cat-label">المزيد</div>
+                </div>
+            </div>
+
+            <!-- ألعاب مميزة ⭐ -->
+            <div class="section-header">
+                <span>⭐</span>
+                <span>ألعاب مميزة</span>
+            </div>
+            <div class="horizontal-cards-row" id="featured-games-container">
+                <!-- يتم التوليد التلقائي أو Skeleton -->
+            </div>
+
+            <!-- تطبيقات رائجة 🔥 -->
+            <div class="section-header">
+                <span>🔥</span>
+                <span>تطبيقات رائجة</span>
+            </div>
+            <div style="padding: 0 16px;" id="trending-apps-container">
+                <!-- يتم التوليد التلقائي أو Skeleton -->
+            </div>
+
+            <!-- أضيف حديثاً ✨ -->
+            <div class="section-header" style="margin-top: 10px;">
+                <span>✨</span>
+                <span>أضيف حديثاً</span>
+            </div>
+            <div class="horizontal-cards-row" id="new-apps-container">
+                <!-- يتم التوليد التلقائي -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         4. شاشة الأقسام (Categories Screen) - مطابقة للصورة 3
+         ========================================================================== -->
+    <div id="screen-categories" class="app-screen">
+        <div class="home-top-bar">
+            <button class="icon-btn" onclick="backFromCategory()">←</button>
+            <div style="font-size: 18px; font-weight: 800;" id="categories-title">الأقسام</div>
+            <button class="icon-btn" onclick="openSearch()">🔍</button>
+        </div>
+
+        <div class="screen-content" style="padding: 10px 16px;" id="categories-content-container">
+            <!-- بطاقات الأقسام أو تطبيقات القسم -->
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         5. شاشة تفاصيل التطبيق (App Details) - مطابقة للصورة 4
+         ========================================================================== -->
+    <div id="screen-details" class="app-screen">
+        <div class="home-top-bar">
+            <button class="icon-btn" onclick="closeAppDetail()">←</button>
+            <div style="display: flex; gap: 8px;">
+                <button class="icon-btn" id="details-fav-btn" onclick="toggleCurrentAppFav()">♡</button>
+                <button class="icon-btn" onclick="openSearch()">🔍</button>
+                <button class="icon-btn" onclick="shareCurrentApp()">⋮</button>
+            </div>
+        </div>
+
+        <div class="screen-content" id="details-content-container">
+            <!-- محتوى التفاصيل التفاعلي -->
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         6. شاشة تحميلاتي (Downloads Screen) - مطابقة للصورة 5
+         ========================================================================== -->
+    <div id="screen-downloads" class="app-screen">
+        <div style="text-align: center; padding: 14px; font-size: 18px; font-weight: 800;">تحميلاتي</div>
+
+        <div class="segmented-control">
+            <button class="seg-btn active" id="btn-seg-downloading" onclick="setDownloadsTab(0)">جاري التحميل</button>
+            <button class="seg-btn" id="btn-seg-completed" onclick="setDownloadsTab(1)">تم التحميل</button>
+        </div>
+
+        <div class="screen-content" style="padding: 0 16px;" id="downloads-list-container">
+            <!-- قائمة التنزيلات النشطة والمكتملة -->
+        </div>
+
+        <div style="padding: 12px 16px 20px;">
+            <button class="btn-neon-gradient" style="width: 100%;" onclick="clearAllDownloads()">
+                🗑 مسح الكل
+            </button>
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         7. شاشة المفضلة (Favorites Screen) - مطابقة للصورة 6
+         ========================================================================== -->
+    <div id="screen-favorites" class="app-screen">
+        <div style="text-align: center; padding: 14px; font-size: 18px; font-weight: 800;">المفضلة</div>
+
+        <div class="screen-content" style="padding: 10px 16px;" id="favorites-list-container">
+            <!-- قائمة العناصر المحفوظة في المفضلة -->
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         8. شاشة البحث (Search Screen) - مطابقة للصورة 7
+         ========================================================================== -->
+    <div id="screen-search" class="app-screen">
+        <div class="search-input-box">
+            <button class="icon-btn" onclick="closeSearch()" style="padding: 0;">←</button>
+            <input type="text" id="search-input" placeholder="ابحث عن تطبيق أو لعبة..." oninput="handleSearchInput(this.value)">
+            <button class="icon-btn" onclick="clearSearchInput()" style="padding: 0;">✕</button>
+        </div>
+
+        <div class="screen-content">
+            <div id="search-popular-section">
+                <div class="section-header">
+                    <span>🔥</span>
+                    <span>عمليات البحث الشائعة</span>
+                </div>
+                <div class="search-chips-wrap">
+                    <div class="search-chip" onclick="searchTag('Minecraft')">Minecraft</div>
+                    <div class="search-chip" onclick="searchTag('GTA V')">GTA V</div>
+                    <div class="search-chip" onclick="searchTag('Roblox')">Roblox</div>
+                    <div class="search-chip" onclick="searchTag('Free Fire')">Free Fire</div>
+                    <div class="search-chip" onclick="searchTag('Subway Surfers')">Subway Surfers</div>
+                    <div class="search-chip" onclick="searchTag('PUBG')">PUBG</div>
+                </div>
+            </div>
+
+            <div id="search-history-section" style="padding: 0 16px; margin-bottom: 12px; display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 13px; font-weight: 700; color: var(--text-secondary);">سجل البحث الأخير:</span>
+                    <span style="font-size: 11px; color: var(--primary-neon); cursor: pointer;" onclick="clearSearchHistory()">مسح السجل</span>
+                </div>
+                <div id="search-history-chips" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+            </div>
+
+            <div class="section-header" style="margin-top: 10px;">
+                <span>⊞</span>
+                <span>نتائج البحث</span>
+            </div>
+
+            <div style="padding: 0 16px;" id="search-results-container">
+                <div style="text-align: center; color: var(--text-muted); padding: 40px;">ابحث عن مئات الألعاب والتطبيقات في Prime Store</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         9. شاشة الإعدادات (Settings Screen) - مطابقة للصورة 8
+         ========================================================================== -->
+    <div id="screen-settings" class="app-screen">
+        <div style="text-align: center; padding: 14px; font-size: 18px; font-weight: 800;">الإعدادات</div>
+
+        <div class="screen-content" style="padding: 10px 16px;">
+            <!-- زر لوحة التحكم للأدمن (يظهر فقط للمستخدم المسجل) -->
+            <div class="settings-item" id="settings-admin-item" style="display: none; border-color: var(--primary-neon); background: rgba(124, 58, 237, 0.15);" onclick="openAdminPanel()">
+                <div>
+                    <div style="font-weight: 800; color: var(--primary-neon);">🛠️ لوحة تحكم التطبيقات (Admin)</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">إضافة وتعديل وحذف التطبيقات ورفع APK</div>
+                </div>
+                <div style="color: var(--primary-neon); font-size: 18px;">›</div>
+            </div>
+
+            <div class="settings-item" onclick="toggleLanguage()">
+                <div>
+                    <div style="font-weight: 700;">اللغة</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);" id="settings-lang-text">العربية</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; color: var(--primary-neon);">🌐 ›</div>
+            </div>
+
+            <div class="settings-item" onclick="toggleTheme()">
+                <div>
+                    <div style="font-weight: 700;">المظهر</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);" id="settings-theme-text">الوضع الداكن</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; color: var(--primary-neon);">🌙 ›</div>
+            </div>
+
+            <div class="settings-item" onclick="toggleNotificationSetting()">
+                <div>
+                    <div style="font-weight: 700;">الإشعارات</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);" id="settings-notif-text">مفعلة</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; color: var(--primary-neon);">🔔 ›</div>
+            </div>
+
+            <div class="settings-item" onclick="clearStorageCache()">
+                <div>
+                    <div style="font-weight: 700;">إدارة التخزين</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);" id="settings-cache-text">ذاكرة التخزين المؤقت: 42.8 MB</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; color: var(--primary-neon);">🗄 ›</div>
+            </div>
+
+            <div class="settings-item" onclick="showAboutModal()">
+                <div>
+                    <div style="font-weight: 700;">حول التطبيق</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Prime Store v2.5.0</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; color: var(--primary-neon);">ℹ ›</div>
+            </div>
+
+            <div class="settings-item" onclick="shareCurrentApp()">
+                <div>
+                    <div style="font-weight: 700;">مشاركة التطبيق</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">انشر المتجر لأصدقائك</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; color: var(--primary-neon);">🔗 ›</div>
+            </div>
+
+            <div class="settings-item" onclick="rateApp()">
+                <div>
+                    <div style="font-weight: 700;">تقييم التطبيق</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">تقييم 5 نجوم على المتجر</div>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; color: var(--primary-neon);">⭐ ›</div>
+            </div>
+        </div>
+
+        <div style="padding: 12px 16px 20px;">
+            <button class="btn-neon-gradient" style="width: 100%;" id="settings-auth-btn" onclick="handleAuthAction()">
+                تسجيل الدخول / إنشاء حساب ↪
+            </button>
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         10. الشريط السفلي الثابت (5 تبويبات)
+         ========================================================================== -->
+    <nav class="bottom-nav">
+        <div class="nav-item active" id="nav-home" onclick="switchTab('home')">
+            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            <span>الرئيسية</span>
+        </div>
+        <div class="nav-item" id="nav-categories" onclick="switchTab('categories')">
+            <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+            <span>الأقسام</span>
+        </div>
+        <div class="nav-item" id="nav-favorites" onclick="switchTab('favorites')">
+            <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            <span>المفضلة</span>
+        </div>
+        <div class="nav-item" id="nav-downloads" onclick="switchTab('downloads')">
+            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            <span>تحميلاتي</span>
+        </div>
+        <div class="nav-item" id="nav-settings" onclick="switchTab('settings')">
+            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            <span>الإعدادات</span>
+        </div>
+    </nav>
+
+    <!-- ==========================================================================
+         11. النوافذ المنبثقة (Modals): تسجيل الدخول، لوحة الأدمن، تكبير الصور
+         ========================================================================== -->
+    <!-- نافذة تسجيل الدخول / إنشاء الحساب -->
+    <div id="auth-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="font-weight: 800; font-size: 18px;" id="auth-modal-title">تسجيل الدخول إلى Prime Store</h3>
+                <button class="icon-btn" onclick="closeAuthModal()">✕</button>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; color: var(--text-secondary);">البريد الإلكتروني:</label>
+                <input type="email" id="auth-email" class="modal-input" placeholder="name@example.com">
+            </div>
+
+            <div style="margin-bottom: 18px;">
+                <label style="font-size: 12px; color: var(--text-secondary);">كلمة المرور:</label>
+                <input type="password" id="auth-password" class="modal-input" placeholder="••••••••">
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+                <button class="btn-neon-gradient" style="flex: 1;" onclick="handleLogin()">دخول</button>
+                <button class="btn-neon-outline" style="flex: 1;" onclick="handleSignup()">إنشاء حساب</button>
+            </div>
+
+            <div style="text-align: center; font-size: 11px; color: var(--text-muted);">
+                تتم إدارة الحسابات بأمان تام عبر Supabase Authentication
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة حول التطبيق (About App Modal with 7-Tap Secret Trigger) -->
+    <div id="about-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 400px; text-align: center;">
+            <div style="font-size: 40px; margin-bottom: 8px;">👑</div>
+            <h3 style="font-weight: 900; font-size: 20px; margin-bottom: 4px;">Prime Store</h3>
+            <div style="color: var(--primary-neon); font-size: 13px; font-weight: 700; margin-bottom: 12px;">متجر التطبيقات والألعاب الرائد</div>
+            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
+                يوفر لك Prime Store الوصول السريع والآمن إلى أشهر الألعاب والتطبيقات العالمية بواجهة نيون بنفسجية عصرية وربط سحابي مع Supabase.
+            </p>
+            <!-- سطر الإصدار السري: الضغط 7 مرات متتالية يفتح نافذة دخول الأدمن -->
+            <div onclick="handleVersionSecretTap()" style="background: rgba(124, 58, 237, 0.15); border: 1px solid var(--border-glow); border-radius: var(--radius-sm); padding: 10px; cursor: pointer; user-select: none; margin-bottom: 16px;" id="version-secret-row">
+                <div style="font-size: 12px; font-weight: 700; color: #FFFFFF;">الإصدار: v2.5.0 • تحديث 2026</div>
+                <div style="font-size: 10px; color: var(--text-muted);">جميع الحقوق محفوظة © Prime Store Team</div>
+            </div>
+            <button class="btn-neon-gradient" style="width: 100%;" onclick="closeAboutModal()">حسناً</button>
+        </div>
+    </div>
+
+    <!-- نافذة دخول الأدمن المخفية (Admin Auth Modal) -->
+    <div id="admin-auth-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 380px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <h3 style="font-weight: 800; font-size: 16px; color: var(--primary-neon);">🔐 دخول الأدمن (Supabase Auth)</h3>
+                <button class="icon-btn" onclick="closeAdminAuthModal()">✕</button>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+                أدخل بيانات حساب المشرف المصرح له لإدارة التطبيقات:
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label style="font-size: 12px; color: var(--text-secondary);">البريد الإلكتروني:</label>
+                <input type="email" id="admin-login-email" class="modal-input" placeholder="zaim9002@gmail.com">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 12px; color: var(--text-secondary);">كلمة المرور:</label>
+                <input type="password" id="admin-login-pass" class="modal-input" placeholder="••••••••">
+            </div>
+            <button class="btn-neon-gradient" style="width: 100%; margin-bottom: 8px;" onclick="submitAdminLogin()">
+                تسجيل دخول الأدمن 🛠️
+            </button>
+            <button class="btn-neon-outline" style="width: 100%;" onclick="closeAdminAuthModal()">
+                إلغاء
+            </button>
+        </div>
+    </div>
+
+    <!-- نافذة لوحة تحكم الأدمن (Admin Panel Modal) -->
+    <div id="admin-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 460px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <h3 style="font-weight: 800; font-size: 17px;" id="admin-form-title">لوحة التحكم: إضافة تطبيق جديد</h3>
+                <button class="icon-btn" onclick="closeAdminPanel()">✕</button>
+            </div>
+
+            <input type="hidden" id="admin-edit-id" value="">
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <div>
+                    <label style="font-size: 12px; color: var(--text-secondary);">اسم التطبيق:</label>
+                    <input type="text" id="admin-app-name" class="modal-input" placeholder="Minecraft">
+                </div>
+                <div>
+                    <label style="font-size: 12px; color: var(--text-secondary);">القسم:</label>
+                    <select id="admin-app-category" class="modal-input">
+                        <option value="games">games (ألعاب)</option>
+                        <option value="apps">apps (تطبيقات)</option>
+                        <option value="trending">trending (الأكثر شهرة)</option>
+                        <option value="entertainment">entertainment (ترفيه)</option>
+                        <option value="sports">sports (رياضة)</option>
+                        <option value="business">business (أعمال)</option>
+                        <option value="education">education (تعليم)</option>
+                        <option value="music">music (موسيقى)</option>
+                        <option value="video">video (فيديو)</option>
+                        <option value="tools">tools (أدوات)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                <div>
+                    <label style="font-size: 11px; color: var(--text-secondary);">التقييم:</label>
+                    <input type="number" step="0.1" id="admin-app-rating" class="modal-input" value="4.5">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: var(--text-secondary);">التحميلات:</label>
+                    <input type="text" id="admin-app-downloads" class="modal-input" placeholder="+100M">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: var(--text-secondary);">الحجم:</label>
+                    <input type="text" id="admin-app-size" class="modal-input" placeholder="120 MB">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <label style="font-size: 12px; color: var(--text-secondary);">الوصف:</label>
+                <textarea id="admin-app-desc" class="modal-input" rows="2" placeholder="استكشف عالماً لا نهائياً..."></textarea>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <label style="font-size: 12px; color: var(--text-secondary);">المميزات (سطر لكل ميزة):</label>
+                <textarea id="admin-app-features" class="modal-input" rows="2" placeholder="عالم مفتوح ضخم&#10;طور البقاء والإبداع&#10;لعب متعدد اللاعبين"></textarea>
+            </div>
+
+            <!-- رفع الملفات إلى Bucket -->
+            <div style="background: rgba(124, 58, 237, 0.1); border: 1px dashed var(--border-glow); padding: 10px; border-radius: var(--radius-sm); margin-bottom: 12px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--primary-neon); margin-bottom: 6px;">رفع الملفات إلى store-files:</div>
+                
+                <div style="margin-bottom: 6px;">
+                    <label style="font-size: 11px;">أيقونة التطبيق (Icon):</label>
+                    <input type="file" id="admin-icon-file" accept="image/*" class="modal-input" style="padding: 4px;">
+                    <input type="text" id="admin-icon-url" class="modal-input" placeholder="أو أدخل رابط أيقونة مباشر / إيموجي">
+                </div>
+
+                <div style="margin-bottom: 6px;">
+                    <label style="font-size: 11px;">لقطات الشاشة (Screenshots متعددة):</label>
+                    <input type="file" id="admin-screenshots-files" multiple accept="image/*" class="modal-input" style="padding: 4px;">
+                </div>
+
+                <div>
+                    <label style="font-size: 11px;">ملف APK أو رابط التحميل المباشر (file_url):</label>
+                    <input type="file" id="admin-apk-file" accept=".apk,application/vnd.android.package-archive" class="modal-input" style="padding: 4px;">
+                    <input type="text" id="admin-file-url" class="modal-input" placeholder="أو ضع رابط APK مباشر">
+                </div>
+            </div>
+
+            <div id="admin-upload-status" style="display: none; color: var(--accent-gold); font-size: 12px; font-weight: 700; margin-bottom: 8px;">
+                جاري الرفع إلى السحابة... ⏳
+            </div>
+
+            <button class="btn-neon-gradient" style="width: 100%; margin-bottom: 14px;" id="admin-save-btn" onclick="saveAppFromAdmin()">
+                💾 حفظ التطبيق في قاعدة البيانات
+            </button>
+
+            <!-- قائمة التطبيقات للإدارة والتعديل والحذف -->
+            <div style="font-weight: 700; font-size: 13px; margin-bottom: 8px;">التطبيقات المتاحة للإدارة:</div>
+            <div id="admin-apps-list" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+                <!-- يتم التوليد عبر JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة تكبير لقطات الشاشة -->
+    <div id="zoom-modal" class="modal-overlay" onclick="closeZoomModal()">
+        <div style="position: relative; max-width: 90%; max-height: 85vh;">
+            <img id="zoom-modal-img" src="" style="width: 100%; height: auto; max-height: 80vh; border-radius: var(--radius-md); border: 2px solid var(--border-glow); box-shadow: 0 0 35px var(--primary-glow);" alt="Screenshot Zoom">
+            <div style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">✕</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* ==========================================================================
+       12. الإعدادات والربط بـ Supabase (Settings & Supabase Client)
+       ========================================================================== */
+    const SUPABASE_URL = "https://koloemxbxrenwqiajijo.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_Ol48kUBezAiwHSYhutTWbQ_ghTohVo6";
+    const BUCKET = "store-files";
+    const ADMIN_EMAIL = "zaim9002@gmail.com";
+
+    // لفّ كل استخدام لـ localStorage بـ try/catch مع تخزين بديل في الذاكرة
+    const memStorage = {};
+    const safeStorage = {
+        getItem(key) {
+            try {
+                const val = localStorage.getItem(key);
+                return val !== null ? val : (memStorage[key] || null);
+            } catch (e) {
+                return memStorage[key] || null;
+            }
+        },
+        setItem(key, value) {
+            try {
+                localStorage.setItem(key, value);
+            } catch (e) {}
+            memStorage[key] = String(value);
+        },
+        removeItem(key) {
+            try {
+                localStorage.removeItem(key);
+            } catch (e) {}
+            delete memStorage[key];
+        }
+    };
+
+    // تهيئة عميل Supabase
+    let supabase = null;
+    try {
+        if (window.supabase) {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+    } catch (e) {
+        console.error("فشل تهيئة عميل Supabase:", e);
+    }
+
+    /* ==========================================================================
+       13. شاشة البداية والحماية من التجمد (Guaranteed Splash Dismissal)
+       ========================================================================== */
+    function dismissSplash() {
+        try {
+            const splash = document.getElementById('splash-screen');
+            if (splash && splash.style.display !== 'none') {
+                splash.style.opacity = '0';
+                splash.style.transition = 'opacity 0.4s ease';
+                setTimeout(() => {
+                    if (splash) splash.style.display = 'none';
+                }, 400);
+            }
+        } catch (e) {
+            console.error("خطأ إخفاء شاشة البداية:", e);
+        }
+    }
+
+    // إخفاء شاشة البداية حتماً بعد 2.5 ثانية مهما حدث
+    setTimeout(dismissSplash, 2500);
+
+    /* ==========================================================================
+       14. قاعدة البيانات التجريبية الاحتياطية (Fallback Data)
+       ========================================================================== */
+    const FALLBACK_APPS = [
+        {
+            id: 1,
+            name: "Grand Theft Auto V",
+            category: "games",
+            rating: 4.5,
+            downloads: "+50M",
+            size: "2.1 GB",
+            description: "ادخل إلى عالم لوس سانتوس المثير في مغامرة أكشن لا تنتهي مع مايكل وفرانكلين وتريفور. مهمات سرقة وتحديات أونلاين ملحمية.",
+            features: ["عالم لوس سانتوس المفتوح والضخم", "قصة درامية لثلاث شخصيات رئيسية", "أسلحة ومركبات قابلة للتطوير", "دعم اللعب الجماعي مع الملايين"],
+            icon_url: "🏎️",
+            file_url: "https://example.com/gtav.apk",
+            screenshots: [
+                "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80"
+            ],
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 2,
+            name: "Minecraft",
+            category: "games",
+            rating: 4.6,
+            downloads: "+100M",
+            size: "180 MB",
+            description: "استكشف عالماً لا نهائياً، وابنِ، والعب مع أصدقائك في لعبة Minecraft الأسطورية. اصنع عوالمك الخاصة من أبسط المنازل وحتى أفخم القلاع.",
+            features: ["عالم مفتوح ضخم لا نهائي", "طور البقاء والإبداع بلا حدود", "لعب متعدد اللاعبين عبر السيرفرات", "دعم التعديلات (Mods) وعوالم مخصصة"],
+            icon_url: "🧱",
+            file_url: "https://example.com/minecraft.apk",
+            screenshots: [
+                "https://images.unsplash.com/photo-1579373903781-fd5c0c30c4cd?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1580234811497-9df7fd2f357e?auto=format&fit=crop&w=600&q=80"
+            ],
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 3,
+            name: "Roblox",
+            category: "games",
+            rating: 4.3,
+            downloads: "+500M",
+            size: "165 MB",
+            description: "العالم الافتراضي الأمثل الذي يتيح لك اللعب والإنشاء وأن تكون أي شيء تتخيله.",
+            features: ["ملايين العوالم والتجارب المجانية", "تخصيص كامل للأفاتار", "تواصل فوري ودردشة صوتية"],
+            icon_url: "🎲",
+            file_url: "",
+            screenshots: ["https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80"],
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 4,
+            name: "Clash of Clans",
+            category: "games",
+            rating: 4.5,
+            downloads: "+500M",
+            size: "280 MB",
+            description: "ابنِ قريتك، وشكّل قبيلتك، ونافس في حروب القبائل الملحمية ضد ملايين اللاعبين حول العالم.",
+            features: ["بناء وتطوير دفاعات القرية", "حروب قبائل تكتيكية عالمية", "أبطال أسطوريون بقدرات خارقة"],
+            icon_url: "🏰",
+            file_url: "",
+            screenshots: ["https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80"],
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 5,
+            name: "Subway Surfers",
+            category: "games",
+            rating: 4.5,
+            downloads: "+1B",
+            size: "150 MB",
+            description: "اركض بأسرع ما يمكنك على مسارات القطارات وتفادَ المفتش الغاضب وكلبه في أشهر لعبة ركض.",
+            features: ["طيران بالصواريخ النفاثة الملونة", "جولات حول مدن العالم المتنوعة", "تحديات يومية بجوائز قيّمة"],
+            icon_url: "🛹",
+            file_url: "",
+            screenshots: ["https://images.unsplash.com/photo-1579373903781-fd5c0c30c4cd?auto=format&fit=crop&w=600&q=80"],
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 6,
+            name: "Free Fire MAX",
+            category: "trending",
+            rating: 4.4,
+            downloads: "+100M",
+            size: "620 MB",
+            description: "باتل رويال فائقة الحماس بدقة Ultra HD وتأثيرات بصرية استثنائية في مباريات مدتها 10 دقائق.",
+            features: ["مباريات بقاء حماسية سريعة", "جرافيكس Ultra HD مطور", "شخصيات ذات مهارات قتالية تكتيكية"],
+            icon_url: "🔥",
+            file_url: "",
+            screenshots: ["https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80"],
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 7,
+            name: "WhatsApp Messenger",
+            category: "apps",
+            rating: 4.3,
+            downloads: "+5B",
+            size: "85 MB",
+            description: "تطبيق المراسلة والمكالمات الأكثر أماناً واستخداماً مع تشفير تام بين الطرفين.",
+            features: ["تشفير تام لجميع المحادثات", "مكالمات صوت وفيديو عالية الدقة", "مشاركة المستندات والصور الكبيرة"],
+            icon_url: "💬",
+            file_url: "",
+            screenshots: ["https://images.unsplash.com/photo-1580234811497-9df7fd2f357e?auto=format&fit=crop&w=600&q=80"],
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 8,
+            name: "YouTube",
+            category: "video",
+            rating: 4.2,
+            downloads: "+10B",
+            size: "75 MB",
+            description: "شاهد الفيديوهات الموسيقية والتعليمية والألعاب ومقاطع Shorts من جميع أنحاء العالم.",
+            features: ["فيديوهات قصيرة Shorts", "تشغيل بدقة 4K", "تنزيل لمشاهدة بدون إنترنت"],
+            icon_url: "▶️",
+            file_url: "",
+            screenshots: ["https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80"],
+            created_at: new Date().toISOString()
+        }
+    ];
+
+    // قائمة أقسام المتجر الرئيسية
+    const CATEGORIES_DATA = [
+        { key: "games", title: "الألعاب", count: "5000+ لعبة", icon: "🎮", color: "#A855F7" },
+        { key: "apps", title: "التطبيقات", count: "8000+ تطبيق", icon: "🤖", color: "#22C55E" },
+        { key: "trending", title: "الأكثر تحميلاً", count: "الأكثر شعبية هذا الأسبوع", icon: "🔥", color: "#F97316" },
+        { key: "entertainment", title: "الترفيه", count: "أفلام و مسلسلات وبث مباشر", icon: "▶️", color: "#EC4899" },
+        { key: "sports", title: "الرياضة", count: "ألعاب رياضية وبطولات عالمية", icon: "⚽", color: "#38BDF8" },
+        { key: "business", title: "الأعمال", count: "إنتاجية وأدوات إدارة الأعمال", icon: "💼", color: "#F59E0B" },
+        { key: "education", title: "التعليم", count: "تعليم وتطوير المهارات", icon: "🎓", color: "#6366F1" },
+        { key: "music", title: "موسيقى", count: "أغاني وبودكاست ومقاطع صوتية", icon: "🎵", color: "#06B6D4" },
+        { key: "video", title: "فيديو", count: "مشغلات ومحررات الفيديو", icon: "▶️", color: "#8B5CF6" },
+        { key: "tools", title: "أدوات", count: "أدوات النظام والتحسين والصيانة", icon: "🔧", color: "#10B981" }
+    ];
+
+    /* ==========================================================================
+       15. حالة التطبيق والمستخدم (App State & Auth Session)
+       ========================================================================== */
+    let currentTab = 'home';
+    let currentApp = null;
+    let selectedCategoryKey = null;
+    let selectedSortOrder = 'newest';
+    let currentDownloadsTab = 0; // 0 = جاري التحميل, 1 = تم التحميل
+    let allApps = [];
+    let currentUser = null;
+    let heroActiveAppId = 1;
+
+    // استرجاع المفضلة والتنزيلات من الذاكرة الآمنة
+    let localFavorites = JSON.parse(safeStorage.getItem('prime_favorites') || '["1", "2", "3", "4"]');
+    let localDownloads = JSON.parse(safeStorage.getItem('prime_downloads') || JSON.stringify([
+        { appId: 4, name: "Clash of Clans", icon: "🏰", progress: 72, speed: "5.8 MB/s", downloaded: "120 MB", completed: false },
+        { appId: 5, name: "Subway Surfers", icon: "🛹", progress: 100, speed: "0 KB/s", downloaded: "150 MB", completed: true },
+        { appId: 7, name: "WhatsApp Messenger", icon: "💬", progress: 100, speed: "0 KB/s", downloaded: "85 MB", completed: true }
+    ]));
+    let searchHistory = JSON.parse(safeStorage.getItem('prime_search_history') || '["Minecraft", "GTA V", "Roblox", "Free Fire"]');
+    const activeDownloadTimers = {};
+
+    function showToast(msg) {
+        try {
+            const toast = document.getElementById('toast-notification');
+            if (toast) {
+                toast.textContent = msg;
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 2400);
+            }
+        } catch (e) {}
+    }
+
+    /* ==========================================================================
+       16. جلب التطبيقات من Supabase والتحديث اللحظي (Realtime & Fetch)
+       ========================================================================== */
+    async function fetchApps() {
+        renderSkeletons();
+        try {
+            if (!supabase) throw new Error("Supabase غير متصل");
+            
+            const { data, error } = await supabase
+                .from('apps')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                allApps = data.map(app => ({
+                    ...app,
+                    features: Array.isArray(app.features) ? app.features : (typeof app.features === 'string' ? JSON.parse(app.features || '[]') : []),
+                    screenshots: Array.isArray(app.screenshots) ? app.screenshots : (typeof app.screenshots === 'string' ? JSON.parse(app.screenshots || '[]') : [])
+                }));
+            } else {
+                allApps = [...FALLBACK_APPS];
+            }
+        } catch (err) {
+            console.warn("استخدام البيانات الاحتياطية بسبب:", err.message);
+            allApps = [...FALLBACK_APPS];
+        }
+
+        renderHome();
+        if (currentTab === 'categories') renderCategories();
+        if (currentTab === 'favorites') renderFavorites();
+        if (currentUser) renderAdminAppsList();
+    }
+
+    // إعداد التحديث اللحظي Realtime
+    function setupRealtime() {
+        if (!supabase) return;
+        try {
+            supabase
+                .channel('apps-realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'apps' }, () => {
+                    fetchApps();
+                    showToast("تم تحديث التطبيقات في المتجر لحظياً ⚡");
+                })
+                .subscribe();
+        } catch (e) {
+            console.warn("Realtime subscription fallback:", e);
+        }
+    }
+
+    function renderSkeletons() {
+        const fg = document.getElementById('featured-games-container');
+        const ta = document.getElementById('trending-apps-container');
+        if (fg) {
+            fg.innerHTML = Array(4).fill(0).map(() => `
+                <div class="featured-game-card skeleton" style="border:none;"></div>
+            `).join('');
+        }
+        if (ta) {
+            ta.innerHTML = Array(3).fill(0).map(() => `
+                <div class="neon-card skeleton" style="height: 60px; margin-bottom: 8px; border:none;"></div>
+            `).join('');
+        }
+    }
+
+    /* ==========================================================================
+       17. عرض الشاشة الرئيسية والسلايدر (Home Rendering)
+       ========================================================================== */
+    function renderHome() {
+        if (allApps.length === 0) return;
+
+        // تحديث البانر
+        const heroApp = allApps[0];
+        if (heroApp) {
+            heroActiveAppId = heroApp.id;
+            const heroTitle = document.getElementById('hero-title');
+            const heroTag = document.getElementById('hero-tag');
+            const heroBg = document.getElementById('hero-banner-bg');
+            if (heroTitle) heroTitle.textContent = heroApp.name;
+            if (heroTag) heroTag.textContent = heroApp.category.toUpperCase();
+            if (heroBg && heroApp.screenshots && heroApp.screenshots[0]) {
+                heroBg.style.backgroundImage = `url('${heroApp.screenshots[0]}')`;
+            }
+        }
+
+        // ألعاب مميزة
+        const fgContainer = document.getElementById('featured-games-container');
+        const games = allApps.filter(a => a.category === 'games' || a.rating >= 4.4);
+        if (fgContainer) {
+            fgContainer.innerHTML = games.map(g => `
+                <div class="featured-game-card" onclick="openAppDetailById(${g.id})">
+                    <div class="game-badge-icon">
+                        ${renderIconHtml(g.icon_url)}
+                    </div>
+                    <div style="font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; margin: 4px 0;">${g.name}</div>
+                    <div style="font-size: 11px; color: var(--accent-gold); font-weight: 700;">⭐ ${g.rating} <span style="color: var(--text-muted); font-size: 10px;">(${g.downloads || '+10M'})</span></div>
+                </div>
+            `).join('');
+        }
+
+        // تطبيقات رائجة
+        const taContainer = document.getElementById('trending-apps-container');
+        const trending = allApps.slice(0, 5);
+        if (taContainer) {
+            taContainer.innerHTML = trending.map(a => `
+                <div class="neon-card" style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;" onclick="openAppDetailById(${a.id})">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div class="game-badge-icon" style="width: 48px; height: 48px; font-size: 24px;">
+                            ${renderIconHtml(a.icon_url)}
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; font-size: 14px;">${a.name}</div>
+                            <div style="font-size: 11px; color: var(--text-secondary);">⭐ ${a.rating} • ${a.size}</div>
+                        </div>
+                    </div>
+                    <button class="btn-neon-gradient" style="padding: 6px 14px; font-size: 12px;" onclick="event.stopPropagation(); startDownload(${a.id})">تثبيت</button>
+                </div>
+            `).join('');
+        }
+
+        // أضيف حديثاً
+        const naContainer = document.getElementById('new-apps-container');
+        const newApps = [...allApps].reverse().slice(0, 6);
+        if (naContainer) {
+            naContainer.innerHTML = newApps.map(g => `
+                <div class="featured-game-card" onclick="openAppDetailById(${g.id})">
+                    <div class="game-badge-icon">
+                        ${renderIconHtml(g.icon_url)}
+                    </div>
+                    <div style="font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; margin: 4px 0;">${g.name}</div>
+                    <div style="font-size: 11px; color: var(--accent-gold); font-weight: 700;">⭐ ${g.rating}</div>
+                </div>
+            `).join('');
+        }
+    }
+
+    function renderIconHtml(iconUrl) {
+        if (!iconUrl) return '🎮';
+        if (iconUrl.startsWith('http://') || iconUrl.startsWith('https://') || iconUrl.startsWith('data:')) {
+            return `<img src="${iconUrl}" loading="lazy" alt="icon" onerror="this.outerHTML='🎮'">`;
+        }
+        return iconUrl;
+    }
+
+    function openFeaturedAppFromBanner() {
+        openAppDetailById(heroActiveAppId);
+    }
+
+    /* ==========================================================================
+       18. شاشة الأقسام والتصفية (Categories Screen)
+       ========================================================================== */
+    function renderCategories() {
+        const container = document.getElementById('categories-content-container');
+        if (!container) return;
+
+        if (!selectedCategoryKey) {
+            document.getElementById('categories-title').textContent = "الأقسام";
+            container.innerHTML = CATEGORIES_DATA.map(c => `
+                <div class="category-large-card" onclick="openCategoryFilter('${c.key}')">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <div class="cat-big-icon">${c.icon}</div>
+                        <div>
+                            <div style="font-weight: 800; font-size: 16px;">${c.title}</div>
+                            <div style="font-size: 12px; color: var(--text-secondary);">${c.count}</div>
+                        </div>
+                    </div>
+                    <div style="color: var(--primary-neon); font-size: 20px; font-weight: 900;">›</div>
+                </div>
+            `).join('');
+        } else {
+            const cat = CATEGORIES_DATA.find(c => c.key === selectedCategoryKey) || { title: "التطبيقات" };
+            document.getElementById('categories-title').textContent = cat.title;
+
+            let filtered = allApps.filter(a => a.category.toLowerCase() === selectedCategoryKey.toLowerCase());
+            if (selectedCategoryKey === 'trending') {
+                filtered = [...allApps].sort((a,b) => b.rating - a.rating);
+            }
+
+            // تطبيق الترتيب
+            if (selectedSortOrder === 'rating') filtered.sort((a,b) => b.rating - a.rating);
+            else if (selectedSortOrder === 'downloads') filtered.sort((a,b) => (b.downloads || '').localeCompare(a.downloads || ''));
+            else filtered.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+            container.innerHTML = `
+                <div style="display: flex; gap: 8px; margin-bottom: 14px; overflow-x: auto;">
+                    <button class="btn-neon-outline" style="font-size: 11px;" onclick="selectedCategoryKey = null; renderCategories();">← كل الأقسام</button>
+                    <button class="search-chip ${selectedSortOrder === 'newest' ? 'active' : ''}" onclick="selectedSortOrder='newest'; renderCategories();">الأحدث</button>
+                    <button class="search-chip ${selectedSortOrder === 'rating' ? 'active' : ''}" onclick="selectedSortOrder='rating'; renderCategories();">الأعلى تقييماً</button>
+                    <button class="search-chip ${selectedSortOrder === 'downloads' ? 'active' : ''}" onclick="selectedSortOrder='downloads'; renderCategories();">الأكثر تحميلاً</button>
+                </div>
+                ${filtered.length === 0 ? `
+                    <div style="text-align: center; color: var(--text-muted); padding: 50px 0;">لا توجد تطبيقات في هذا القسم حالياً</div>
+                ` : filtered.map(a => `
+                    <div class="neon-card" style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;" onclick="openAppDetailById(${a.id})">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="game-badge-icon" style="width: 48px; height: 48px; font-size: 24px;">
+                                ${renderIconHtml(a.icon_url)}
+                            </div>
+                            <div>
+                                <div style="font-weight: 700; font-size: 14px;">${a.name}</div>
+                                <div style="font-size: 11px; color: var(--text-secondary);">⭐ ${a.rating} • ${a.size}</div>
+                            </div>
+                        </div>
+                        <button class="btn-neon-gradient" style="padding: 6px 14px; font-size: 12px;" onclick="event.stopPropagation(); startDownload(${a.id})">تثبيت</button>
+                    </div>
+                `).join('')}
+            `;
+        }
+    }
+
+    function openCategoryFilter(key, sort = 'newest') {
+        selectedCategoryKey = key;
+        selectedSortOrder = sort;
+        switchTab('categories');
+    }
+
+    function backFromCategory() {
+        if (selectedCategoryKey) {
+            selectedCategoryKey = null;
+            renderCategories();
+        } else {
+            switchTab('home');
+        }
+    }
+
+    /* ==========================================================================
+       19. شاشة تفاصيل التطبيق (App Details Screen)
+       ========================================================================== */
+    async function openAppDetailById(appId) {
+        currentApp = allApps.find(a => String(a.id) === String(appId));
+        if (!currentApp) return;
+
+        const isFav = await checkIsFavorite(currentApp.id);
+        const favBtn = document.getElementById('details-fav-btn');
+        if (favBtn) favBtn.textContent = isFav ? '❤️' : '♡';
+
+        const dl = localDownloads.find(d => String(d.appId) === String(currentApp.id));
+        const isCompleted = dl && dl.completed;
+        const isDownloading = dl && !dl.completed;
+
+        const container = document.getElementById('details-content-container');
+        if (!container) return;
+
+        const featuresList = (currentApp.features && currentApp.features.length > 0) 
+            ? currentApp.features 
+            : ["تجربة لعب وترفيه غامرة", "دعم اللعب الفردي والجماعي", "تحديثات دورية مجانية"];
+
+        const screenshotsList = (currentApp.screenshots && currentApp.screenshots.length > 0)
+            ? currentApp.screenshots
+            : [
+                "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80",
+                "https://images.unsplash.com/photo-1579373903781-fd5c0c30c4cd?auto=format&fit=crop&w=600&q=80"
+            ];
+
+        container.innerHTML = `
+            <div class="details-header">
+                <div class="details-app-icon">
+                    ${renderIconHtml(currentApp.icon_url)}
+                </div>
+                <div style="font-size: 22px; font-weight: 800;">${currentApp.name}</div>
+                <div style="font-size: 13px; color: var(--accent-gold); font-weight: 700; margin-top: 4px;">
+                    ⭐ ${currentApp.rating} <span style="color: var(--text-muted);">(${currentApp.downloads || '+10M'})</span>
+                </div>
+                
+                <div class="details-tags">
+                    <div class="tag-pill">${currentApp.category}</div>
+                    <div class="tag-pill">${currentApp.size}</div>
+                    <div class="tag-pill">ألعاب وتطبيقات</div>
+                </div>
+
+                <div style="width: 100%;" id="details-download-box">
+                    ${isDownloading ? `
+                        <div class="neon-card" style="text-align: right;">
+                            <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700;">
+                                <span>جاري التحميل... ${dl.progress}%</span>
+                                <span style="color: var(--primary-neon);">${dl.speed}</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" style="width: ${dl.progress}%;"></div>
+                            </div>
+                        </div>
+                    ` : isCompleted ? `
+                        <button class="btn-neon-gradient" style="width: 100%; font-size: 16px;" onclick="openAppFileUrl(${currentApp.id})">فتح التطبيق (مثبت ✔)</button>
+                    ` : `
+                        <button class="btn-neon-gradient" style="width: 100%; font-size: 16px;" onclick="startDownload(${currentApp.id})">تحميل الآن (${currentApp.size})</button>
+                    `}
+                </div>
+            </div>
+
+            <div class="tab-bar">
+                <button class="tab-btn active" onclick="switchDetailTab(0, this)">حول التطبيق</button>
+                <button class="tab-btn" onclick="switchDetailTab(1, this)">مراجعات</button>
+                <button class="tab-btn" onclick="switchDetailTab(2, this)">لقطات الشاشة</button>
+            </div>
+
+            <div id="detail-tab-0" style="padding: 0 20px;">
+                <p style="color: var(--text-secondary); line-height: 1.6; font-size: 14px; margin-bottom: 14px;">${currentApp.description || 'لا يوجد وصف متاح حالياً.'}</p>
+                <div style="font-weight: 700; margin-bottom: 10px;">الميزات الرئيسية:</div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    ${featuresList.map(f => `<div style="display: flex; gap: 8px; align-items: center; font-size: 13px;"><span style="color: var(--accent-green); font-weight: 800;">✔</span><span>${f}</span></div>`).join('')}
+                </div>
+            </div>
+
+            <div id="detail-tab-1" style="display: none; padding: 0 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                    <span style="font-weight: 700;">آراء ومراجعات المستخدمين</span>
+                    <button class="btn-neon-gradient" style="padding: 4px 12px; font-size: 11px;" onclick="promptAddReview()">+ أضف تقييمك</button>
+                </div>
+                <div id="reviews-list-box">
+                    <div style="color: var(--text-muted); font-size: 12px;">جاري تحميل المراجعات...</div>
+                </div>
+            </div>
+
+            <div id="detail-tab-2" style="display: none; padding: 0 20px;">
+                <div class="horizontal-cards-row" style="padding: 0;">
+                    ${screenshotsList.map(shot => `
+                        <div class="neon-card" style="min-width: 150px; height: 200px; padding: 0; overflow: hidden;" onclick="zoomScreenshot('${shot}')">
+                            <img src="${shot}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;" alt="screenshot" onerror="this.src='https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80'">
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        document.querySelectorAll('.app-screen').forEach(el => el.classList.remove('active'));
+        document.getElementById('screen-details').classList.add('active');
+        fetchReviews(currentApp.id);
+    }
+
+    function closeAppDetail() {
+        switchTab(currentTab);
+    }
+
+    function switchDetailTab(index, btn) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('detail-tab-0').style.display = index === 0 ? 'block' : 'none';
+        document.getElementById('detail-tab-1').style.display = index === 1 ? 'block' : 'none';
+        document.getElementById('detail-tab-2').style.display = index === 2 ? 'block' : 'none';
+    }
+
+    function zoomScreenshot(src) {
+        const img = document.getElementById('zoom-modal-img');
+        const modal = document.getElementById('zoom-modal');
+        if (img && modal) {
+            img.src = src;
+            modal.classList.add('active');
+        }
+    }
+
+    function closeZoomModal() {
+        const modal = document.getElementById('zoom-modal');
+        if (modal) modal.classList.remove('active');
+    }
+
+    /* ==========================================================================
+       20. التنزيلات و RPC increment_downloads
+       ========================================================================== */
+    function startDownload(appId) {
+        const app = allApps.find(a => String(a.id) === String(appId));
+        if (!app) return;
+
+        let existing = localDownloads.find(d => String(d.appId) === String(appId));
+        if (existing && existing.completed) {
+            openAppFileUrl(appId);
+            return;
+        }
+
+        if (activeDownloadTimers[appId]) {
+            showToast(`جاري تحميل ${app.name} بالفعل ⏳`);
+            return;
+        }
+
+        if (!existing) {
+            existing = { appId: app.id, name: app.name, icon: app.icon_url, progress: 10, speed: "5.8 MB/s", downloaded: "12 MB", completed: false };
+            localDownloads.unshift(existing);
+        } else {
+            existing.completed = false;
+        }
+
+        saveState();
+        showToast(`بدأ تحميل ${app.name}... 📥`);
+        if (currentApp && String(currentApp.id) === String(appId)) openAppDetailById(appId);
+        if (currentTab === 'downloads') renderDownloads();
+
+        // محاكاة واقعية للتقدم
+        activeDownloadTimers[appId] = setInterval(() => {
+            existing.progress += Math.floor(Math.random() * 9) + 6;
+            existing.speed = (Math.random() * 3 + 4).toFixed(1) + " MB/s";
+            existing.downloaded = Math.floor((existing.progress / 100) * 120) + " MB";
+
+            if (existing.progress >= 100) {
+                existing.progress = 100;
+                existing.completed = true;
+                existing.speed = "0 KB/s";
+                clearInterval(activeDownloadTimers[appId]);
+                delete activeDownloadTimers[appId];
+                saveState();
+                
+                // استدعاء دالة Supabase RPC increment_downloads(p_app_id)
+                callIncrementDownloads(app.id);
+
+                showToast(`اكتمل تحميل ${app.name} بنجاح! ✔`);
+                if (currentApp && String(currentApp.id) === String(appId)) openAppDetailById(appId);
+                if (currentTab === 'downloads') renderDownloads();
+                
+                // فتح file_url تلقائياً إن وجد
+                if (app.file_url && app.file_url.startsWith('http')) {
+                    window.open(app.file_url, '_blank');
+                }
+            } else {
+                saveState();
+                if (currentTab === 'downloads' && currentDownloadsTab === 0) renderDownloads();
+            }
+        }, 450);
+    }
+
+    async function callIncrementDownloads(appId) {
+        if (!supabase) return;
+        try {
+            await supabase.rpc('increment_downloads', { p_app_id: appId });
+        } catch (e) {
+            console.warn("RPC increment_downloads error:", e);
+        }
+    }
+
+    function openAppFileUrl(appId) {
+        const app = allApps.find(a => String(a.id) === String(appId));
+        if (app && app.file_url && app.file_url.startsWith('http')) {
+            window.open(app.file_url, '_blank');
+            showToast(`جاري فتح رابط تثبيت ${app.name} 🚀`);
+        } else {
+            showToast(`التطبيق ${app ? app.name : ''} مثبت وجاهز للتشغيل ✔`);
+        }
+    }
+
+    function setDownloadsTab(tabIndex) {
+        currentDownloadsTab = tabIndex;
+        document.getElementById('btn-seg-downloading').classList.toggle('active', tabIndex === 0);
+        document.getElementById('btn-seg-completed').classList.toggle('active', tabIndex === 1);
+        renderDownloads();
+    }
+
+    function renderDownloads() {
+        const container = document.getElementById('downloads-list-container');
+        if (!container) return;
+
+        const list = localDownloads.filter(d => currentDownloadsTab === 0 ? !d.completed : d.completed);
+
+        if (list.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; color: var(--text-muted); padding: 50px 0;">
+                    <div style="font-size: 40px; margin-bottom: 10px;">${currentDownloadsTab === 0 ? '📥' : '🎉'}</div>
+                    <div>${currentDownloadsTab === 0 ? 'لا توجد تنزيلات قيد المعالجة' : 'لم تقم بتنزيل أي تطبيقات بعد'}</div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = list.map(item => `
+            <div class="neon-card" style="margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div class="game-badge-icon" style="width: 48px; height: 48px; font-size: 24px;">
+                            ${renderIconHtml(item.icon)}
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; font-size: 15px;">${item.name}</div>
+                            <div style="font-size: 11px; color: var(--text-secondary);">${item.completed ? 'مكتمل ✔' : `${item.speed} • ${item.downloaded}`}</div>
+                        </div>
+                    </div>
+                    <div>
+                        ${item.completed ? `
+                            <span style="color: var(--accent-green); font-size: 22px;">✔</span>
+                        ` : `
+                            <button class="icon-btn" onclick="cancelDownload(${item.appId})" style="color: var(--text-muted);">✕</button>
+                        `}
+                    </div>
+                </div>
+                ${!item.completed ? `
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" style="width: ${item.progress}%;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--primary-neon); font-weight: 700;">
+                        <span>${item.progress}%</span>
+                        <span style="color: var(--text-muted);">${item.speed}</span>
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+    }
+
+    function cancelDownload(appId) {
+        if (activeDownloadTimers[appId]) {
+            clearInterval(activeDownloadTimers[appId]);
+            delete activeDownloadTimers[appId];
+        }
+        localDownloads = localDownloads.filter(d => String(d.appId) !== String(appId));
+        saveState();
+        showToast("تم إلغاء التحميل");
+        renderDownloads();
+    }
+
+    function clearAllDownloads() {
+        Object.keys(activeDownloadTimers).forEach(k => clearInterval(activeDownloadTimers[k]));
+        localDownloads = [];
+        saveState();
+        showToast("تم مسح جميع التحميلات");
+        renderDownloads();
+    }
+
+    /* ==========================================================================
+       21. المفضلة (جدول favorites في Supabase مع دعم الضيف)
+       ========================================================================== */
+    async function checkIsFavorite(appId) {
+        if (currentUser && supabase) {
+            try {
+                const { data } = await supabase
+                    .from('favorites')
+                    .select('app_id')
+                    .eq('user_id', currentUser.id)
+                    .eq('app_id', appId)
+                    .single();
+                return !!data;
+            } catch (e) {
+                return localFavorites.includes(String(appId));
+            }
+        }
+        return localFavorites.includes(String(appId));
+    }
+
+    async function toggleCurrentAppFav() {
+        if (!currentApp) return;
+        const appId = currentApp.id;
+
+        if (currentUser && supabase) {
+            const isFav = await checkIsFavorite(appId);
+            if (isFav) {
+                await supabase.from('favorites').delete().eq('user_id', currentUser.id).eq('app_id', appId);
+                showToast("تمت الإزالة من المفضلة السحابية");
+            } else {
+                await supabase.from('favorites').insert({ user_id: currentUser.id, app_id: appId });
+                showToast("تمت الإضافة للمفضلة السحابية ❤️");
+            }
+        } else {
+            // حفظ محلي للزائر
+            const sId = String(appId);
+            if (localFavorites.includes(sId)) {
+                localFavorites = localFavorites.filter(id => id !== sId);
+                showToast("تمت الإزالة من المفضلة");
+            } else {
+                localFavorites.push(sId);
+                showToast("تمت الإضافة إلى المفضلة ❤️");
+            }
+            saveState();
+        }
+
+        const isNowFav = await checkIsFavorite(appId);
+        const favBtn = document.getElementById('details-fav-btn');
+        if (favBtn) favBtn.textContent = isNowFav ? '❤️' : '♡';
+        if (currentTab === 'favorites') renderFavorites();
+    }
+
+    async function renderFavorites() {
+        const container = document.getElementById('favorites-list-container');
+        if (!container) return;
+
+        let favIds = [];
+        if (currentUser && supabase) {
+            try {
+                const { data } = await supabase.from('favorites').select('app_id').eq('user_id', currentUser.id);
+                if (data) favIds = data.map(d => String(d.app_id));
+            } catch (e) {
+                favIds = localFavorites;
+            }
+        } else {
+            favIds = localFavorites;
+        }
+
+        const favApps = allApps.filter(a => favIds.includes(String(a.id)));
+
+        if (favApps.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; color: var(--text-muted); padding: 60px 0;">
+                    <div style="font-size: 40px; margin-bottom: 10px;">💔</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #FFF;">لا توجد عناصر في المفضلة</div>
+                    <div style="font-size: 12px; margin-top: 6px;">اضغط على أيقونة القلب في أي تطبيق لحفظه هنا</div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = favApps.map(a => `
+            <div class="favorite-item-card" onclick="openAppDetailById(${a.id})">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="game-badge-icon" style="width: 50px; height: 50px; font-size: 26px;">
+                        ${renderIconHtml(a.icon_url)}
+                    </div>
+                    <div>
+                        <div style="font-weight: 800; font-size: 15px;">${a.name}</div>
+                        <div style="font-size: 12px; color: var(--accent-gold); font-weight: 700;">⭐ ${a.rating} <span style="color: var(--text-secondary); font-size: 11px;">• ${a.size}</span></div>
+                    </div>
+                </div>
+                <button class="trash-btn" onclick="event.stopPropagation(); removeFavoriteItem(${a.id})">🗑</button>
+            </div>
+        `).join('');
+    }
+
+    async function removeFavoriteItem(appId) {
+        if (currentUser && supabase) {
+            await supabase.from('favorites').delete().eq('user_id', currentUser.id).eq('app_id', appId);
+        }
+        localFavorites = localFavorites.filter(id => id !== String(appId));
+        saveState();
+        showToast("تم حذف العنصر من المفضلة");
+        renderFavorites();
+    }
+
+    /* ==========================================================================
+       22. المراجعات والتقييمات (جدول reviews)
+       ========================================================================== */
+    async function fetchReviews(appId) {
+        const box = document.getElementById('reviews-list-box');
+        if (!box) return;
+
+        try {
+            if (!supabase) throw new Error();
+            const { data, error } = await supabase
+                .from('reviews')
+                .select('*')
+                .eq('app_id', appId)
+                .order('created_at', { ascending: false });
+
+            if (error || !data || data.length === 0) {
+                box.innerHTML = `
+                    <div class="neon-card" style="margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                            <span style="font-weight: 700;">أحمد الشمري ⭐⭐⭐⭐⭐</span>
+                            <span style="color: var(--text-muted);">قبل يومين</span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">لعبة أسطورية ولا يوجد لها مثيل، التحديث الأخير ممتاز جداً!</div>
+                    </div>
+                `;
+                return;
+            }
+
+            box.innerHTML = data.map(r => `
+                <div class="neon-card" style="margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                        <span style="font-weight: 700;">مستخدم Prime ${'⭐'.repeat(r.stars || 5)}</span>
+                        <span style="color: var(--text-muted); font-size: 10px;">${new Date(r.created_at).toLocaleDateString('ar-EG')}</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">${r.comment}</div>
+                </div>
+            `).join('');
+        } catch (e) {
+            box.innerHTML = `
+                <div class="neon-card">
+                    <div style="font-weight: 700; font-size: 12px; color: var(--accent-gold);">⭐ 5/5</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">تطبيق رائع وسريع في التنزيل!</div>
+                </div>
+            `;
+        }
+    }
+
+    async function promptAddReview() {
+        if (!currentUser) {
+            showToast("يجب تسجيل الدخول أولاً لإضافة مراجعة 🔒");
+            openAuthModal();
+            return;
+        }
+
+        const comment = prompt("اكتب مراجعتك وتعليقك للتطبيق:");
+        if (!comment) return;
+        const starsStr = prompt("أدخل تقييمك من 1 إلى 5 نجوم:", "5");
+        const stars = parseInt(starsStr) || 5;
+
+        try {
+            if (supabase) {
+                await supabase.from('reviews').insert({
+                    app_id: currentApp.id,
+                    user_id: currentUser.id,
+                    stars: Math.min(Math.max(stars, 1), 5),
+                    comment: comment
+                });
+            }
+            showToast("شكراً! تم نشر مراجعتك بنجاح ⭐");
+            fetchReviews(currentApp.id);
+        } catch (err) {
+            showToast("حدث خطأ أثناء حفظ المراجعة");
+        }
+    }
+
+    /* ==========================================================================
+       23. المصادقة وحساب المستخدم (Supabase Auth)
+       ========================================================================== */
+    async function initAuth() {
+        if (!supabase) return;
+        try {
+            const { data } = await supabase.auth.getSession();
+            if (data && data.session) {
+                setUserSession(data.session.user);
+            }
+
+            supabase.auth.onAuthStateChange((event, session) => {
+                if (session && session.user) {
+                    setUserSession(session.user);
+                } else {
+                    setUserSession(null);
+                }
+            });
+        } catch (e) {
+            console.warn("Auth check error:", e);
+        }
+    }
+
+    function setUserSession(user) {
+        currentUser = user;
+        const nameEl = document.getElementById('drawer-user-name');
+        const emailEl = document.getElementById('drawer-user-email');
+        const avatarEl = document.getElementById('drawer-user-avatar');
+        const adminBtn = document.getElementById('drawer-admin-btn');
+        const settingsAdmin = document.getElementById('settings-admin-item');
+        const authBtn = document.getElementById('settings-auth-btn');
+
+        const isAdmin = user && user.email && user.email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+        if (user) {
+            const email = user.email || "user@store.com";
+            if (nameEl) nameEl.textContent = (isAdmin ? "مدير المتجر (Admin) 🛠️" : email.split('@')[0]) + " ✓";
+            if (emailEl) emailEl.textContent = email;
+            if (avatarEl) avatarEl.textContent = isAdmin ? "👑" : email[0].toUpperCase();
+            if (adminBtn) adminBtn.style.display = isAdmin ? 'block' : 'none';
+            if (settingsAdmin) settingsAdmin.style.display = isAdmin ? 'flex' : 'none';
+            if (authBtn) authBtn.textContent = "تسجيل الخروج ↪";
+        } else {
+            if (nameEl) nameEl.textContent = "زائر (تسجيل الدخول)";
+            if (emailEl) emailEl.textContent = "انقر لتسجيل الدخول أو إنشاء حساب";
+            if (avatarEl) avatarEl.textContent = "ز";
+            if (adminBtn) adminBtn.style.display = 'none';
+            if (settingsAdmin) settingsAdmin.style.display = 'none';
+            if (authBtn) authBtn.textContent = "تسجيل الدخول / إنشاء حساب ↪";
+            closeAdminPanel();
+        }
+    }
+
+    function openAuthModal() {
+        document.getElementById('auth-modal').classList.add('active');
+    }
+
+    function closeAuthModal() {
+        document.getElementById('auth-modal').classList.remove('active');
+    }
+
+    async function handleLogin() {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+
+        if (!email || !password) {
+            showToast("يرجى ملء البريد الإلكتروني وكلمة المرور");
+            return;
+        }
+
+        try {
+            if (!supabase) throw new Error("Supabase غير متصل");
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+
+            showToast("تم تسجيل الدخول بنجاح! 👑");
+            setUserSession(data.user);
+            closeAuthModal();
+        } catch (err) {
+            showToast(err.message || "فشل تسجيل الدخول");
+        }
+    }
+
+    async function handleSignup() {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+
+        if (!email || !password) {
+            showToast("يرجى ملء البريد الإلكتروني وكلمة المرور");
+            return;
+        }
+
+        try {
+            if (!supabase) throw new Error("Supabase غير متصل");
+            const { data, error } = await supabase.auth.signUp({ email, password });
+            if (error) throw error;
+
+            showToast("تم إنشاء الحساب بنجاح! 🎉");
+            if (data.user) setUserSession(data.user);
+            closeAuthModal();
+        } catch (err) {
+            showToast(err.message || "فشل إنشاء الحساب");
+        }
+    }
+
+    async function handleAuthAction() {
+        if (currentUser) {
+            if (confirm("هل تريد تسجيل الخروج؟")) {
+                if (supabase) await supabase.auth.signOut();
+                setUserSession(null);
+                showToast("تم تسجيل الخروج بنجاح");
+            }
+        } else {
+            openAuthModal();
+        }
+    }
+
+    /* ==========================================================================
+       24. لوحة تحكم الأدمن وإدارة التطبيقات والرفع إلى Bucket store-files
+       ========================================================================== */
+    function openAdminPanel() {
+        const isAdmin = currentUser && currentUser.email && currentUser.email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        if (!isAdmin) {
+            showToast("لوحة التحكم متاحة للأدمن فقط (" + ADMIN_EMAIL + ") 🔒");
+            openAdminAuthModal();
+            return;
+        }
+        resetAdminForm();
+        renderAdminAppsList();
+        document.getElementById('admin-modal').classList.add('active');
+    }
+
+    function closeAdminPanel() {
+        document.getElementById('admin-modal').classList.remove('active');
+    }
+
+    function resetAdminForm() {
+        document.getElementById('admin-edit-id').value = "";
+        document.getElementById('admin-app-name').value = "";
+        document.getElementById('admin-app-category').value = "games";
+        document.getElementById('admin-app-rating').value = "4.5";
+        document.getElementById('admin-app-downloads').value = "+100M";
+        document.getElementById('admin-app-size').value = "120 MB";
+        document.getElementById('admin-app-desc').value = "";
+        document.getElementById('admin-app-features').value = "";
+        document.getElementById('admin-icon-url').value = "";
+        document.getElementById('admin-file-url').value = "";
+        document.getElementById('admin-form-title').textContent = "لوحة التحكم: إضافة تطبيق جديد";
+        document.getElementById('admin-save-btn').textContent = "💾 حفظ التطبيق في قاعدة البيانات";
+    }
+
+    function renderAdminAppsList() {
+        const box = document.getElementById('admin-apps-list');
+        if (!box) return;
+
+        box.innerHTML = allApps.map(a => `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: #1C1329; border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 10px; font-size: 12px;">
+                <span style="font-weight: 700; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${a.name}</span>
+                <div style="display: flex; gap: 6px;">
+                    <button style="background: var(--primary-purple); color: white; border: none; padding: 3px 8px; border-radius: 6px; cursor: pointer;" onclick="editAppInAdmin(${a.id})">تعديل</button>
+                    <button style="background: var(--accent-red); color: white; border: none; padding: 3px 8px; border-radius: 6px; cursor: pointer;" onclick="deleteAppInAdmin(${a.id})">حذف</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function editAppInAdmin(appId) {
+        const app = allApps.find(a => String(a.id) === String(appId));
+        if (!app) return;
+
+        document.getElementById('admin-edit-id').value = app.id;
+        document.getElementById('admin-app-name').value = app.name || "";
+        document.getElementById('admin-app-category').value = app.category || "games";
+        document.getElementById('admin-app-rating').value = app.rating || "4.5";
+        document.getElementById('admin-app-downloads').value = app.downloads || "+100M";
+        document.getElementById('admin-app-size').value = app.size || "100 MB";
+        document.getElementById('admin-app-desc').value = app.description || "";
+        document.getElementById('admin-app-features').value = (app.features || []).join('\n');
+        document.getElementById('admin-icon-url').value = app.icon_url || "";
+        document.getElementById('admin-file-url').value = app.file_url || "";
+        document.getElementById('admin-form-title').textContent = "تعديل: " + app.name;
+        document.getElementById('admin-save-btn').textContent = "تحديث بيانات التطبيق ✔";
+    }
+
+    async function deleteAppInAdmin(appId) {
+        if (!confirm("هل أنت متأكد من حذف هذا التطبيق نهائياً من قاعدة البيانات؟")) return;
+
+        try {
+            if (!supabase) throw new Error("Supabase غير متصل");
+            const { error } = await supabase.from('apps').delete().eq('id', appId);
+            if (error) throw error;
+
+            showToast("تم حذف التطبيق بنجاح ✔");
+            fetchApps();
+        } catch (err) {
+            showToast("فشل الحذف: " + err.message);
+        }
+    }
+
+    async function uploadFileToBucket(file, folder) {
+        if (!file || !supabase) return null;
+        const ext = file.name.split('.').pop();
+        const filePath = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+
+        const { data, error } = await supabase.storage.from(BUCKET).upload(filePath, file, { upsert: true });
+        if (error) throw error;
+
+        const { data: publicData } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
+        return publicData.publicUrl;
+    }
+
+    async function saveAppFromAdmin() {
+        const name = document.getElementById('admin-app-name').value.trim();
+        const category = document.getElementById('admin-app-category').value;
+        const rating = parseFloat(document.getElementById('admin-app-rating').value) || 4.5;
+        const downloads = document.getElementById('admin-app-downloads').value.trim() || "+100M";
+        const size = document.getElementById('admin-app-size').value.trim() || "100 MB";
+        const desc = document.getElementById('admin-app-desc').value.trim();
+        const featuresRaw = document.getElementById('admin-app-features').value.trim();
+        const features = featuresRaw ? featuresRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
+        let iconUrl = document.getElementById('admin-icon-url').value.trim();
+        let fileUrl = document.getElementById('admin-file-url').value.trim();
+        const editId = document.getElementById('admin-edit-id').value;
+
+        if (!name) {
+            showToast("يرجى إدخال اسم التطبيق");
+            return;
+        }
+
+        const statusEl = document.getElementById('admin-upload-status');
+        if (statusEl) statusEl.style.display = 'block';
+
+        try {
+            // رفع الأيقونة إن وجدت
+            const iconFile = document.getElementById('admin-icon-file').files[0];
+            if (iconFile) {
+                const uploadedIcon = await uploadFileToBucket(iconFile, 'icons');
+                if (uploadedIcon) iconUrl = uploadedIcon;
+            }
+
+            // رفع ملف APK إن وجد
+            const apkFile = document.getElementById('admin-apk-file').files[0];
+            if (apkFile) {
+                const uploadedApk = await uploadFileToBucket(apkFile, 'apks');
+                if (uploadedApk) fileUrl = uploadedApk;
+            }
+
+            // رفع لقطات الشاشة إن وجدت
+            const screenshotFiles = document.getElementById('admin-screenshots-files').files;
+            let screenshots = [];
+            if (screenshotFiles && screenshotFiles.length > 0) {
+                for (let i = 0; i < screenshotFiles.length; i++) {
+                    const shotUrl = await uploadFileToBucket(screenshotFiles[i], 'screenshots');
+                    if (shotUrl) screenshots.push(shotUrl);
+                }
+            } else {
+                screenshots = [
+                    "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80"
+                ];
+            }
+
+            const appPayload = {
+                name: name,
+                category: category,
+                rating: rating,
+                downloads: downloads,
+                size: size,
+                description: desc,
+                features: features,
+                icon_url: iconUrl || "🎮",
+                file_url: fileUrl || "",
+                screenshots: screenshots
+            };
+
+            if (editId) {
+                // تعديل تطبيق موجود
+                const { error } = await supabase.from('apps').update(appPayload).eq('id', editId);
+                if (error) throw error;
+                showToast("تم تحديث التطبيق بنجاح! 🚀");
+            } else {
+                // إضافة تطبيق جديد
+                const { error } = await supabase.from('apps').insert(appPayload);
+                if (error) throw error;
+                showToast("تم نشر التطبيق في المتجر بنجاح! 🎉");
+            }
+
+            resetAdminForm();
+            closeAdminPanel();
+            fetchApps();
+        } catch (err) {
+            showToast("خطأ أثناء الحفظ: " + (err.message || err));
+        } finally {
+            if (statusEl) statusEl.style.display = 'none';
+        }
+    }
+
+    /* ==========================================================================
+       25. محرك البحث الذكي (Live Search & History)
+       ========================================================================== */
+    function openSearch() {
+        document.querySelectorAll('.app-screen').forEach(el => el.classList.remove('active'));
+        document.getElementById('screen-search').classList.add('active');
+        renderSearchHistory();
+        setTimeout(() => document.getElementById('search-input').focus(), 100);
+    }
+
+    function closeSearch() {
+        switchTab(currentTab);
+    }
+
+    function clearSearchInput() {
+        document.getElementById('search-input').value = "";
+        handleSearchInput("");
+    }
+
+    function searchTag(tag) {
+        document.getElementById('search-input').value = tag;
+        handleSearchInput(tag);
+        addSearchHistory(tag);
+    }
+
+    function handleSearchInput(val) {
+        const query = val.trim().toLowerCase();
+        const resultsBox = document.getElementById('search-results-container');
+        if (!query) {
+            resultsBox.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 40px;">ابحث عن أي تطبيق أو لعبة...</div>`;
+            return;
+        }
+
+        const matches = allApps.filter(a => 
+            a.name.toLowerCase().includes(query) || 
+            (a.category && a.category.toLowerCase().includes(query)) ||
+            (a.description && a.description.toLowerCase().includes(query))
+        );
+
+        if (matches.length === 0) {
+            resultsBox.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 40px;">لم يتم العثور على نتائج تطابق "${val}"</div>`;
+            return;
+        }
+
+        resultsBox.innerHTML = matches.map(a => `
+            <div class="neon-card" style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;" onclick="openAppDetailById(${a.id}); addSearchHistory('${a.name}');">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="game-badge-icon" style="width: 48px; height: 48px; font-size: 24px;">
+                        ${renderIconHtml(a.icon_url)}
+                    </div>
+                    <div>
+                        <div style="font-weight: 700; font-size: 14px;">${a.name}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">⭐ ${a.rating} • ${a.category}</div>
+                    </div>
+                </div>
+                <div style="color: var(--primary-neon); font-size: 18px;">›</div>
+            </div>
+        `).join('');
+    }
+
+    function addSearchHistory(query) {
+        if (!query) return;
+        searchHistory = searchHistory.filter(q => q !== query);
+        searchHistory.unshift(query);
+        if (searchHistory.length > 8) searchHistory.pop();
+        safeStorage.setItem('prime_search_history', JSON.stringify(searchHistory));
+        renderSearchHistory();
+    }
+
+    function renderSearchHistory() {
+        const box = document.getElementById('search-history-chips');
+        const section = document.getElementById('search-history-section');
+        if (!box || !section) return;
+
+        if (searchHistory.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+        box.innerHTML = searchHistory.map(q => `
+            <div class="search-chip" onclick="searchTag('${q}')" style="font-size: 11px; padding: 4px 10px;">${q}</div>
+        `).join('');
+    }
+
+    function clearSearchHistory() {
+        searchHistory = [];
+        safeStorage.setItem('prime_search_history', '[]');
+        renderSearchHistory();
+    }
+
+    /* ==========================================================================
+       26. تبديل الشاشات والإعدادات (Navigation & Settings)
+       ========================================================================== */
+    function switchTab(tabName) {
+        currentTab = tabName;
+        document.querySelectorAll('.app-screen').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+
+        const targetScreen = document.getElementById('screen-' + tabName);
+        if (targetScreen) targetScreen.classList.add('active');
+
+        const targetNav = document.getElementById('nav-' + tabName);
+        if (targetNav) targetNav.classList.add('active');
+
+        if (tabName === 'home') renderHome();
+        if (tabName === 'categories') renderCategories();
+        if (tabName === 'favorites') renderFavorites();
+        if (tabName === 'downloads') renderDownloads();
+    }
+
+    function toggleDrawer(open) {
+        const drawer = document.getElementById('side-drawer');
+        const overlay = document.getElementById('drawer-overlay');
+        if (open) {
+            drawer.classList.add('open');
+            overlay.classList.add('active');
+        } else {
+            drawer.classList.remove('open');
+            overlay.classList.remove('active');
+        }
+    }
+
+    function toggleLanguage() {
+        const isAr = document.documentElement.dir === 'rtl';
+        document.documentElement.dir = isAr ? 'ltr' : 'rtl';
+        document.documentElement.lang = isAr ? 'en' : 'ar';
+        document.getElementById('settings-lang-text').textContent = isAr ? 'English' : 'العربية';
+        showToast(isAr ? 'Switched to English' : 'تم التحويل إلى اللغة العربية');
+    }
+
+    function toggleTheme() {
+        document.body.classList.toggle('light-theme');
+        const isLight = document.body.classList.contains('light-theme');
+        document.getElementById('settings-theme-text').textContent = isLight ? 'الوضع الفاتح' : 'الوضع الداكن';
+        showToast(isLight ? 'تم تفعيل الوضع الفاتح ☀️' : 'تم تفعيل الوضع الداكن 🌙');
+    }
+
+    function toggleNotificationSetting() {
+        const txt = document.getElementById('settings-notif-text');
+        const isActive = txt.textContent === 'مفعلة';
+        txt.textContent = isActive ? 'معطلة' : 'مفعلة';
+        showToast(isActive ? 'تم إيقاف الإشعارات' : 'تم تفعيل الإشعارات 🔔');
+    }
+
+    function clearStorageCache() {
+        document.getElementById('settings-cache-text').textContent = "ذاكرة التخزين المؤقت: 0 KB";
+        showToast("تم مسح ذاكرة التخزين المؤقت بنجاح! 🧹");
+    }
+
+    let versionSecretTaps = 0;
+    let lastVersionSecretTapTime = 0;
+
+    function showAboutModal() {
+        openAboutModal();
+    }
+
+    function openAboutModal() {
+        const el = document.getElementById('about-modal');
+        if (el) el.classList.add('active');
+    }
+
+    function closeAboutModal() {
+        const el = document.getElementById('about-modal');
+        if (el) el.classList.remove('active');
+        versionSecretTaps = 0;
+    }
+
+    function handleVersionSecretTap() {
+        const now = Date.now();
+        if (now - lastVersionSecretTapTime > 2000) {
+            versionSecretTaps = 0;
+        }
+        lastVersionSecretTapTime = now;
+        versionSecretTaps++;
+
+        if (versionSecretTaps >= 7) {
+            versionSecretTaps = 0;
+            closeAboutModal();
+            openAdminAuthModal();
+        } else if (versionSecretTaps >= 3) {
+            showToast(`أنت على بعد ${7 - versionSecretTaps} نقرات من نافذة الأدمن 🔐`);
+        }
+    }
+
+    function openAdminAuthModal() {
+        const el = document.getElementById('admin-auth-modal');
+        if (el) el.classList.add('active');
+    }
+
+    function closeAdminAuthModal() {
+        const el = document.getElementById('admin-auth-modal');
+        if (el) el.classList.remove('active');
+    }
+
+    async function submitAdminLogin() {
+        const emailInput = document.getElementById('admin-login-email');
+        const passInput = document.getElementById('admin-login-pass');
+        const email = emailInput ? emailInput.value.trim() : "";
+        const password = passInput ? passInput.value : "";
+
+        if (!email || !password) {
+            showToast("يرجى إدخال البريد الإلكتروني وكلمة المرور");
+            return;
+        }
+
+        if (email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+            showToast("عذراً، هذا الحساب ليس لديه صلاحيات الأدمن ❌");
+            return;
+        }
+
+        try {
+            if (supabase) {
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) {
+                    showToast("خطأ في المصادقة: " + error.message);
+                    return;
+                }
+                if (data && data.user) {
+                    setUserSession(data.user);
+                }
+            } else {
+                setUserSession({ id: 'admin-local', email: ADMIN_EMAIL });
+            }
+            closeAdminAuthModal();
+            showToast("مرحباً بالأدمن! تم تفعيل لوحة التحكم 🛠️");
+            switchTab('settings');
+        } catch (err) {
+            showToast("فشل الاتصال: " + err.message);
+        }
+    }
+
+    function shareCurrentApp() {
+        if (navigator.share) {
+            navigator.share({
+                title: 'Prime Store',
+                text: 'جرّب أفضل التطبيقات والألعاب عبر متجر Prime Store!',
+                url: window.location.href
+            }).catch(() => {});
+        } else {
+            showToast("تم نسخ رابط المشاركة إلى الحافظة 🔗");
+        }
+    }
+
+    function rateApp() {
+        showToast("شكراً لدعمك وتقييمك 5 نجوم لـ Prime Store! ⭐⭐⭐⭐⭐");
+    }
+
+    function saveState() {
+        safeStorage.setItem('prime_favorites', JSON.stringify(localFavorites));
+        safeStorage.setItem('prime_downloads', JSON.stringify(localDownloads));
+    }
+
+    /* ==========================================================================
+       27. الانطلاق المبدئي (Initial Startup)
+       ========================================================================== */
+    initAuth();
+    fetchApps();
+    setupRealtime();
+</script>
+</body>
+</html>
