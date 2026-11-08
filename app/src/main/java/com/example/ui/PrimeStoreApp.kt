@@ -156,7 +156,8 @@ fun PrimeStoreApp(
                             // Sub-screen 0: Admin Panel Screen
                             if (uiState.showAdminPanel) {
                                 AdminPanelScreen(
-                                    adminEmail = ADMIN_EMAIL,
+                                    adminEmail = uiState.userProfile?.email ?: ADMIN_EMAIL,
+                                    accessToken = context.getSharedPreferences("prime_store_auth", android.content.Context.MODE_PRIVATE).getString("ps_token", null),
                                     apps = apps,
                                     onSaveApp = { id, name, category, rating, size, description, features, iconUrl, fileUrl, screenshots ->
                                         viewModel.saveAppFromAdmin(
@@ -192,6 +193,7 @@ fun PrimeStoreApp(
                                         onToggleFavorite = { viewModel.toggleFavorite(selectedApp.id) },
                                         onDownloadClick = { viewModel.startDownload(selectedApp.id) },
                                         onCancelDownload = { viewModel.cancelDownload(selectedApp.id) },
+                                        onInstallClick = { viewModel.installDownloadedApk(selectedApp.id, context) },
                                         onAddReview = { rating, comment ->
                                             viewModel.addReview(selectedApp.id, rating, comment)
                                         },
@@ -279,7 +281,8 @@ fun PrimeStoreApp(
                                                 onResumeDownload = { id -> viewModel.resumeDownload(id) },
                                                 onCancelDownload = { id -> viewModel.cancelDownload(id) },
                                                 onClearAll = { viewModel.clearDownloads() },
-                                                onAppClick = { appId -> viewModel.openAppDetails(appId) }
+                                                onAppClick = { appId -> viewModel.openAppDetails(appId) },
+                                                onInstall = { id -> viewModel.installDownloadedApk(id, context) }
                                             )
                                         }
 
@@ -330,6 +333,40 @@ fun PrimeStoreApp(
                 }
             }
 
+            // Unknown Sources Install Permission Dialog
+            if (uiState.showInstallPermissionDialog) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.dismissInstallPermissionDialog() },
+                    containerColor = Color(0xFF1E142D),
+                    title = {
+                        Text("تثبيت التطبيقات 📦", color = Color.White, fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Text(
+                            "يرجى السماح لـ Prime Store بتثبيت التطبيقات لمتابعة التثبيت",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.dismissInstallPermissionDialog()
+                                ApkInstaller.openUnknownAppSourcesSettings(context)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        ) {
+                            Text("السماح", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.dismissInstallPermissionDialog() }) {
+                            Text("إلغاء", color = PrimeTextMuted)
+                        }
+                    }
+                )
+            }
+
             // Top Floating Toast Banner
             AnimatedVisibility(
                 visible = activeToast != null,
@@ -353,6 +390,11 @@ fun PrimeStoreApp(
                 }
             }
         }
+    }
+
+    // Auto resume install after permission is granted
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onPermissionGrantedResumeInstall(context)
     }
 
     // Comprehensive Back Button Handling

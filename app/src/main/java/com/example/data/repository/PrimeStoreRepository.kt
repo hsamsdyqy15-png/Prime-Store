@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.example.data.download.DownloadService
 import com.example.data.installer.ApkInstaller
@@ -287,7 +288,7 @@ class PrimeStoreRepository(private val context: Context) {
                 var read: Int
 
                 while (inputStream.read(buffer).also { read = it } != -1) {
-                    if (!kotlinx.coroutines.isActive) {
+                    if (!isActive) {
                         outputStream.close()
                         inputStream.close()
                         tempFile.delete()

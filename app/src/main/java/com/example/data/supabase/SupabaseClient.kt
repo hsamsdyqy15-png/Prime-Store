@@ -331,6 +331,89 @@ object SupabaseClient {
         }
     }
 
+    fun getPublicUrl(path: String): String {
+        val cleanPath = path.trimStart('/')
+        return "$SUPABASE_URL/storage/v1/object/public/$BUCKET/$cleanPath"
+    }
+
+    suspend fun uploadStorageFile(
+        context: android.content.Context,
+        uri: android.net.Uri,
+        path: String,
+        mimeType: String,
+        accessToken: String?,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            val cleanPath = path.trimStart('/')
+            val contentResolver = context.contentResolver
+            val totalBytes = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+
+            val requestBody = object : okhttp3.RequestBody() {
+                override fun contentType() = mimeType.toMediaType()
+                override fun contentLength() = totalBytes
+                override fun writeTo(sink: okio.BufferedSink) {
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        val buffer = ByteArray(8192)
+                        var written = 0L
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            sink.write(buffer, 0, read)
+                            written += read
+                            onProgress(written, totalBytes)
+                        }
+                    }
+                }
+            }
+
+            val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/storage/v1/object/$BUCKET/$cleanPath")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", mimeType)
+                .post(requestBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                getPublicUrl(cleanPath)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun uploadStorageBytes(
+        bytes: ByteArray,
+        path: String,
+        mimeType: String,
+        accessToken: String?
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            val cleanPath = path.trimStart('/')
+            val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/storage/v1/object/$BUCKET/$cleanPath")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", mimeType)
+                .post(bytes.toRequestBody(mimeType.toMediaType()))
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                getPublicUrl(cleanPath)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun mapCategory(cat: String): AppCategory {
         return when (cat) {
             "games", "ألعاب" -> AppCategory.GAMES
