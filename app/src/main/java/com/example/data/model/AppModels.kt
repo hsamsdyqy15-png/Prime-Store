@@ -42,7 +42,10 @@ data class AppItem(
     val screenshotsColors: List<Long>,
     val isFeatured: Boolean = false,
     val isTrending: Boolean = false,
-    val isNew: Boolean = false
+    val isNew: Boolean = false,
+    val iconUrl: String? = null,
+    val fileUrl: String? = null,
+    val screenshotUrls: List<String> = emptyList()
 )
 
 data class DownloadItem(

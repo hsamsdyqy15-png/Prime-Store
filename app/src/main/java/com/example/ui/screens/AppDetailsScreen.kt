@@ -200,7 +200,8 @@ fun AppDetailsScreen(
                         emoji = app.iconEmoji,
                         accentColor = app.accentColor,
                         size = 96.dp,
-                        shape = RoundedCornerShape(24.dp)
+                        shape = RoundedCornerShape(24.dp),
+                        imageUrl = app.iconUrl
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -525,14 +526,27 @@ fun AppDetailsScreen(
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                itemsIndexed(app.screenshotsColors) { index, colorHex ->
-                                    ScreenshotThumbnail(
-                                        colorHex = colorHex,
-                                        index = index,
-                                        width = 160.dp,
-                                        height = 240.dp,
-                                        onClick = { onScreenshotClick(index) }
-                                    )
+                                if (app.screenshotUrls.isNotEmpty()) {
+                                    itemsIndexed(app.screenshotUrls) { index, shotUrl ->
+                                        ScreenshotThumbnail(
+                                            colorHex = 0xFF4C1D95,
+                                            index = index,
+                                            width = 160.dp,
+                                            height = 240.dp,
+                                            imageUrl = shotUrl,
+                                            onClick = { onScreenshotClick(index) }
+                                        )
+                                    }
+                                } else {
+                                    itemsIndexed(app.screenshotsColors) { index, colorHex ->
+                                        ScreenshotThumbnail(
+                                            colorHex = colorHex,
+                                            index = index,
+                                            width = 160.dp,
+                                            height = 240.dp,
+                                            onClick = { onScreenshotClick(index) }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -562,6 +576,7 @@ fun ScreenshotThumbnail(
     modifier: Modifier = Modifier,
     width: androidx.compose.ui.unit.Dp = 140.dp,
     height: androidx.compose.ui.unit.Dp = 95.dp,
+    imageUrl: String? = null,
     onClick: () -> Unit
 ) {
     Box(
@@ -578,17 +593,26 @@ fun ScreenshotThumbnail(
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "🎮",
-                fontSize = 24.sp
+        if (!imageUrl.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
-            Text(
-                text = "لقطة ${index + 1}",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "🎮",
+                    fontSize = 24.sp
+                )
+                Text(
+                    text = "لقطة ${index + 1}",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

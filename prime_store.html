@@ -1477,7 +1477,8 @@
     const SUPABASE_URL = "https://koloemxbxrenwqiajijo.supabase.co";
     const SUPABASE_KEY = "sb_publishable_Ol48kUBezAiwHSYhutTWbQ_ghTohVo6";
     const BUCKET = "store-files";
-    const ADMIN_EMAIL = "zaim9002@gmail.com";
+    const ADMIN_EMAILS = ['toprsidar2@gmail.com', 'zaim9002@gmail.com', 'ضع_بريدك_هنا'];
+    const checkIsAdmin = (email) => !!email && ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email.toLowerCase());
 
     // لفّ كل استخدام لـ localStorage بـ try/catch مع تخزين بديل في الذاكرة
     const memStorage = {};
@@ -2433,7 +2434,7 @@
         const settingsAdmin = document.getElementById('settings-admin-item');
         const authBtn = document.getElementById('settings-auth-btn');
 
-        const isAdmin = user && user.email && user.email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const isAdmin = user && user.email && checkIsAdmin(user.email);
 
         if (user) {
             const email = user.email || "user@store.com";
@@ -2522,9 +2523,9 @@
        24. لوحة تحكم الأدمن وإدارة التطبيقات والرفع إلى Bucket store-files
        ========================================================================== */
     function openAdminPanel() {
-        const isAdmin = currentUser && currentUser.email && currentUser.email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const isAdmin = currentUser && currentUser.email && checkIsAdmin(currentUser.email);
         if (!isAdmin) {
-            showToast("لوحة التحكم متاحة للأدمن فقط (" + ADMIN_EMAIL + ") 🔒");
+            showToast("لوحة التحكم متاحة للأدمن فقط 🔒");
             openAdminAuthModal();
             return;
         }
@@ -2903,7 +2904,7 @@
             return;
         }
 
-        if (email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+        if (!checkIsAdmin(email)) {
             showToast("عذراً، هذا الحساب ليس لديه صلاحيات الأدمن ❌");
             return;
         }

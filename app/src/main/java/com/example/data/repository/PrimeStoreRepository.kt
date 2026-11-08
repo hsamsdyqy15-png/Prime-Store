@@ -52,10 +52,32 @@ class PrimeStoreRepository(private val context: Context) {
 
     init {
         loadCatalog()
+        refreshFromSupabase()
         loadFavoritesFromPrefs()
         loadSearchHistoryFromPrefs()
         initDefaultDownloads()
         initDefaultReviews()
+    }
+
+    fun refreshFromSupabase() {
+        scope.launch {
+            try {
+                val remoteApps = com.example.data.supabase.SupabaseClient.fetchApps()
+                if (remoteApps.isNotEmpty()) {
+                    val current = _apps.value.toMutableList()
+                    val merged = mutableListOf<AppItem>()
+                    merged.addAll(remoteApps)
+                    for (local in current) {
+                        if (merged.none { it.id == local.id || it.name.equals(local.name, ignoreCase = true) }) {
+                            merged.add(local)
+                        }
+                    }
+                    _apps.value = merged
+                }
+            } catch (e: Exception) {
+                // Keep local catalog fallback
+            }
+        }
     }
 
     private fun loadFavoritesFromPrefs() {
@@ -193,6 +215,20 @@ class PrimeStoreRepository(private val context: Context) {
                 if (currentProgress >= 1.0f) {
                     activeDownloadJobs.remove(appId)
                     emitToast("تم تحميل وتثبيت ${app.nameAr} بنجاح! ✔")
+
+                    scope.launch {
+                        com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
+                    }
+
+                    if (!app.fileUrl.isNullOrBlank()) {
+                        try {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(app.fileUrl))
+                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            // Ignored if invalid intent
+                        }
+                    }
                     break
                 }
             }
@@ -250,14 +286,43 @@ class PrimeStoreRepository(private val context: Context) {
         }
     }
 
-    fun addApp(app: AppItem) {
+    fun addApp(app: AppItem, accessToken: String? = null) {
         val current = _apps.value.toMutableList()
         current.add(0, app)
         _apps.value = current
         emitToast("تمت إضافة تطبيق ${app.nameAr} بنجاح إلى المتجر! ✔")
+
+        scope.launch {
+            val categoryKey = when (app.category) {
+                AppCategory.GAMES -> "games"
+                AppCategory.APPS -> "apps"
+                AppCategory.POPULAR -> "trending"
+                AppCategory.ENTERTAINMENT -> "entertainment"
+                AppCategory.SPORTS -> "sports"
+                AppCategory.BUSINESS -> "business"
+                AppCategory.EDUCATION -> "education"
+                AppCategory.MUSIC -> "music"
+                AppCategory.VIDEO -> "video"
+                AppCategory.TOOLS -> "tools"
+                else -> "apps"
+            }
+            com.example.data.supabase.SupabaseClient.insertApp(
+                accessToken = accessToken,
+                name = app.nameAr,
+                category = categoryKey,
+                rating = app.rating,
+                size = app.size,
+                description = app.descriptionAr,
+                features = app.featuresAr,
+                iconUrl = app.iconUrl ?: app.iconEmoji,
+                fileUrl = app.fileUrl.orEmpty(),
+                screenshots = app.screenshotUrls
+            )
+            refreshFromSupabase()
+        }
     }
 
-    fun updateApp(app: AppItem) {
+    fun updateApp(app: AppItem, accessToken: String? = null) {
         val current = _apps.value.toMutableList()
         val index = current.indexOfFirst { it.id == app.id }
         if (index >= 0) {
@@ -265,15 +330,49 @@ class PrimeStoreRepository(private val context: Context) {
             _apps.value = current
             emitToast("تم تحديث بيانات ${app.nameAr} بنجاح! ✔")
         }
+        scope.launch {
+            val categoryKey = when (app.category) {
+                AppCategory.GAMES -> "games"
+                AppCategory.APPS -> "apps"
+                AppCategory.POPULAR -> "trending"
+                AppCategory.ENTERTAINMENT -> "entertainment"
+                AppCategory.SPORTS -> "sports"
+                AppCategory.BUSINESS -> "business"
+                AppCategory.EDUCATION -> "education"
+                AppCategory.MUSIC -> "music"
+                AppCategory.VIDEO -> "video"
+                AppCategory.TOOLS -> "tools"
+                else -> "apps"
+            }
+            com.example.data.supabase.SupabaseClient.updateApp(
+                accessToken = accessToken,
+                id = app.id,
+                name = app.nameAr,
+                category = categoryKey,
+                rating = app.rating,
+                size = app.size,
+                description = app.descriptionAr,
+                features = app.featuresAr,
+                iconUrl = app.iconUrl ?: app.iconEmoji,
+                fileUrl = app.fileUrl.orEmpty(),
+                screenshots = app.screenshotUrls
+            )
+            refreshFromSupabase()
+        }
     }
 
-    fun deleteApp(appId: String) {
+    fun deleteApp(appId: String, accessToken: String? = null) {
         val current = _apps.value.toMutableList()
         val app = current.find { it.id == appId }
         val name = app?.nameAr ?: app?.name ?: "التطبيق"
         current.removeAll { it.id == appId }
         _apps.value = current
         emitToast("تم حذف تطبيق $name من المتجر 🗑️")
+
+        scope.launch {
+            com.example.data.supabase.SupabaseClient.deleteApp(accessToken, appId)
+            refreshFromSupabase()
+        }
     }
 
     private fun formatBytes(bytes: Long): String {

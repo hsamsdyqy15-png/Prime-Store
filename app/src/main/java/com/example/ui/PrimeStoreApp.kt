@@ -119,6 +119,9 @@ fun PrimeStoreApp(
                                 },
                                 onCloseDrawer = {
                                     scope.launch { drawerState.close() }
+                                },
+                                onLoginClick = {
+                                    viewModel.openLoginDialog()
                                 }
                             )
                         }
@@ -278,6 +281,13 @@ fun PrimeStoreApp(
                                                 cacheSize = uiState.cacheSize,
                                                 userProfile = uiState.userProfile,
                                                 isAdmin = uiState.isAdmin,
+                                                showLoginDialog = uiState.showLoginDialog,
+                                                isAuthLoading = uiState.isAuthLoading,
+                                                authErrorMessage = uiState.authErrorMessage,
+                                                onOpenLogin = { viewModel.openLoginDialog() },
+                                                onCloseLogin = { viewModel.closeLoginDialog() },
+                                                onSignIn = { email, pass -> viewModel.signIn(email, pass) },
+                                                onSignUp = { email, pass -> viewModel.signUp(email, pass) },
                                                 onToggleLanguage = { viewModel.toggleLanguage() },
                                                 onToggleDarkMode = { viewModel.toggleDarkMode() },
                                                 onToggleNotifications = { viewModel.toggleNotifications() },

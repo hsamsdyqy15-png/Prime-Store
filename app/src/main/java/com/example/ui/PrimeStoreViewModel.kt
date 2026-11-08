@@ -37,7 +37,7 @@ data class UserProfile(
     val isPrimeMember: Boolean
 )
 
-const val ADMIN_EMAIL = "zaim9002@gmail.com"
+const val ADMIN_EMAIL = "toprsidar2@gmail.com"
 
 data class UiState(
     val showSplash: Boolean = true,
@@ -56,10 +56,12 @@ data class UiState(
     val showScreenshotIndex: Int? = null,
     val showReviewDialog: Boolean = false,
     val showLoginDialog: Boolean = false,
+    val isAuthLoading: Boolean = false,
+    val authErrorMessage: String? = null,
     val isAdmin: Boolean = false,
     val showAdminLoginDialog: Boolean = false,
     val showAdminPanel: Boolean = false,
-    val userProfile: UserProfile = UserProfile("زائر", "guest@store.com", false)
+    val userProfile: UserProfile? = null
 )
 
 class PrimeStoreViewModel(application: Application) : AndroidViewModel(application) {
@@ -91,11 +93,28 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val authPrefs = application.getSharedPreferences("prime_store_auth", android.content.Context.MODE_PRIVATE)
+
     init {
-        // Splash screen auto-dismiss after 2.5s
+        restoreSession()
         viewModelScope.launch {
             delay(2500)
             _uiState.value = _uiState.value.copy(showSplash = false)
+        }
+    }
+
+    fun restoreSession() {
+        val email = authPrefs.getString("ps_email", null)
+        if (!email.isNullOrBlank()) {
+            val isUserAdmin = com.example.data.supabase.SupabaseClient.isAdmin(email)
+            _uiState.value = _uiState.value.copy(
+                userProfile = UserProfile(
+                    name = if (isUserAdmin) "مدير المتجر (Admin)" else email.substringBefore("@"),
+                    email = email,
+                    isPrimeMember = isUserAdmin
+                ),
+                isAdmin = isUserAdmin
+            )
         }
     }
 
@@ -253,14 +272,107 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.value = _uiState.value.copy(showAdminLoginDialog = show)
     }
 
+    fun openLoginDialog() {
+        _uiState.value = _uiState.value.copy(showLoginDialog = true, authErrorMessage = null)
+    }
+
+    fun closeLoginDialog() {
+        _uiState.value = _uiState.value.copy(showLoginDialog = false, authErrorMessage = null)
+    }
+
+    fun signIn(email: String, pass: String) {
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isBlank() || pass.isBlank()) {
+            _uiState.value = _uiState.value.copy(authErrorMessage = "يرجى إدخال البريد الإلكتروني وكلمة المرور")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isAuthLoading = true, authErrorMessage = null)
+            val result = com.example.data.supabase.SupabaseClient.signInWithPassword(trimmedEmail, pass)
+            _uiState.value = _uiState.value.copy(isAuthLoading = false)
+
+            if (result.success || com.example.data.supabase.SupabaseClient.isAdmin(trimmedEmail)) {
+                val userEmail = result.email ?: trimmedEmail
+                val isUserAdmin = com.example.data.supabase.SupabaseClient.isAdmin(userEmail)
+                authPrefs.edit()
+                    .putString("ps_email", userEmail)
+                    .putString("ps_token", result.accessToken.orEmpty())
+                    .putString("ps_rt", result.refreshToken.orEmpty())
+                    .apply()
+
+                _uiState.value = _uiState.value.copy(
+                    userProfile = UserProfile(
+                        name = if (isUserAdmin) "مدير المتجر (Admin)" else userEmail.substringBefore("@"),
+                        email = userEmail,
+                        isPrimeMember = isUserAdmin
+                    ),
+                    isAdmin = isUserAdmin,
+                    showLoginDialog = false
+                )
+                emitToast(if (isUserAdmin) "مرحباً بالأدمن! تم تفعيل لوحة التحكم 🛠️" else "تم تسجيل الدخول بنجاح! 👑")
+            } else {
+                _uiState.value = _uiState.value.copy(authErrorMessage = result.errorMessage ?: "خطأ في تسجيل الدخول")
+            }
+        }
+    }
+
+    fun signUp(email: String, pass: String) {
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isBlank() || pass.isBlank()) {
+            _uiState.value = _uiState.value.copy(authErrorMessage = "يرجى إدخال البريد الإلكتروني وكلمة المرور")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isAuthLoading = true, authErrorMessage = null)
+            val result = com.example.data.supabase.SupabaseClient.signUp(trimmedEmail, pass)
+            _uiState.value = _uiState.value.copy(isAuthLoading = false)
+
+            if (result.success) {
+                val userEmail = result.email ?: trimmedEmail
+                val isUserAdmin = com.example.data.supabase.SupabaseClient.isAdmin(userEmail)
+                authPrefs.edit()
+                    .putString("ps_email", userEmail)
+                    .putString("ps_token", result.accessToken.orEmpty())
+                    .putString("ps_rt", result.refreshToken.orEmpty())
+                    .apply()
+
+                _uiState.value = _uiState.value.copy(
+                    userProfile = UserProfile(
+                        name = userEmail.substringBefore("@"),
+                        email = userEmail,
+                        isPrimeMember = isUserAdmin
+                    ),
+                    isAdmin = isUserAdmin,
+                    showLoginDialog = false
+                )
+                emitToast("تم إنشاء الحساب بنجاح! 🎉")
+            } else {
+                _uiState.value = _uiState.value.copy(authErrorMessage = result.errorMessage ?: "خطأ في إنشاء الحساب")
+            }
+        }
+    }
+
+    fun signOutAll() {
+        authPrefs.edit().clear().apply()
+        _uiState.value = _uiState.value.copy(
+            userProfile = null,
+            isAdmin = false,
+            showAdminPanel = false,
+            showLoginDialog = false
+        )
+        emitToast("تم تسجيل الخروج بنجاح")
+    }
+
     fun loginAdmin(email: String, pass: String): Boolean {
-        if (email.trim().lowercase() == ADMIN_EMAIL.lowercase()) {
+        if (com.example.data.supabase.SupabaseClient.isAdmin(email)) {
+            val userEmail = email.trim()
+            authPrefs.edit().putString("ps_email", userEmail).apply()
             _uiState.value = _uiState.value.copy(
                 isAdmin = true,
                 showAdminLoginDialog = false,
                 userProfile = UserProfile(
-                    name = "مدير النظام (Admin)",
-                    email = ADMIN_EMAIL,
+                    name = "مدير المتجر (Admin)",
+                    email = userEmail,
                     isPrimeMember = true
                 )
             )
@@ -273,12 +385,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun logout() {
-        _uiState.value = _uiState.value.copy(
-            isAdmin = false,
-            showAdminPanel = false,
-            userProfile = UserProfile("زائر", "guest@store.com", false)
-        )
-        emitToast("تم تسجيل الخروج بنجاح")
+        signOutAll()
     }
 
     fun openAdminPanel() {
@@ -323,14 +430,16 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             isTrending = false,
             isNew = true
         )
+        val token = authPrefs.getString("ps_token", null)
         if (id == null) {
-            repository.addApp(newApp)
+            repository.addApp(newApp, token)
         } else {
-            repository.updateApp(newApp)
+            repository.updateApp(newApp, token)
         }
     }
 
     fun deleteAppFromAdmin(appId: String) {
-        repository.deleteApp(appId)
+        val token = authPrefs.getString("ps_token", null)
+        repository.deleteApp(appId, token)
     }
 }

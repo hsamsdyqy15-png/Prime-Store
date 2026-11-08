@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -152,7 +153,8 @@ fun AppIconBadge(
     accentColor: Long,
     modifier: Modifier = Modifier,
     size: Dp = 56.dp,
-    shape: Shape = RoundedCornerShape(16.dp)
+    shape: Shape = RoundedCornerShape(16.dp),
+    imageUrl: String? = null
 ) {
     Box(
         modifier = modifier
@@ -169,10 +171,20 @@ fun AppIconBadge(
             .border(1.dp, Color(accentColor).copy(alpha = 0.5f), shape),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = emoji,
-            fontSize = (size.value * 0.45f).sp
-        )
+        val targetUrl = if (!imageUrl.isNullOrBlank()) imageUrl else if (emoji.startsWith("http")) emoji else null
+        if (targetUrl != null) {
+            coil.compose.AsyncImage(
+                model = targetUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(shape),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+        } else {
+            Text(
+                text = emoji,
+                fontSize = (size.value * 0.45f).sp
+            )
+        }
     }
 }
 

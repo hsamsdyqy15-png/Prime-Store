@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -76,8 +78,15 @@ fun SettingsScreen(
     isDarkMode: Boolean,
     notificationsEnabled: Boolean,
     cacheSize: String,
-    userProfile: UserProfile,
+    userProfile: UserProfile?,
     isAdmin: Boolean = false,
+    showLoginDialog: Boolean = false,
+    isAuthLoading: Boolean = false,
+    authErrorMessage: String? = null,
+    onOpenLogin: () -> Unit = {},
+    onCloseLogin: () -> Unit = {},
+    onSignIn: (email: String, pass: String) -> Unit = { _, _ -> },
+    onSignUp: (email: String, pass: String) -> Unit = { _, _ -> },
     onToggleLanguage: () -> Unit,
     onToggleDarkMode: () -> Unit,
     onToggleNotifications: () -> Unit,
@@ -101,6 +110,11 @@ fun SettingsScreen(
     // Admin login form state
     var adminEmailInput by remember { mutableStateOf("") }
     var adminPasswordInput by remember { mutableStateOf("") }
+
+    // User login dialog state
+    var userEmailInput by remember { mutableStateOf("") }
+    var userPasswordInput by remember { mutableStateOf("") }
+    var isSignUpMode by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -130,10 +144,16 @@ fun SettingsScreen(
         ) {
             // User Card
             item {
+                val isUserLoggedIn = userProfile != null
                 NeonCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
+                        .clickable {
+                            if (!isUserLoggedIn) {
+                                onOpenLogin()
+                            }
+                        }
                 ) {
                     Row(
                         modifier = Modifier
@@ -149,7 +169,7 @@ fun SettingsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (isAdmin) "👑" else userProfile.name.firstOrNull()?.toString() ?: "U",
+                                text = if (isUserLoggedIn) (if (isAdmin) "👑" else userProfile?.name?.firstOrNull()?.toString() ?: "U") else "👤",
                                 fontSize = 22.sp,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
@@ -160,35 +180,44 @@ fun SettingsScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (isAdmin) "مدير النظام (Admin) 🛠️" else userProfile.name,
+                                text = if (isUserLoggedIn) (if (isAdmin) "مدير النظام (Admin) 🛠️" else userProfile?.name.orEmpty()) else "غير مسجل الدخول",
                                 color = Color.White,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (isAdmin) "zaim9002@gmail.com" else userProfile.email,
+                                text = if (isUserLoggedIn) userProfile?.email.orEmpty() else "سجّل دخولك للمزامنة والميزات الكاملة",
                                 color = if (isAdmin) NeonPurplePrimary else PrimeTextSecondary,
                                 fontSize = 12.sp
                             )
                         }
 
-                        if (isAdmin || userProfile.isPrimeMember) {
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        Color(0xFF281347),
-                                        RoundedCornerShape(8.dp)
+                        if (isUserLoggedIn) {
+                            if (isAdmin || (userProfile?.isPrimeMember == true)) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            Color(0xFF281347),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .border(1.dp, NeonPurplePrimary, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (isAdmin) "أدمن" else "PRIME",
+                                        color = NeonPurplePrimary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black
                                     )
-                                    .border(1.dp, NeonPurplePrimary, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = if (isAdmin) "أدمن" else "PRIME",
-                                    color = NeonPurplePrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Black
-                                )
+                                }
                             }
+                        } else {
+                            Text(
+                                text = "دخول ›",
+                                color = NeonPurplePrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -316,24 +345,30 @@ fun SettingsScreen(
                     onClick = onRateApp
                 )
             }
-        }
 
-        // Bottom Action Button: "تسجيل الخروج" (Logout / Switch Account)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-        ) {
-            NeonGradientButton(
-                text = "تسجيل الخروج",
-                icon = Icons.AutoMirrored.Filled.ExitToApp,
-                testTag = "logout_button",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onLogoutClick
-            )
+            // 8. زر الإجراء: تسجيل الدخول أو تسجيل الخروج (مدرج داخل القائمة لضمان التمرير الكامل دون قص)
+            item {
+                Spacer(modifier = Modifier.height(14.dp))
+                if (userProfile == null) {
+                    NeonGradientButton(
+                        text = "تسجيل الدخول",
+                        icon = Icons.Default.Login,
+                        testTag = "login_button",
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onOpenLogin
+                    )
+                } else {
+                    NeonGradientButton(
+                        text = "تسجيل الخروج",
+                        icon = Icons.AutoMirrored.Filled.ExitToApp,
+                        testTag = "logout_button",
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onLogoutClick
+                    )
+                }
+                Spacer(modifier = Modifier.height(30.dp))
+            }
         }
-
-        Spacer(modifier = Modifier.height(70.dp))
 
         // About Dialog with Secret 7-Tap on Version
         if (showAboutDialog) {
@@ -502,6 +537,131 @@ fun SettingsScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showAdminLoginDialog = false }) {
+                        Text("إلغاء", color = PrimeTextMuted)
+                    }
+                }
+            )
+        }
+
+        // User Auth Dialog (Supabase Auth - Login / Sign Up)
+        if (showLoginDialog) {
+            AlertDialog(
+                onDismissRequest = { onCloseLogin() },
+                containerColor = Color(0xFF16101F),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "👑", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isSignUpMode) "إنشاء حساب جديد" else "تسجيل الدخول",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = if (isSignUpMode) "أنشئ حسابك في Prime Store للوصول السحابي وحفظ مفضلاتك:" else "أدخل بريدك وكلمة المرور لتسجيل الدخول إلى حسابك:",
+                            color = PrimeTextSecondary,
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        OutlinedTextField(
+                            value = userEmailInput,
+                            onValueChange = { userEmailInput = it },
+                            label = { Text("البريد الإلكتروني", fontSize = 11.sp) },
+                            placeholder = { Text("toprsidar2@gmail.com", fontSize = 11.sp) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = NeonPurplePrimary,
+                                unfocusedBorderColor = NeonBorder,
+                                focusedLabelColor = NeonPurplePrimary,
+                                unfocusedLabelColor = PrimeTextMuted,
+                                focusedContainerColor = Color(0xFF140D24),
+                                unfocusedContainerColor = Color(0xFF140D24)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = userPasswordInput,
+                            onValueChange = { userPasswordInput = it },
+                            label = { Text("كلمة المرور", fontSize = 11.sp) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = NeonPurplePrimary,
+                                unfocusedBorderColor = NeonBorder,
+                                focusedLabelColor = NeonPurplePrimary,
+                                unfocusedLabelColor = PrimeTextMuted,
+                                focusedContainerColor = Color(0xFF140D24),
+                                unfocusedContainerColor = Color(0xFF140D24)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (!authErrorMessage.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = authErrorMessage,
+                                color = Color(0xFFEF4444),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        if (isAuthLoading) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = NeonPurplePrimary, modifier = Modifier.size(24.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            TextButton(onClick = { isSignUpMode = !isSignUpMode }) {
+                                Text(
+                                    text = if (isSignUpMode) "لديك حساب بالفعل؟ تسجيل الدخول" else "ليس لديك حساب؟ إنشاء حساب جديد",
+                                    color = NeonPurplePrimary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (isSignUpMode) {
+                                onSignUp(userEmailInput, userPasswordInput)
+                            } else {
+                                onSignIn(userEmailInput, userPasswordInput)
+                            }
+                        },
+                        enabled = !isAuthLoading,
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                    ) {
+                        Text(if (isSignUpMode) "إنشاء الحساب" else "تسجيل الدخول", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { onCloseLogin() }) {
                         Text("إلغاء", color = PrimeTextMuted)
                     }
                 }

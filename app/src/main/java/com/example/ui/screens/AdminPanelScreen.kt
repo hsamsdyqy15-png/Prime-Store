@@ -91,6 +91,13 @@ fun AdminPanelScreen(
     var fileUrl by remember { mutableStateOf("") }
     var screenshotsStr by remember { mutableStateOf("") }
     var appToDelete by remember { mutableStateOf<AppItem?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(adminEmail) {
+        if (!com.example.data.supabase.SupabaseClient.isAdmin(adminEmail)) {
+            onBackClick()
+        }
+    }
 
     fun populateForEdit(app: AppItem) {
         editingAppId = app.id
@@ -100,9 +107,9 @@ fun AdminPanelScreen(
         sizeStr = app.size
         description = app.descriptionAr
         featuresStr = app.featuresAr.joinToString("\n")
-        iconUrl = app.iconEmoji
-        fileUrl = ""
-        screenshotsStr = ""
+        iconUrl = app.iconUrl ?: app.iconEmoji
+        fileUrl = app.fileUrl.orEmpty()
+        screenshotsStr = app.screenshotUrls.joinToString("\n")
     }
 
     fun clearForm() {
@@ -320,10 +327,11 @@ fun AdminPanelScreen(
 
                         // Submit Button
                         NeonGradientButton(
-                            text = if (editingAppId != null) "تحديث التطبيق في المتجر ✔" else "حفظ التطبيق في المتجر 💾",
+                            text = if (isSaving) "جاري الرفع والحفظ..." else (if (editingAppId != null) "تحديث التطبيق في المتجر ✔" else "حفظ التطبيق في المتجر 💾"),
                             icon = Icons.Filled.Add,
                             onClick = {
-                                if (name.isBlank()) return@NeonGradientButton
+                                if (name.isBlank() || isSaving) return@NeonGradientButton
+                                isSaving = true
                                 val rating = ratingStr.toFloatOrNull() ?: 4.5f
                                 val features = featuresStr.split("\n").map { it.trim() }.filter { it.isNotBlank() }
                                 val screenshots = screenshotsStr.split("\n").map { it.trim() }.filter { it.isNotBlank() }
@@ -340,6 +348,7 @@ fun AdminPanelScreen(
                                     screenshots
                                 )
                                 clearForm()
+                                isSaving = false
                             },
                             modifier = Modifier.fillMaxWidth()
                         )

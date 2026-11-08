@@ -58,11 +58,12 @@ import com.example.ui.theme.PrimeTextSecondary
 
 @Composable
 fun NavigationDrawerContent(
-    userProfile: UserProfile,
+    userProfile: UserProfile?,
     currentTab: MainTab,
     onTabSelected: (MainTab) -> Unit,
     onCategorySelected: (AppCategory) -> Unit,
     onCloseDrawer: () -> Unit,
+    onLoginClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -115,6 +116,12 @@ fun NavigationDrawerContent(
                 .clip(RoundedCornerShape(18.dp))
                 .background(PrimeCardBackground)
                 .border(1.dp, NeonBorderGlow, RoundedCornerShape(18.dp))
+                .clickable {
+                    if (userProfile == null) {
+                        onCloseDrawer()
+                        onLoginClick()
+                    }
+                }
                 .padding(14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -125,22 +132,29 @@ fun NavigationDrawerContent(
                         .background(PrimeGradientBrush),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "ع", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text(
+                        text = if (userProfile != null) (userProfile.name.firstOrNull()?.toString() ?: "U") else "👤",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = userProfile.name,
+                            text = userProfile?.name ?: "تسجيل الدخول",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "✓", color = NeonPurplePrimary, fontSize = 12.sp)
+                        if (userProfile != null) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "✓", color = NeonPurplePrimary, fontSize = 12.sp)
+                        }
                     }
                     Text(
-                        text = userProfile.email,
+                        text = userProfile?.email ?: "انقر لتسجيل الدخول أو إنشاء حساب",
                         color = PrimeTextMuted,
                         fontSize = 11.sp
                     )
