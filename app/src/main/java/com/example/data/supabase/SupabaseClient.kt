@@ -308,9 +308,13 @@ object SupabaseClient {
 
     suspend fun incrementDownloads(appId: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val idNum = appId.toLongOrNull() ?: return@withContext false
             val payload = JSONObject().apply {
-                put("p_app_id", idNum)
+                val num = appId.toLongOrNull()
+                if (num != null) {
+                    put("p_app_id", num)
+                } else {
+                    put("p_app_id", appId)
+                }
             }
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/rpc/increment_downloads")

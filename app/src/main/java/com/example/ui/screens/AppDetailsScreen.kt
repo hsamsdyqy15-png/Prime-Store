@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AppItem
 import com.example.data.model.DownloadItem
+import com.example.data.model.DownloadStatus
 import com.example.data.model.ReviewItem
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
@@ -100,6 +101,7 @@ fun AppDetailsScreen(
     onToggleFavorite: () -> Unit,
     onDownloadClick: () -> Unit,
     onCancelDownload: () -> Unit,
+    onInstallClick: () -> Unit = onDownloadClick,
     onAddReview: (Int, String) -> Unit,
     onScreenshotClick: (Int) -> Unit,
     onShareClick: () -> Unit,
@@ -265,8 +267,8 @@ fun AppDetailsScreen(
                     Spacer(modifier = Modifier.height(20.dp))
 
                     // Download Action Button / Progress
-                    if (downloadItem != null && !downloadItem.isCompleted) {
-                        // In-progress downloading state
+                    if (downloadItem != null && downloadItem.status == DownloadStatus.DOWNLOADING) {
+                        // In-progress downloading state with progress, speed, and cancel
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -314,16 +316,41 @@ fun AppDetailsScreen(
                                 trackColor = Color(0xFF3B2456)
                             )
                         }
-                    } else if (downloadItem != null && downloadItem.isCompleted) {
-                        // Completed state
+                    } else if (downloadItem != null && downloadItem.status == DownloadStatus.FAILED) {
+                        // Failed state with retry button
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color(0xFF2D141E))
+                                .border(1.dp, Color(0xFFEF4444), RoundedCornerShape(18.dp))
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = downloadItem.errorMessage ?: "فشل التحميل، يرجى المحاولة مرة أخرى",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            NeonGradientButton(
+                                text = "إعادة المحاولة 🔄",
+                                icon = Icons.Filled.Download,
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onDownloadClick
+                            )
+                        }
+                    } else if (downloadItem != null && (downloadItem.isCompleted || downloadItem.status == DownloadStatus.COMPLETED)) {
+                        // Completed state -> Direct Install button
                         NeonGradientButton(
-                            text = "فتح اللعبة (مثبت ✔)",
-                            icon = Icons.Filled.OpenInNew,
+                            text = "تثبيت التطبيق 📦",
+                            icon = Icons.Filled.CheckCircle,
                             modifier = Modifier.fillMaxWidth(),
-                            onClick = onDownloadClick
+                            onClick = onInstallClick
                         )
                     } else {
-                        // Ready to download button matching screenshot
+                        // Ready to download button
                         NeonGradientButton(
                             text = "تحميل الآن  (${app.size})",
                             icon = Icons.Filled.Download,

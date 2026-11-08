@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.DownloadItem
+import com.example.data.model.DownloadStatus
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.components.NeonGradientButton
@@ -51,6 +52,7 @@ import com.example.ui.theme.NeonPurpleDeep
 import com.example.ui.theme.NeonPurplePrimary
 import com.example.ui.theme.NeonPurpleSecondary
 import com.example.ui.theme.PrimeCardBackground
+import com.example.ui.theme.PrimeGradientBrush
 import com.example.ui.theme.PrimeTextMuted
 import com.example.ui.theme.PrimeTextSecondary
 
@@ -64,6 +66,7 @@ fun DownloadsScreen(
     onCancelDownload: (String) -> Unit,
     onClearAll: () -> Unit,
     onAppClick: (String) -> Unit,
+    onInstall: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val activeDownloads = remember(downloads) { downloads.filter { !it.isCompleted } }
@@ -175,8 +178,8 @@ fun DownloadsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(displayedList) { item ->
-                    if (!item.isCompleted) {
-                        // In Progress Item (e.g. Clash of Clans 72%)
+                    if (!item.isCompleted && item.status != DownloadStatus.COMPLETED) {
+                        // In Progress Item
                         ActiveDownloadCard(
                             item = item,
                             onPause = { onPauseDownload(item.appId) },
@@ -185,10 +188,11 @@ fun DownloadsScreen(
                             onClick = { onAppClick(item.appId) }
                         )
                     } else {
-                        // Completed Item (e.g. Subway Surfers, WhatsApp)
+                        // Completed Item with Install button
                         CompletedDownloadCard(
                             item = item,
-                            onClick = { onAppClick(item.appId) }
+                            onClick = { onAppClick(item.appId) },
+                            onInstall = { onInstall(item.appId) }
                         )
                     }
                 }
@@ -259,16 +263,34 @@ fun ActiveDownloadCard(
                         )
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = if (item.isPaused) onResume else onPause,
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (item.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                    contentDescription = if (item.isPaused) "استئناف" else "إيقاف مؤقت",
-                                    tint = NeonPurplePrimary,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                            if (item.status == DownloadStatus.FAILED) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(PrimeGradientBrush)
+                                        .clickable { onResume() }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = "إعادة 🔄",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                            } else {
+                                IconButton(
+                                    onClick = if (item.isPaused) onResume else onPause,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (item.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                        contentDescription = if (item.isPaused) "استئناف" else "إيقاف مؤقت",
+                                        tint = NeonPurplePrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                             IconButton(
                                 onClick = onCancel,
@@ -286,40 +308,48 @@ fun ActiveDownloadCard(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Progress bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(Color(0xFF281C38))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(item.progress)
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(NeonPurplePrimary)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    if (item.status == DownloadStatus.FAILED) {
                         Text(
-                            text = "${(item.progress * 100).toInt()}%",
-                            color = NeonPurplePrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "${item.speed} • ${item.downloadedSize}",
-                            color = PrimeTextSecondary,
+                            text = item.errorMessage ?: "فشل التحميل، اضغط إعادة للمحاولة",
+                            color = Color(0xFFFCA5A5),
                             fontSize = 11.sp
                         )
+                    } else {
+                        // Progress bar
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color(0xFF281C38))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(item.progress.coerceIn(0.01f, 1.0f))
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(NeonPurplePrimary)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "${(item.progress * 100).toInt()}%",
+                                color = NeonPurplePrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "${item.speed} • ${item.downloadedSize}",
+                                color = PrimeTextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                 }
             }
@@ -330,7 +360,8 @@ fun ActiveDownloadCard(
 @Composable
 fun CompletedDownloadCard(
     item: DownloadItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onInstall: () -> Unit = {}
 ) {
     NeonCard(
         modifier = Modifier.fillMaxWidth(),
@@ -365,20 +396,37 @@ fun CompletedDownloadCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "مكتمل",
+                        text = "مكتمل • ${item.totalSize}",
                         color = PrimeTextSecondary,
                         fontSize = 12.sp
                     )
                 }
             }
 
-            // Green Checkmark icon matching Screenshot 5
-            Icon(
-                imageVector = Icons.Filled.CheckCircle,
-                contentDescription = "مكتمل",
-                tint = AccentGreen,
-                modifier = Modifier.size(24.dp)
-            )
+            // Direct "تثبيت" Install button with NeonGradient
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(PrimeGradientBrush)
+                    .clickable { onInstall() }
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "تثبيت",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "تثبيت",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
         }
     }
 }

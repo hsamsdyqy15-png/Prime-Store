@@ -61,6 +61,8 @@ data class UiState(
     val isAdmin: Boolean = false,
     val showAdminLoginDialog: Boolean = false,
     val showAdminPanel: Boolean = false,
+    val showInstallPermissionDialog: Boolean = false,
+    val pendingInstallAppId: String? = null,
     val userProfile: UserProfile? = null
 )
 
@@ -97,6 +99,17 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         restoreSession()
+        repository.onApkDownloadCompleted = { appId, apkFile ->
+            val app = getApplication<Application>()
+            if (com.example.data.installer.ApkInstaller.canRequestPackageInstalls(app)) {
+                com.example.data.installer.ApkInstaller.installApk(app, apkFile)
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    showInstallPermissionDialog = true,
+                    pendingInstallAppId = appId
+                )
+            }
+        }
         viewModelScope.launch {
             delay(2500)
             _uiState.value = _uiState.value.copy(showSplash = false)
@@ -267,6 +280,48 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun removeSearchHistory(query: String) = repository.removeSearchQuery(query)
     fun clearSearchHistory() = repository.clearSearchHistory()
     fun emitToast(msg: String) = repository.emitToast(msg)
+
+    fun installDownloadedApk(appId: String, context: android.content.Context) {
+        val file = com.example.data.installer.ApkInstaller.getApkFile(context, appId)
+        if (!file.exists() || file.length() == 0L) {
+            emitToast("الملف غير متوفر حالياً، جاري بدء التحميل")
+            startDownload(appId)
+            return
+        }
+
+        if (com.example.data.installer.ApkInstaller.canRequestPackageInstalls(context)) {
+            com.example.data.installer.ApkInstaller.installApk(context, file)
+            viewModelScope.launch {
+                com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
+            }
+        } else {
+            _uiState.value = _uiState.value.copy(
+                showInstallPermissionDialog = true,
+                pendingInstallAppId = appId
+            )
+        }
+    }
+
+    fun dismissInstallPermissionDialog() {
+        _uiState.value = _uiState.value.copy(showInstallPermissionDialog = false)
+    }
+
+    fun onPermissionGrantedResumeInstall(context: android.content.Context) {
+        val appId = _uiState.value.pendingInstallAppId ?: return
+        if (com.example.data.installer.ApkInstaller.canRequestPackageInstalls(context)) {
+            val file = com.example.data.installer.ApkInstaller.getApkFile(context, appId)
+            if (file.exists() && file.length() > 0) {
+                com.example.data.installer.ApkInstaller.installApk(context, file)
+                viewModelScope.launch {
+                    com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
+                }
+            }
+            _uiState.value = _uiState.value.copy(
+                pendingInstallAppId = null,
+                showInstallPermissionDialog = false
+            )
+        }
+    }
 
     fun showAdminLogin(show: Boolean) {
         _uiState.value = _uiState.value.copy(showAdminLoginDialog = show)

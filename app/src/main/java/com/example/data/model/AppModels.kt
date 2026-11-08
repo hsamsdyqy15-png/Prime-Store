@@ -48,6 +48,14 @@ data class AppItem(
     val screenshotUrls: List<String> = emptyList()
 )
 
+enum class DownloadStatus {
+    DOWNLOADING,
+    COMPLETED,
+    FAILED,
+    CANCELLED,
+    PAUSED
+}
+
 data class DownloadItem(
     val appId: String,
     val appName: String,
@@ -58,7 +66,10 @@ data class DownloadItem(
     val downloadedSize: String,
     val totalSize: String,
     val isCompleted: Boolean,
-    val isPaused: Boolean = false
+    val isPaused: Boolean = false,
+    val status: DownloadStatus = if (isCompleted) DownloadStatus.COMPLETED else (if (isPaused) DownloadStatus.PAUSED else DownloadStatus.DOWNLOADING),
+    val apkFilePath: String? = null,
+    val errorMessage: String? = null
 )
 
 data class ReviewItem(

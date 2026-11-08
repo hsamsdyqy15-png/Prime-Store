@@ -18,6 +18,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.example.data.download.DownloadService
+import com.example.data.installer.ApkInstaller
+import com.example.data.model.DownloadStatus
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 class PrimeStoreRepository(private val context: Context) {
@@ -47,6 +57,8 @@ class PrimeStoreRepository(private val context: Context) {
 
     private val _toastEvents = MutableSharedFlow<String>()
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
+
+    var onApkDownloadCompleted: ((appId: String, apkFile: File) -> Unit)? = null
 
     private val activeDownloadJobs = mutableMapOf<String, Job>()
 
@@ -145,8 +157,31 @@ class PrimeStoreRepository(private val context: Context) {
         val currentList = _downloads.value.toMutableList()
         val existingIndex = currentList.indexOfFirst { it.appId == appId }
 
-        if (existingIndex >= 0 && currentList[existingIndex].isCompleted) {
-            emitToast("${app.nameAr} مثبت بالفعل")
+        val targetFile = ApkInstaller.getApkFile(context, appId)
+        if (targetFile.exists() && targetFile.length() > 0) {
+            val completedItem = DownloadItem(
+                appId = app.id,
+                appName = app.nameAr.ifBlank { app.name },
+                appIcon = app.iconEmoji,
+                accentColor = app.accentColor,
+                progress = 1.0f,
+                speed = "0 KB/s",
+                downloadedSize = formatBytes(targetFile.length()),
+                totalSize = formatBytes(targetFile.length()),
+                isCompleted = true,
+                isPaused = false,
+                status = DownloadStatus.COMPLETED,
+                apkFilePath = targetFile.absolutePath,
+                errorMessage = null
+            )
+            if (existingIndex >= 0) {
+                currentList[existingIndex] = completedItem
+            } else {
+                currentList.add(0, completedItem)
+            }
+            _downloads.value = currentList
+            emitToast("${app.nameAr} محمل بالفعل وجاهز للتثبيت ✔")
+            onApkDownloadCompleted?.invoke(appId, targetFile)
             return
         }
 
@@ -155,82 +190,209 @@ class PrimeStoreRepository(private val context: Context) {
             return
         }
 
-        val item = if (existingIndex >= 0) {
-            currentList[existingIndex].copy(isPaused = false)
-        } else {
-            DownloadItem(
+        val rawUrl = app.fileUrl?.trim()
+        val isDirectApk = !rawUrl.isNullOrBlank() &&
+                (rawUrl.startsWith("http://", ignoreCase = true) || rawUrl.startsWith("https://", ignoreCase = true)) &&
+                (rawUrl.substringBefore("?").endsWith(".apk", ignoreCase = true) || rawUrl.contains(".apk", ignoreCase = true))
+
+        if (!isDirectApk) {
+            emitToast("رابط التحميل غير مباشر، أخبر الأدمن")
+            val failedItem = DownloadItem(
                 appId = app.id,
-                appName = app.name,
+                appName = app.nameAr.ifBlank { app.name },
                 appIcon = app.iconEmoji,
                 accentColor = app.accentColor,
-                progress = 0.05f,
-                speed = "5.8 MB/s",
-                downloadedSize = "6.0 MB",
+                progress = 0f,
+                speed = "فشل",
+                downloadedSize = "0 MB",
                 totalSize = app.size,
                 isCompleted = false,
-                isPaused = false
+                isPaused = false,
+                status = DownloadStatus.FAILED,
+                apkFilePath = null,
+                errorMessage = "رابط التحميل غير مباشر، أخبر الأدمن"
             )
+            if (existingIndex >= 0) {
+                currentList[existingIndex] = failedItem
+            } else {
+                currentList.add(0, failedItem)
+            }
+            _downloads.value = currentList
+            return
         }
 
+        val directUrl = rawUrl!!
+        val appDisplayName = app.nameAr.ifBlank { app.name }
+
+        val startingItem = DownloadItem(
+            appId = app.id,
+            appName = appDisplayName,
+            appIcon = app.iconEmoji,
+            accentColor = app.accentColor,
+            progress = 0.01f,
+            speed = "جاري البدء...",
+            downloadedSize = "0 MB",
+            totalSize = app.size,
+            isCompleted = false,
+            isPaused = false,
+            status = DownloadStatus.DOWNLOADING,
+            apkFilePath = null,
+            errorMessage = null
+        )
+
         if (existingIndex >= 0) {
-            currentList[existingIndex] = item
+            currentList[existingIndex] = startingItem
         } else {
-            currentList.add(0, item)
+            currentList.add(0, startingItem)
         }
         _downloads.value = currentList
 
-        emitToast("بدأ تحميل ${app.nameAr}")
+        emitToast("بدأ تحميل $appDisplayName")
+        DownloadService.start(context, appDisplayName)
 
-        val job = scope.launch {
-            var currentProgress = item.progress
-            val totalBytes = app.sizeBytes.coerceAtLeast(50_000_000L)
+        val job = scope.launch(Dispatchers.IO) {
+            val tempFile = File(targetFile.parentFile, "${appId}.apk.part")
+            if (tempFile.exists()) tempFile.delete()
+            var response: okhttp3.Response? = null
 
-            while (currentProgress < 1.0f) {
-                delay(400)
-                val checkItem = _downloads.value.find { it.appId == appId }
-                if (checkItem == null || checkItem.isPaused) {
-                    break
+            try {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .build()
+
+                val request = Request.Builder()
+                    .url(directUrl)
+                    .header("User-Agent", "PrimeStore/1.0 (Android)")
+                    .build()
+
+                response = client.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    throw IOException("HTTP ${response.code}: ${response.message}")
                 }
 
-                val speedMbps = Random.nextDouble(4.2, 7.8)
-                val speedText = String.format("%.1f MB/s", speedMbps)
-                val increment = (speedMbps * 0.4 * 1024 * 1024) / totalBytes
-                currentProgress = (currentProgress + increment.toFloat()).coerceAtMost(1.0f)
+                val responseBody = response.body ?: throw IOException("الملف فارغ أو غير متاح")
+                val contentLength = responseBody.contentLength()
+                val totalBytes = if (contentLength > 0) contentLength else app.sizeBytes.coerceAtLeast(10_000_000L)
 
-                val downloadedBytes = (currentProgress * totalBytes).toLong()
-                val downloadedText = formatBytes(downloadedBytes)
+                val inputStream = responseBody.byteStream()
+                val outputStream = FileOutputStream(tempFile)
 
-                val updatedList = _downloads.value.map { d ->
+                val buffer = ByteArray(16 * 1024)
+                var bytesReadSoFar: Long = 0
+                var lastUpdateTime = System.currentTimeMillis()
+                var lastUpdateBytes: Long = 0
+                var read: Int
+
+                while (inputStream.read(buffer).also { read = it } != -1) {
+                    if (!kotlinx.coroutines.isActive) {
+                        outputStream.close()
+                        inputStream.close()
+                        tempFile.delete()
+                        DownloadService.stop(context)
+                        return@launch
+                    }
+
+                    outputStream.write(buffer, 0, read)
+                    bytesReadSoFar += read
+
+                    val now = System.currentTimeMillis()
+                    val timeDelta = now - lastUpdateTime
+                    if (timeDelta >= 350) {
+                        val bytesDelta = bytesReadSoFar - lastUpdateBytes
+                        val speedMBps = if (timeDelta > 0) {
+                            (bytesDelta.toDouble() / (1024.0 * 1024.0)) / (timeDelta.toDouble() / 1000.0)
+                        } else 0.0
+                        val speedText = String.format(Locale.US, "%.1f MB/s", speedMBps)
+                        val progress = (bytesReadSoFar.toFloat() / totalBytes).coerceIn(0f, 0.99f)
+                        val downloadedText = formatBytes(bytesReadSoFar)
+                        val totalText = formatBytes(totalBytes)
+
+                        _downloads.value = _downloads.value.map { d ->
+                            if (d.appId == appId) {
+                                d.copy(
+                                    progress = progress,
+                                    speed = speedText,
+                                    downloadedSize = downloadedText,
+                                    totalSize = totalText,
+                                    status = DownloadStatus.DOWNLOADING,
+                                    isPaused = false
+                                )
+                            } else d
+                        }
+
+                        DownloadService.updateProgress(
+                            context,
+                            appDisplayName,
+                            (progress * 100).toInt(),
+                            speedText
+                        )
+
+                        lastUpdateTime = now
+                        lastUpdateBytes = bytesReadSoFar
+                    }
+                }
+
+                outputStream.flush()
+                outputStream.close()
+                inputStream.close()
+
+                if (targetFile.exists()) targetFile.delete()
+                tempFile.renameTo(targetFile)
+
+                val finalTotalText = formatBytes(bytesReadSoFar)
+                _downloads.value = _downloads.value.map { d ->
                     if (d.appId == appId) {
                         d.copy(
-                            progress = currentProgress,
-                            speed = speedText,
-                            downloadedSize = downloadedText,
-                            isCompleted = currentProgress >= 1.0f
+                            progress = 1.0f,
+                            speed = "0 KB/s",
+                            downloadedSize = finalTotalText,
+                            totalSize = finalTotalText,
+                            isCompleted = true,
+                            status = DownloadStatus.COMPLETED,
+                            apkFilePath = targetFile.absolutePath,
+                            errorMessage = null
                         )
                     } else d
                 }
-                _downloads.value = updatedList
 
-                if (currentProgress >= 1.0f) {
-                    activeDownloadJobs.remove(appId)
-                    emitToast("تم تحميل وتثبيت ${app.nameAr} بنجاح! ✔")
+                DownloadService.stop(context)
+                activeDownloadJobs.remove(appId)
 
-                    scope.launch {
-                        com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
-                    }
+                emitToast("اكتمل تحميل $appDisplayName، جاري فتح التثبيت...")
 
-                    if (!app.fileUrl.isNullOrBlank()) {
-                        try {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(app.fileUrl))
-                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            // Ignored if invalid intent
-                        }
-                    }
-                    break
+                scope.launch {
+                    com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
                 }
+
+                scope.launch(Dispatchers.Main) {
+                    onApkDownloadCompleted?.invoke(appId, targetFile)
+                }
+
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) {
+                    tempFile.delete()
+                    DownloadService.stop(context)
+                    return@launch
+                }
+                tempFile.delete()
+                DownloadService.stop(context)
+                activeDownloadJobs.remove(appId)
+                val errorMsg = e.message ?: "فشل التحميل"
+                _downloads.value = _downloads.value.map { d ->
+                    if (d.appId == appId) {
+                        d.copy(
+                            status = DownloadStatus.FAILED,
+                            speed = "فشل",
+                            errorMessage = errorMsg
+                        )
+                    } else d
+                }
+                emitToast("فشل تحميل $appDisplayName: $errorMsg")
+            } finally {
+                response?.close()
             }
         }
         activeDownloadJobs[appId] = job
@@ -239,8 +401,9 @@ class PrimeStoreRepository(private val context: Context) {
     fun pauseDownload(appId: String) {
         activeDownloadJobs[appId]?.cancel()
         activeDownloadJobs.remove(appId)
+        DownloadService.stop(context)
         _downloads.value = _downloads.value.map {
-            if (it.appId == appId) it.copy(isPaused = true, speed = "متوقف") else it
+            if (it.appId == appId) it.copy(isPaused = true, status = DownloadStatus.PAUSED, speed = "متوقف") else it
         }
         emitToast("تم إيقاف التحميل مؤقتاً")
     }
@@ -252,6 +415,15 @@ class PrimeStoreRepository(private val context: Context) {
     fun cancelDownload(appId: String) {
         activeDownloadJobs[appId]?.cancel()
         activeDownloadJobs.remove(appId)
+        DownloadService.stop(context)
+        try {
+            val targetFile = ApkInstaller.getApkFile(context, appId)
+            val tempFile = File(targetFile.parentFile, "${appId}.apk.part")
+            if (tempFile.exists()) tempFile.delete()
+            if (targetFile.exists()) targetFile.delete()
+        } catch (e: Exception) {
+            // Ignored
+        }
         _downloads.value = _downloads.value.filterNot { it.appId == appId }
         emitToast("تم إلغاء التحميل")
     }
@@ -259,6 +431,7 @@ class PrimeStoreRepository(private val context: Context) {
     fun clearAllDownloads() {
         activeDownloadJobs.values.forEach { it.cancel() }
         activeDownloadJobs.clear()
+        DownloadService.stop(context)
         _downloads.value = emptyList()
         emitToast("تم مسح جميع التحميلات")
     }
