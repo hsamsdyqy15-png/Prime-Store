@@ -112,6 +112,18 @@ fun AppDetailsScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showReviewModal by remember { mutableStateOf(false) }
 
+    android.util.Log.d(
+        "PrimeStore",
+        "AppDetailsScreen opened -> id: ${app.id}, name: ${app.name}, icon_url: ${app.iconUrl}, file_url: ${app.fileUrl}, screenshots: ${app.screenshotUrls}"
+    )
+
+    androidx.compose.runtime.LaunchedEffect(app.id) {
+        android.util.Log.d(
+            "PrimeStore",
+            "AppDetailsScreen LaunchedEffect -> id: ${app.id}, name: ${app.name}, icon_url: ${app.iconUrl}, file_url: ${app.fileUrl}, screenshots: ${app.screenshotUrls}"
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -464,12 +476,23 @@ fun AppDetailsScreen(
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                itemsIndexed(app.screenshotsColors) { index, colorHex ->
-                                    ScreenshotThumbnail(
-                                        colorHex = colorHex,
-                                        index = index,
-                                        onClick = { onScreenshotClick(index) }
-                                    )
+                                if (app.screenshotUrls.isNotEmpty()) {
+                                    itemsIndexed(app.screenshotUrls) { index, shotUrl ->
+                                        ScreenshotThumbnail(
+                                            colorHex = 0xFF4C1D95,
+                                            index = index,
+                                            imageUrl = shotUrl,
+                                            onClick = { onScreenshotClick(index) }
+                                        )
+                                    }
+                                } else {
+                                    itemsIndexed(app.screenshotsColors) { index, colorHex ->
+                                        ScreenshotThumbnail(
+                                            colorHex = colorHex,
+                                            index = index,
+                                            onClick = { onScreenshotClick(index) }
+                                        )
+                                    }
                                 }
                             }
                         }

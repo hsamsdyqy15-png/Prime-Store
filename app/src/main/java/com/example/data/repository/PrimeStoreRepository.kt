@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import com.example.data.download.DownloadService
 import com.example.data.installer.ApkInstaller
 import com.example.data.model.DownloadStatus
+import com.example.data.supabase.SupabaseClient
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -192,12 +193,10 @@ class PrimeStoreRepository(private val context: Context) {
         }
 
         val rawUrl = app.fileUrl?.trim()
-        val isDirectApk = !rawUrl.isNullOrBlank() &&
-                (rawUrl.startsWith("http://", ignoreCase = true) || rawUrl.startsWith("https://", ignoreCase = true)) &&
-                (rawUrl.substringBefore("?").endsWith(".apk", ignoreCase = true) || rawUrl.contains(".apk", ignoreCase = true))
+        val isDirectApk = SupabaseClient.isValidDownloadLink(rawUrl)
 
         if (!isDirectApk) {
-            emitToast("رابط التحميل غير مباشر، أخبر الأدمن")
+            emitToast("رابط التحميل غير مباشر أو غير مدعوم، يرجى مراجعة الأدمن")
             val failedItem = DownloadItem(
                 appId = app.id,
                 appName = app.nameAr.ifBlank { app.name },

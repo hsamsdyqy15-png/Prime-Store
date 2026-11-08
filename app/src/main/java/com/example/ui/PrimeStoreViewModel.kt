@@ -475,7 +475,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             downloadCount = "+1K",
             size = size,
             sizeBytes = 100_000_000L,
-            iconEmoji = if (iconUrl.length <= 4) iconUrl else "📱",
+            iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else "📱",
             accentColor = 0xFFA855F7,
             descriptionAr = description,
             descriptionEn = description,
@@ -483,7 +483,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
             isFeatured = false,
             isTrending = false,
-            isNew = true
+            isNew = true,
+            iconUrl = iconUrl.ifBlank { null },
+            fileUrl = fileUrl.ifBlank { null },
+            screenshotUrls = screenshots
         )
         val token = authPrefs.getString("ps_token", null)
         if (id == null) {

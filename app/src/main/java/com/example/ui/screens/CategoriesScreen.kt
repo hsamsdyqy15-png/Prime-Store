@@ -294,7 +294,8 @@ fun CategoryAppsList(
                         AppIconBadge(
                             emoji = app.iconEmoji,
                             accentColor = app.accentColor,
-                            size = 54.dp
+                            size = 54.dp,
+                            imageUrl = app.iconUrl
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {

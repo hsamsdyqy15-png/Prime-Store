@@ -317,7 +317,8 @@ fun SearchScreen(
                                 AppIconBadge(
                                     emoji = app.iconEmoji,
                                     accentColor = app.accentColor,
-                                    size = 50.dp
+                                    size = 50.dp,
+                                    imageUrl = app.iconUrl
                                 )
 
                                 Spacer(modifier = Modifier.width(12.dp))

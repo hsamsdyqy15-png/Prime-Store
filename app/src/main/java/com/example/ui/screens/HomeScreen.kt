@@ -558,7 +558,8 @@ fun FeaturedGameCard(
                 emoji = game.iconEmoji,
                 accentColor = game.accentColor,
                 size = 64.dp,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                imageUrl = game.iconUrl
             )
 
             // Name
@@ -643,7 +644,8 @@ fun TrendingAppsSection(
                     AppIconBadge(
                         emoji = app.iconEmoji,
                         accentColor = app.accentColor,
-                        size = 48.dp
+                        size = 48.dp,
+                        imageUrl = app.iconUrl
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {

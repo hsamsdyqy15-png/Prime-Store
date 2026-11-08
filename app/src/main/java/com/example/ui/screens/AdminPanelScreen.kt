@@ -170,10 +170,11 @@ fun AdminPanelScreen(
     var uploadProgress by remember { mutableFloatStateOf(0f) }
     var uploadJob by remember { mutableStateOf<Job?>(null) }
 
-    // Alerts and full previews
+    // Alerts, full previews and verified post-save info
     var showOver50MbAlert by remember { mutableStateOf(false) }
     var appToDelete by remember { mutableStateOf<AppItem?>(null) }
     var fullscreenPreviewUrl by remember { mutableStateOf<Any?>(null) }
+    var verifiedSavedApp by remember { mutableStateOf<AppItem?>(null) }
 
     LaunchedEffect(adminEmail) {
         if (!SupabaseClient.isAdmin(adminEmail)) {
@@ -288,43 +289,41 @@ fun AdminPanelScreen(
     fun startSaveProcess() {
         if (name.isBlank() || isSaving || isUploading) return
 
+        // 1) Verify that icon will be available
+        val hasIconSource = pickedIconUri != null || apkExtractedIconBytes != null || storedIconUrl.isNotBlank()
+        if (!hasIconSource) {
+            scope.launch {
+                snackbarHostState.showSnackbar("❌ يجب توفير أيقونة للتطبيق (رفع صورة من الجهاز أو استخراجها من APK أو كتابة رابط)")
+            }
+            return
+        }
+
+        // 2) Verify that APK or direct link will be available
+        val hasApkSource = pickedApkUri != null || directFileUrl.isNotBlank()
+        if (!hasApkSource) {
+            scope.launch {
+                snackbarHostState.showSnackbar("❌ يجب توفير ملف APK أو رابط تحميل مباشر للتطبيق")
+            }
+            return
+        }
+
+        // If directFileUrl is provided, validate it with relaxed rules
+        if (directFileUrl.isNotBlank() && !SupabaseClient.isValidDownloadLink(directFileUrl)) {
+            scope.launch {
+                snackbarHostState.showSnackbar("⚠️ الرابط المباشر يجب أن يكون رابط Supabase Storage أو ينتهي بـ .apk أو من GitHub Releases. الروابط غير المباشرة (مثل Mediafire و Google Drive) غير مدعومة للتثبيت التلقائي.")
+            }
+            return
+        }
+
         // Calculate total files to upload
         var total = 0
-        if (pickedIconUri != null || apkExtractedIconBytes != null) total++
+        if (pickedIconUri != null || (apkExtractedIconBytes != null && storedIconUrl.isBlank())) total++
         total += pickedShotUris.size
         val canUploadApk = pickedApkUri != null && (pickedApkSizeBytes / (1024 * 1024) <= 50)
         if (canUploadApk) total++
 
         isSaving = true
-
-        if (total == 0) {
-            // No uploads required, save directly
-            val rating = ratingStr.toFloatOrNull() ?: 4.5f
-            val features = featuresStr.split("\n").map { it.trim() }.filter { it.isNotBlank() }
-            val finalIcon = storedIconUrl.ifBlank { "📱" }
-            val finalSize = if (sizeStr.isNotBlank()) sizeStr else "25 MB"
-            onSaveApp(
-                editingAppId,
-                name,
-                selectedCategory,
-                rating,
-                finalSize,
-                description,
-                features,
-                finalIcon,
-                directFileUrl,
-                storedScreenshotUrls.toList()
-            )
-            scope.launch {
-                snackbarHostState.showSnackbar(if (editingAppId != null) "تم تحديث التطبيق بنجاح! ✔" else "تم حفظ التطبيق في المتجر! 🎉")
-            }
-            clearForm()
-            isSaving = false
-            return
-        }
-
-        // Upload files with progress
-        isUploading = true
+        isUploading = total > 0
         uploadTotalSteps = total
         uploadCurrentStep = 0
         uploadProgress = 0f
@@ -340,7 +339,7 @@ fun AdminPanelScreen(
                     val ext = getFileExtension(context, pickedIconUri!!, "png")
                     val path = "icons/${UUID.randomUUID()}.$ext"
                     val mime = context.contentResolver.getType(pickedIconUri!!) ?: "image/png"
-                    val res = SupabaseClient.uploadStorageFile(
+                    val uploadResult = SupabaseClient.uploadStorageFileDetailed(
                         context = context,
                         uri = pickedIconUri!!,
                         path = path,
@@ -349,23 +348,27 @@ fun AdminPanelScreen(
                     ) { written, tot ->
                         if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
                     }
-                    if (res != null) {
-                        finalIconUrl = res
+                    if (uploadResult.isSuccess) {
+                        finalIconUrl = uploadResult.getOrThrow()
                     } else {
-                        throw Exception("تعذر رفع الأيقونة إلى السحابة")
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ غير معروف في السيرفر"
+                        throw Exception("فشل رفع الأيقونة: $errorText")
                     }
                 } else if (apkExtractedIconBytes != null && finalIconUrl.isBlank()) {
                     uploadCurrentStep++
                     uploadStepLabel = "جاري رفع الأيقونة المستخرجة ($uploadCurrentStep/$uploadTotalSteps)"
                     val path = "icons/${UUID.randomUUID()}.png"
-                    val res = SupabaseClient.uploadStorageBytes(
+                    val uploadResult = SupabaseClient.uploadStorageBytesDetailed(
                         bytes = apkExtractedIconBytes!!,
                         path = path,
                         mimeType = "image/png",
                         accessToken = resolvedToken
                     )
-                    if (res != null) {
-                        finalIconUrl = res
+                    if (uploadResult.isSuccess) {
+                        finalIconUrl = uploadResult.getOrThrow()
+                    } else {
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ غير معروف في السيرفر"
+                        throw Exception("فشل رفع الأيقونة المستخرجة: $errorText")
                     }
                 }
 
@@ -377,7 +380,7 @@ fun AdminPanelScreen(
                     val ext = getFileExtension(context, sUri, "jpg")
                     val path = "shots/${UUID.randomUUID()}.$ext"
                     val mime = context.contentResolver.getType(sUri) ?: "image/jpeg"
-                    val res = SupabaseClient.uploadStorageFile(
+                    val uploadResult = SupabaseClient.uploadStorageFileDetailed(
                         context = context,
                         uri = sUri,
                         path = path,
@@ -386,10 +389,11 @@ fun AdminPanelScreen(
                     ) { written, tot ->
                         if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
                     }
-                    if (res != null) {
-                        finalScreenshots.add(res)
+                    if (uploadResult.isSuccess) {
+                        finalScreenshots.add(uploadResult.getOrThrow())
                     } else {
-                        throw Exception("تعذر رفع إحدى لقطات الشاشة")
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
+                        throw Exception("فشل رفع لقطة الشاشة ${idx + 1}: $errorText")
                     }
                 }
 
@@ -399,7 +403,7 @@ fun AdminPanelScreen(
                     uploadCurrentStep++
                     uploadStepLabel = "جاري رفع ملف التطبيق APK ($uploadCurrentStep/$uploadTotalSteps)"
                     val path = "files/${UUID.randomUUID()}.apk"
-                    val res = SupabaseClient.uploadStorageFile(
+                    val uploadResult = SupabaseClient.uploadStorageFileDetailed(
                         context = context,
                         uri = pickedApkUri!!,
                         path = path,
@@ -408,11 +412,20 @@ fun AdminPanelScreen(
                     ) { written, tot ->
                         if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
                     }
-                    if (res != null) {
-                        finalFileUrl = res
+                    if (uploadResult.isSuccess) {
+                        finalFileUrl = uploadResult.getOrThrow()
                     } else {
-                        throw Exception("تعذر رفع ملف APK إلى السحابة")
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
+                        throw Exception("فشل رفع ملف APK: $errorText")
                     }
+                }
+
+                // Mandatory checks before persisting:
+                if (finalIconUrl.isBlank()) {
+                    throw Exception("لم يتم توفير رابط أيقونة صحيح (icon_url مفقود)")
+                }
+                if (finalFileUrl.isBlank()) {
+                    throw Exception("لم يتم توفير ملف APK أو رابط تحميل (file_url مفقود)")
                 }
 
                 // 4. Save to apps table
@@ -434,16 +447,30 @@ fun AdminPanelScreen(
                     finalCalculatedSize,
                     description,
                     features,
-                    finalIconUrl.ifBlank { "📱" },
+                    finalIconUrl,
                     finalFileUrl,
                     finalScreenshots
                 )
 
-                snackbarHostState.showSnackbar(if (editingAppId != null) "تم تحديث التطبيق بنجاح! ✔" else "تم رفع وحفظ التطبيق في المتجر! 🎉")
+                // 5. Post-save verification from Supabase: fetch to confirm URLs are persisted
+                var verifiedApp: AppItem? = null
+                withContext(Dispatchers.IO) {
+                    kotlinx.coroutines.delay(1000)
+                    val allApps = SupabaseClient.fetchApps()
+                    verifiedApp = allApps.find { it.name.trim().equals(name.trim(), ignoreCase = true) }
+                }
+
+                if (verifiedApp != null) {
+                    verifiedSavedApp = verifiedApp
+                    snackbarHostState.showSnackbar("✔ تم حفظ التطبيق وتأكيد الروابط في السحابة بنجاح!")
+                } else {
+                    snackbarHostState.showSnackbar(if (editingAppId != null) "تم إرسال التحديث بنجاح! ✔" else "تم إرسال التطبيق بنجاح! 🎉")
+                }
+
                 clearForm()
 
             } catch (e: Exception) {
-                snackbarHostState.showSnackbar("فشل الرفع أو الحفظ: ${e.message ?: "خطأ غير متوقع"}")
+                snackbarHostState.showSnackbar("❌ فشل الحفظ: ${e.message ?: "حدث خطأ غير متوقع"}")
             } finally {
                 isUploading = false
                 isSaving = false
@@ -968,6 +995,15 @@ fun AdminPanelScreen(
                                 label = "رابط ملف APK المباشر (بديل أو للملفات الكبيرة > 50MB)"
                             )
 
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "💡 الروابط المدعومة للتحميل المباشر والتثبيت:\n• رابط Supabase Storage العام.\n• أي رابط ينتهي بـ .apk (مثل خوادمك الخاصة).\n• روابط GitHub Releases المباشرة.\n⚠️ روابط معاينة الويب (مثل MediaFire أو Google Drive) غير مدعومة للتثبيت التلقائي.",
+                                color = PrimeTextMuted,
+                                fontSize = 10.sp,
+                                lineHeight = 15.sp,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // ========================================================
@@ -1286,6 +1322,84 @@ fun AdminPanelScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF281C38))
                 ) {
                     Text("إلغاء", color = Color.White)
+                }
+            }
+        )
+    }
+
+    // Dialog showing verified URLs fetched back from Supabase
+    if (verifiedSavedApp != null) {
+        val app = verifiedSavedApp!!
+        AlertDialog(
+            onDismissRequest = { verifiedSavedApp = null },
+            containerColor = Color(0xFF1E142D),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "🎉 ", fontSize = 20.sp)
+                    Text(
+                        text = "تم تأكيد الحفظ في Supabase",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "التطبيق: ${app.nameAr}",
+                        color = NeonPurplePrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "الأيقونة (icon_url):",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = app.iconUrl ?: "غير متوفر",
+                        color = PrimeTextMuted,
+                        fontSize = 10.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "الملف (file_url):",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = app.fileUrl ?: "غير متوفر",
+                        color = PrimeTextMuted,
+                        fontSize = 10.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "لقطات الشاشة (screenshots):",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (app.screenshotUrls.isNotEmpty()) "تم حفظ ${app.screenshotUrls.size} لقطة بنجاح" else "لا توجد لقطات",
+                        color = AccentGreen,
+                        fontSize = 11.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { verifiedSavedApp = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                ) {
+                    Text("تم، رائع!", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         )

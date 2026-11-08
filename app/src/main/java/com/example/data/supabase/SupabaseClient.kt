@@ -336,14 +336,103 @@ object SupabaseClient {
         return "$SUPABASE_URL/storage/v1/object/public/$BUCKET/$cleanPath"
     }
 
-    suspend fun uploadStorageFile(
+    fun isValidDownloadLink(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val clean = url.trim()
+        val lower = clean.lowercase()
+        // Reject web preview / intermediate hosting pages
+        if (lower.contains("mediafire.com/file") ||
+            lower.contains("drive.google.com") ||
+            lower.contains("mega.nz") ||
+            lower.contains("dropbox.com/s/")
+        ) {
+            return false
+        }
+        val pathWithoutQuery = clean.substringBefore("?")
+        return lower.contains("supabase.co/storage/v1/object/public") ||
+                pathWithoutQuery.endsWith(".apk", ignoreCase = true) ||
+                (lower.contains("github.com") && lower.contains("/releases/"))
+    }
+
+    suspend fun fetchAppById(appId: String): AppItem? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/apps?id=eq.$appId")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
+            val body = response.body?.string().orEmpty()
+            val array = JSONArray(body)
+            if (array.length() == 0) return@withContext null
+            val obj = array.getJSONObject(0)
+            val id = obj.optString("id", appId)
+            val name = obj.optString("name", "")
+            val categoryStr = obj.optString("category", "apps")
+            val rating = obj.optDouble("rating", 4.5).toFloat()
+            val size = obj.optString("size", "25 MB")
+            val desc = obj.optString("description", "")
+            val iconUrl = obj.optString("icon_url", "")
+            val fileUrl = obj.optString("file_url", "")
+
+            val featuresList = mutableListOf<String>()
+            val featArray = obj.optJSONArray("features")
+            if (featArray != null) {
+                for (f in 0 until featArray.length()) {
+                    featuresList.add(featArray.getString(f))
+                }
+            }
+
+            val screenList = mutableListOf<String>()
+            val screenArray = obj.optJSONArray("screenshots")
+            if (screenArray != null) {
+                for (s in 0 until screenArray.length()) {
+                    screenList.add(screenArray.getString(s))
+                }
+            }
+
+            val category = mapCategory(categoryStr)
+            AppItem(
+                id = id,
+                name = name,
+                nameAr = name,
+                category = category,
+                tags = listOf(category.titleAr, "مميز"),
+                rating = rating,
+                ratingCount = "2.5K",
+                downloadCount = "+1K",
+                size = size,
+                sizeBytes = 25_000_000L,
+                iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else category.iconEmoji,
+                accentColor = category.accentHex,
+                bannerRes = null,
+                descriptionAr = desc.ifBlank { "تطبيق رائع متاح للتحميل المجاني." },
+                descriptionEn = desc,
+                featuresAr = featuresList.ifEmpty { listOf("تحديثات مستمرة", "دعم كامل للغة العربية") },
+                screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
+                isFeatured = false,
+                isTrending = false,
+                isNew = true,
+                iconUrl = iconUrl.ifBlank { null },
+                fileUrl = fileUrl.ifBlank { null },
+                screenshotUrls = screenList
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun uploadStorageFileDetailed(
         context: android.content.Context,
         uri: android.net.Uri,
         path: String,
         mimeType: String,
         accessToken: String?,
         onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
-    ): String? = withContext(Dispatchers.IO) {
+    ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val cleanPath = path.trimStart('/')
             val contentResolver = context.contentResolver
@@ -377,21 +466,28 @@ object SupabaseClient {
 
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                getPublicUrl(cleanPath)
+                Result.success(getPublicUrl(cleanPath))
             } else {
-                null
+                val errorBody = response.body?.string().orEmpty()
+                val parsedMsg = try {
+                    val json = JSONObject(errorBody)
+                    json.optString("message", json.optString("error", errorBody))
+                } catch (e: Exception) {
+                    errorBody.ifBlank { "HTTP ${response.code}: ${response.message}" }
+                }
+                Result.failure(Exception(parsedMsg))
             }
         } catch (e: Exception) {
-            null
+            Result.failure(e)
         }
     }
 
-    suspend fun uploadStorageBytes(
+    suspend fun uploadStorageBytesDetailed(
         bytes: ByteArray,
         path: String,
         mimeType: String,
         accessToken: String?
-    ): String? = withContext(Dispatchers.IO) {
+    ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val cleanPath = path.trimStart('/')
             val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
@@ -405,14 +501,37 @@ object SupabaseClient {
 
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                getPublicUrl(cleanPath)
+                Result.success(getPublicUrl(cleanPath))
             } else {
-                null
+                val errorBody = response.body?.string().orEmpty()
+                val parsedMsg = try {
+                    val json = JSONObject(errorBody)
+                    json.optString("message", json.optString("error", errorBody))
+                } catch (e: Exception) {
+                    errorBody.ifBlank { "HTTP ${response.code}: ${response.message}" }
+                }
+                Result.failure(Exception(parsedMsg))
             }
         } catch (e: Exception) {
-            null
+            Result.failure(e)
         }
     }
+
+    suspend fun uploadStorageFile(
+        context: android.content.Context,
+        uri: android.net.Uri,
+        path: String,
+        mimeType: String,
+        accessToken: String?,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): String? = uploadStorageFileDetailed(context, uri, path, mimeType, accessToken, onProgress).getOrNull()
+
+    suspend fun uploadStorageBytes(
+        bytes: ByteArray,
+        path: String,
+        mimeType: String,
+        accessToken: String?
+    ): String? = uploadStorageBytesDetailed(bytes, path, mimeType, accessToken).getOrNull()
 
     private fun mapCategory(cat: String): AppCategory {
         return when (cat) {
