@@ -77,12 +77,17 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.example.data.github.GitHubConfig
+import com.example.data.github.GitHubStorageHelper
+import com.example.data.github.GitHubUploadService
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
 import com.example.data.supabase.SupabaseClient
@@ -170,8 +175,27 @@ fun AdminPanelScreen(
     var uploadProgress by remember { mutableFloatStateOf(0f) }
     var uploadJob by remember { mutableStateOf<Job?>(null) }
 
+    // GitHub Settings State (Loaded from EncryptedSharedPreferences)
+    var ghOwner by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_OWNER) }
+    var ghRepo by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_REPO) }
+    var ghToken by remember { mutableStateOf("") }
+    var isTestingGhConnection by remember { mutableStateOf(false) }
+    var isSavingGhSettings by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val cfg = GitHubStorageHelper.loadConfig(context)
+        ghOwner = cfg.owner
+        ghRepo = cfg.repo
+        ghToken = cfg.token
+    }
+
+    // Upload Progress & Size States
+    var uploadUploadedMbText by remember { mutableStateOf("0 MB") }
+    var uploadTotalMbText by remember { mutableStateOf("0 MB") }
+    var isUploadingToGitHub by remember { mutableStateOf(false) }
+
     // Alerts, full previews and verified post-save info
-    var showOver50MbAlert by remember { mutableStateOf(false) }
+    var showOver2GbAlert by remember { mutableStateOf(false) }
     var appToDelete by remember { mutableStateOf<AppItem?>(null) }
     var fullscreenPreviewUrl by remember { mutableStateOf<Any?>(null) }
     var verifiedSavedApp by remember { mutableStateOf<AppItem?>(null) }
@@ -208,9 +232,16 @@ fun AdminPanelScreen(
                 pickedApkFileName = fName
                 pickedApkSizeBytes = fSize
 
-                val sizeInMB = fSize / (1024 * 1024)
-                if (sizeInMB > 50) {
-                    showOver50MbAlert = true
+                val max2GbBytes = 2147483648L // 2 GiB
+                if (fSize > max2GbBytes) {
+                    showOver2GbAlert = true
+                    pickedApkUri = null
+                    pickedApkFileName = ""
+                    pickedApkSizeBytes = 0L
+                    scope.launch {
+                        snackbarHostState.showSnackbar("❌ الحد الأقصى 2GB لكل ملف")
+                    }
+                    return@rememberLauncherForActivityResult
                 }
 
                 // Automatic APK archive reading
@@ -319,20 +350,23 @@ fun AdminPanelScreen(
         var total = 0
         if (pickedIconUri != null || (apkExtractedIconBytes != null && storedIconUrl.isBlank())) total++
         total += pickedShotUris.size
-        val canUploadApk = pickedApkUri != null && (pickedApkSizeBytes / (1024 * 1024) <= 50)
-        if (canUploadApk) total++
+        val hasApkToUpload = pickedApkUri != null
+        if (hasApkToUpload) total++
 
         isSaving = true
         isUploading = total > 0
         uploadTotalSteps = total
         uploadCurrentStep = 0
         uploadProgress = 0f
+        uploadUploadedMbText = "0 MB"
+        uploadTotalMbText = formatSize(pickedApkSizeBytes)
+        isUploadingToGitHub = false
 
         uploadJob = scope.launch {
             try {
                 var finalIconUrl = storedIconUrl
 
-                // 1. Upload Icon
+                // 1. Upload Icon (to Supabase Storage)
                 if (pickedIconUri != null) {
                     uploadCurrentStep++
                     uploadStepLabel = "جاري رفع الأيقونة ($uploadCurrentStep/$uploadTotalSteps)"
@@ -372,7 +406,7 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // 2. Upload Screenshots
+                // 2. Upload Screenshots (to Supabase Storage)
                 val finalScreenshots = storedScreenshotUrls.toMutableList()
                 for ((idx, sUri) in pickedShotUris.withIndex()) {
                     uploadCurrentStep++
@@ -397,30 +431,79 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // 3. Upload APK
+                // 3. Upload APK to GitHub Releases (Direct Streaming Chunk Upload)
                 var finalFileUrl = directFileUrl
-                if (canUploadApk) {
-                    uploadCurrentStep++
-                    uploadStepLabel = "جاري رفع ملف التطبيق APK ($uploadCurrentStep/$uploadTotalSteps)"
-                    val path = "files/${UUID.randomUUID()}.apk"
-                    val uploadResult = SupabaseClient.uploadStorageFileDetailed(
-                        context = context,
-                        uri = pickedApkUri!!,
-                        path = path,
-                        mimeType = "application/vnd.android.package-archive",
-                        accessToken = resolvedToken
-                    ) { written, tot ->
-                        if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
+                var uploadedApkSizeStr = sizeStr
+
+                if (hasApkToUpload) {
+                    val apkUri = pickedApkUri!!
+                    val max2Gb = 2147483648L
+                    if (pickedApkSizeBytes > max2Gb) {
+                        throw Exception("الحد الأقصى 2GB لكل ملف")
                     }
-                    if (uploadResult.isSuccess) {
-                        finalFileUrl = uploadResult.getOrThrow()
-                    } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
-                        throw Exception("فشل رفع ملف APK: $errorText")
+
+                    // Validate GitHub config
+                    val currentGhConfig = GitHubStorageHelper.loadConfig(context)
+                    if (currentGhConfig.token.isBlank()) {
+                        throw Exception("يرجى إدخال مفتاح GitHub Token أولاً في قسم \"إعدادات GitHub\"")
+                    }
+
+                    uploadCurrentStep++
+                    isUploadingToGitHub = true
+                    uploadStepLabel = "جاري رفع ملف APK إلى GitHub Releases ($uploadCurrentStep/$uploadTotalSteps)"
+                    uploadProgress = 0f
+
+                    // Start Foreground Service for persistence
+                    GitHubUploadService.start(context, pickedApkFileName.ifBlank { name })
+
+                    try {
+                        // Step A & B: Get or create release with tag "store-files"
+                        val releaseResult = GitHubStorageHelper.getOrCreateReleaseUploadUrl(
+                            owner = currentGhConfig.owner,
+                            repo = currentGhConfig.repo,
+                            token = currentGhConfig.token
+                        )
+
+                        if (releaseResult.isFailure) {
+                            throw releaseResult.exceptionOrNull() ?: Exception("فشل إنشاء أو الحصول على إصدار GitHub")
+                        }
+
+                        val uploadBaseUrl = releaseResult.getOrThrow()
+
+                        // Step C: Stream APK file to GitHub
+                        val apkResult = GitHubStorageHelper.uploadApkAsset(
+                            context = context,
+                            uploadBaseUrl = uploadBaseUrl,
+                            token = currentGhConfig.token,
+                            uri = apkUri,
+                            fileName = pickedApkFileName.ifBlank { "app.apk" },
+                            fileSizeBytes = pickedApkSizeBytes
+                        ) { bytesWritten, totalBytes ->
+                            val progressFrac = if (totalBytes > 0) (bytesWritten.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+                            uploadProgress = progressFrac
+                            val upMb = formatSize(bytesWritten)
+                            val totMb = formatSize(totalBytes)
+                            uploadUploadedMbText = upMb
+                            uploadTotalMbText = totMb
+                            val percent = (progressFrac * 100).toInt()
+                            GitHubUploadService.updateProgress(context, pickedApkFileName, percent, upMb, totMb)
+                        }
+
+                        if (apkResult.isFailure) {
+                            throw apkResult.exceptionOrNull() ?: Exception("فشل رفع ملف APK إلى GitHub")
+                        }
+
+                        val ghAsset = apkResult.getOrThrow()
+                        finalFileUrl = ghAsset.downloadUrl
+                        uploadedApkSizeStr = formatSize(ghAsset.sizeBytes)
+
+                    } finally {
+                        GitHubUploadService.stop(context)
+                        isUploadingToGitHub = false
                     }
                 }
 
-                // Mandatory checks before persisting:
+                // Mandatory checks before persisting in Supabase:
                 if (finalIconUrl.isBlank()) {
                     throw Exception("لم يتم توفير رابط أيقونة صحيح (icon_url مفقود)")
                 }
@@ -430,7 +513,9 @@ fun AdminPanelScreen(
 
                 // 4. Save to apps table
                 val rating = ratingStr.toFloatOrNull() ?: 4.5f
-                val finalCalculatedSize = if (sizeStr.isNotBlank() && sizeStr != "120 MB") {
+                val finalCalculatedSize = if (uploadedApkSizeStr.isNotBlank() && uploadedApkSizeStr != "120 MB") {
+                    uploadedApkSizeStr
+                } else if (sizeStr.isNotBlank() && sizeStr != "120 MB") {
                     sizeStr
                 } else if (pickedApkSizeBytes > 0) {
                     formatSize(pickedApkSizeBytes)
@@ -523,6 +608,142 @@ fun AdminPanelScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 40.dp)
             ) {
+                // ========================================================
+                // GITHUB SETTINGS CARD (Encrypted Storage for Releases)
+                // ========================================================
+                item {
+                    NeonCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        hasGlow = false
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = "🐙 ", fontSize = 16.sp)
+                                    Text(
+                                        text = "إعدادات GitHub (مستودع ملفات APK)",
+                                        color = NeonPurplePrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = "🔒 مشفر محلياً",
+                                    color = AccentGreen,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = "يتم رفع ملفات الـ APK تلقائياً إلى GitHub Releases بدلاً من استهلاك مساحة السيرفر.",
+                                color = PrimeTextMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                AdminTextField(
+                                    value = ghOwner,
+                                    onValueChange = { ghOwner = it },
+                                    label = "اسم المستخدم (owner)",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                AdminTextField(
+                                    value = ghRepo,
+                                    onValueChange = { ghRepo = it },
+                                    label = "اسم المستودع (repo)",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            AdminTextField(
+                                value = ghToken,
+                                onValueChange = { ghToken = it },
+                                label = "مفتاح GitHub الشخصي (Personal Access Token)",
+                                keyboardType = KeyboardType.Password,
+                                visualTransformation = PasswordVisualTransformation()
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Save Button
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(PrimeGradientBrush)
+                                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                        .clickable(enabled = !isSavingGhSettings) {
+                                            isSavingGhSettings = true
+                                            GitHubStorageHelper.saveConfig(context, ghOwner, ghRepo, ghToken)
+                                            isSavingGhSettings = false
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("✔ تم حفظ إعدادات GitHub بأمان على جهازك")
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "💾 حفظ الإعدادات",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                // Test Connection Button
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF281C38))
+                                        .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                                        .clickable(enabled = !isTestingGhConnection) {
+                                            isTestingGhConnection = true
+                                            scope.launch {
+                                                val testRes = GitHubStorageHelper.testConnection(ghOwner, ghRepo, ghToken)
+                                                isTestingGhConnection = false
+                                                if (testRes.isSuccess) {
+                                                    snackbarHostState.showSnackbar(testRes.getOrNull() ?: "تم الاتصال بنجاح!")
+                                                } else {
+                                                    snackbarHostState.showSnackbar("❌ فشل الاتصال: ${testRes.exceptionOrNull()?.message}")
+                                                }
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (isTestingGhConnection) "جاري الفحص..." else "⚡ اختبار الاتصال",
+                                        color = if (isTestingGhConnection) PrimeTextMuted else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Form Card
                 item {
                     NeonCard(modifier = Modifier.fillMaxWidth()) {
@@ -1031,30 +1252,44 @@ fun AdminPanelScreen(
                                             text = uploadStepLabel,
                                             color = Color.White,
                                             fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
-                                        Text(
-                                            text = "${(uploadProgress * 100).toInt()}%",
-                                            color = NeonPurplePrimary,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        IconButton(
-                                            onClick = {
-                                                uploadJob?.cancel()
-                                                isUploading = false
-                                                isSaving = false
-                                                scope.launch {
-                                                    snackbarHostState.showSnackbar("تم إلغاء عملية الرفع")
-                                                }
-                                            },
-                                            modifier = Modifier.size(22.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Close,
-                                                contentDescription = "إلغاء الرفع",
-                                                tint = Color.White
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = if (isUploadingToGitHub && uploadTotalMbText.isNotBlank()) {
+                                                    "$uploadUploadedMbText / $uploadTotalMbText (${(uploadProgress * 100).toInt()}%)"
+                                                } else {
+                                                    "${(uploadProgress * 100).toInt()}%"
+                                                },
+                                                color = NeonPurplePrimary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
                                             )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            IconButton(
+                                                onClick = {
+                                                    uploadJob?.cancel()
+                                                    GitHubUploadService.stop(context)
+                                                    isUploading = false
+                                                    isSaving = false
+                                                    isUploadingToGitHub = false
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar("تم إلغاء عملية الرفع")
+                                                    }
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Close,
+                                                    contentDescription = "إلغاء الرفع",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -1208,10 +1443,10 @@ fun AdminPanelScreen(
     // MODALS & DIALOGS
     // ========================================================
 
-    // 1. Alert for File Size > 50MB
-    if (showOver50MbAlert) {
+    // 1. Alert for File Size > 2GB
+    if (showOver2GbAlert) {
         AlertDialog(
-            onDismissRequest = { showOver50MbAlert = false },
+            onDismissRequest = { showOver2GbAlert = false },
             containerColor = Color(0xFF1E142D),
             title = {
                 Text(
@@ -1222,14 +1457,14 @@ fun AdminPanelScreen(
             },
             text = {
                 Text(
-                    text = "الحد الأقصى للرفع المباشر هو 50MB. يرجى استخدام حقل \"الرابط المباشر\" بدلاً منه لتنزيل هذا الملف.",
+                    text = "الحد الأقصى 2GB لكل ملف. يرجى اختيار ملف أصغر حجماً.",
                     color = Color.White,
                     fontSize = 13.sp
                 )
             },
             confirmButton = {
                 Button(
-                    onClick = { showOver50MbAlert = false },
+                    onClick = { showOver2GbAlert = false },
                     colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
                 ) {
                     Text("حسناً", color = Color.White)
@@ -1456,7 +1691,8 @@ private fun AdminTextField(
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     minLines: Int = 1,
-    keyboardType: KeyboardType = KeyboardType.Text
+    keyboardType: KeyboardType = KeyboardType.Text,
+    visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
     OutlinedTextField(
         value = value,
@@ -1465,6 +1701,7 @@ private fun AdminTextField(
         singleLine = singleLine,
         minLines = minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        visualTransformation = visualTransformation,
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
