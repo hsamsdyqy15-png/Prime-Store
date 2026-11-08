@@ -18,7 +18,7 @@ object SupabaseClient {
     const val SUPABASE_KEY = "sb_publishable_Ol48kUBezAiwHSYhutTWbQ_ghTohVo6"
     const val BUCKET = "store-files"
 
-    val ADMIN_EMAILS = listOf("toprsidar2@gmail.com", "zaim9002@gmail.com")
+    val ADMIN_EMAILS = listOf("zaim9002@gmail.com", "toprsidar2@gmail.com", "gjhh611@gmail.com")
 
     fun isAdmin(email: String?): Boolean {
         if (email.isNullOrBlank()) return false
