@@ -40,9 +40,9 @@ jobs:
         run: |
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --stacktrace
+            ./gradlew assembleDebug --console=plain
           else
-            gradle assembleDebug --stacktrace
+            gradle assembleDebug --console=plain
           fi
 
       - name: Rename APK
