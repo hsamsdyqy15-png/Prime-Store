@@ -1,0 +1,59 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Detect Gradle version
+        id: gv
+        run: |
+          V=""
+          if [ -f gradle/wrapper/gradle-wrapper.properties ]; then
+            V=$(grep distributionUrl gradle/wrapper/gradle-wrapper.properties | grep -oE 'gradle-[0-9]+(\.[0-9]+)+' | head -n 1 | sed 's/gradle-//')
+          fi
+          if [ -z "$V" ]; then V=8.13; fi
+          echo "version=$V" >> $GITHUB_OUTPUT
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ steps.gv.outputs.version }}
+
+      - name: Build debug APK
+        run: |
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
+
+      - name: Rename APK
+        run: |
+          APK=$(find . -path "*build/outputs/apk/debug/*.apk" | head -n 1)
+          echo "Found: $APK"
+          cp "$APK" Prime.Store.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Prime Store build ${{ github.run_number }}
+          files: Prime.Store.apk
