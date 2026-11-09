@@ -37,7 +37,7 @@ data class UserProfile(
     val isPrimeMember: Boolean
 )
 
-const val ADMIN_EMAIL = "toprsidar2@gmail.com"
+const val ADMIN_EMAIL = "zaim9002@gmail.com"
 
 data class UiState(
     val showSplash: Boolean = true,
@@ -461,15 +461,22 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         features: List<String>,
         iconUrl: String,
         fileUrl: String,
-        screenshots: List<String>
+        screenshots: List<String>,
+        isOpenSource: Boolean = false,
+        sourceCodeUrl: String? = null,
+        supportedAbis: String = "Universal (All Architectures)"
     ) {
         val appId = id ?: "app_${System.currentTimeMillis()}"
+        val tags = mutableListOf(category.titleAr)
+        if (isOpenSource) tags.add("مفتوح المصدر")
+        if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
+
         val newApp = AppItem(
             id = appId,
             name = name,
             nameAr = name,
-            category = category,
-            tags = listOf(category.titleAr, "جديد"),
+            category = if (isOpenSource) AppCategory.OPEN_SOURCE else category,
+            tags = tags,
             rating = rating,
             ratingCount = "1.0K",
             downloadCount = "+1K",
@@ -486,7 +493,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             isNew = true,
             iconUrl = iconUrl.ifBlank { null },
             fileUrl = fileUrl.ifBlank { null },
-            screenshotUrls = screenshots
+            screenshotUrls = screenshots,
+            isOpenSource = isOpenSource,
+            sourceCodeUrl = sourceCodeUrl?.ifBlank { null },
+            supportedAbis = supportedAbis
         )
         val token = authPrefs.getString("ps_token", null)
         if (id == null) {

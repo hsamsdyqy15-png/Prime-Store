@@ -180,9 +180,11 @@ fun AppIconBadge(
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
         } else {
-            Text(
-                text = emoji,
-                fontSize = (size.value * 0.45f).sp
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_app_default),
+                contentDescription = null,
+                modifier = Modifier.size(size * 0.55f),
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(accentColor))
             )
         }
     }

@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Retro / Pixel Invader -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6,2h2v2H6V2zM16,2h2v2h-2V2zM4,6h2v2H4V6zM18,6h2v2h-2V6zM2,8h20v6H18v4h-2v-2h-2v2h-4v-2H8v2H6v-4H2V8zM6,10h2v2H6V10zM16,10h2v2h-2V10z"/>
+</vector>

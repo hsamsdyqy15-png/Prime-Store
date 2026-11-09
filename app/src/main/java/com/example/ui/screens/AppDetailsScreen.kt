@@ -254,9 +254,10 @@ fun AppDetailsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Tags badges: بناء, مغامرات, ألعاب
+                    // Tags badges
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 4.dp)
                     ) {
                         app.tags.forEach { tag ->
                             Box(
@@ -276,7 +277,69 @@ fun AppDetailsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    // Open Source Badge & Source URL
+                    if (app.isOpenSource) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF1E3A8A))
+                                    .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = "🔓 مشروع مفتوح المصدر (FOSS)",
+                                    color = Color(0xFF93C5FD),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            if (!app.sourceCodeUrl.isNullOrBlank()) {
+                                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color(0xFF281C38))
+                                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            try { uriHandler.openUri(app.sourceCodeUrl) } catch (e: Exception) {}
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = "🐙 عرض الكود المصدر ↗",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Supported CPU Architecture Badge
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF1E142D))
+                            .border(1.dp, Color(0xFF10B981).copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = "⚡ المعالجات المدعومة: ${app.supportedAbis}",
+                            color = Color(0xFF34D399),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Download Action Button / Progress
                     if (downloadItem != null && downloadItem.status == DownloadStatus.DOWNLOADING) {

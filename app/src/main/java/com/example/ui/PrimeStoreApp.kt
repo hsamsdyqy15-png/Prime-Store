@@ -159,7 +159,7 @@ fun PrimeStoreApp(
                                     adminEmail = uiState.userProfile?.email ?: ADMIN_EMAIL,
                                     accessToken = context.getSharedPreferences("prime_store_auth", android.content.Context.MODE_PRIVATE).getString("ps_token", null),
                                     apps = apps,
-                                    onSaveApp = { id, name, category, rating, size, description, features, iconUrl, fileUrl, screenshots ->
+                                    onSaveApp = { id, name, category, rating, size, description, features, iconUrl, fileUrl, screenshots, isOpenSource, sourceCodeUrl, supportedAbis ->
                                         viewModel.saveAppFromAdmin(
                                             id,
                                             name,
@@ -170,7 +170,10 @@ fun PrimeStoreApp(
                                             features,
                                             iconUrl,
                                             fileUrl,
-                                            screenshots
+                                            screenshots,
+                                            isOpenSource,
+                                            sourceCodeUrl,
+                                            supportedAbis
                                         )
                                     },
                                     onDeleteApp = { appId ->

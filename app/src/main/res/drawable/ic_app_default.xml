@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Cyber app cube icon -->
+    <path
+        android:fillColor="#FF8B5CF6"
+        android:pathData="M24,4L6,14.5v19L24,44l18,-10.5v-19L24,4zM24,8.5l14,8.1 -4.8,2.8 -14,-8.1L24,8.5zM10,18.9l12,6.9v13.7L10,32.6V18.9zM26,39.5V25.8l12,-6.9v13.7L26,39.5z"/>
+</vector>

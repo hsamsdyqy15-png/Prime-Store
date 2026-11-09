@@ -150,8 +150,10 @@ object SupabaseClient {
                 val desc = obj.optString("description", "")
                 val iconUrl = obj.optString("icon_url", "")
                 val fileUrl = obj.optString("file_url", "")
+                val isOpenSource = obj.optBoolean("is_open_source", false)
+                val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
+                val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
 
-                // Parse features array
                 val featuresList = mutableListOf<String>()
                 val featArray = obj.optJSONArray("features")
                 if (featArray != null) {
@@ -160,7 +162,6 @@ object SupabaseClient {
                     }
                 }
 
-                // Parse screenshots array
                 val screenList = mutableListOf<String>()
                 val screenArray = obj.optJSONArray("screenshots")
                 if (screenArray != null) {
@@ -169,7 +170,10 @@ object SupabaseClient {
                     }
                 }
 
-                val category = mapCategory(categoryStr)
+                val category = if (isOpenSource) AppCategory.OPEN_SOURCE else mapCategory(categoryStr)
+                val tags = mutableListOf(category.titleAr)
+                if (isOpenSource) tags.add("مفتوح المصدر")
+                if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
 
                 result.add(
                     AppItem(
@@ -177,7 +181,7 @@ object SupabaseClient {
                         name = name,
                         nameAr = name,
                         category = category,
-                        tags = listOf(category.titleAr, "مميز"),
+                        tags = tags,
                         rating = rating,
                         ratingCount = "2.5K",
                         downloadCount = downloads,
@@ -195,7 +199,10 @@ object SupabaseClient {
                         isNew = true,
                         iconUrl = iconUrl.ifBlank { null },
                         fileUrl = fileUrl.ifBlank { null },
-                        screenshotUrls = screenList
+                        screenshotUrls = screenList,
+                        isOpenSource = isOpenSource,
+                        sourceCodeUrl = sourceCodeUrl,
+                        supportedAbis = supportedAbis
                     )
                 )
             }
@@ -215,7 +222,10 @@ object SupabaseClient {
         features: List<String>,
         iconUrl: String,
         fileUrl: String,
-        screenshots: List<String>
+        screenshots: List<String>,
+        isOpenSource: Boolean = false,
+        sourceCodeUrl: String? = null,
+        supportedAbis: String = "Universal (All Architectures)"
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val payload = JSONObject().apply {
@@ -228,6 +238,9 @@ object SupabaseClient {
                 put("icon_url", iconUrl)
                 put("file_url", fileUrl)
                 put("screenshots", JSONArray(screenshots))
+                put("is_open_source", isOpenSource)
+                put("source_code_url", sourceCodeUrl ?: "")
+                put("supported_abis", supportedAbis)
             }
 
             val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
@@ -258,7 +271,10 @@ object SupabaseClient {
         features: List<String>,
         iconUrl: String,
         fileUrl: String,
-        screenshots: List<String>
+        screenshots: List<String>,
+        isOpenSource: Boolean = false,
+        sourceCodeUrl: String? = null,
+        supportedAbis: String = "Universal (All Architectures)"
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val payload = JSONObject().apply {
@@ -271,6 +287,9 @@ object SupabaseClient {
                 put("icon_url", iconUrl)
                 put("file_url", fileUrl)
                 put("screenshots", JSONArray(screenshots))
+                put("is_open_source", isOpenSource)
+                put("source_code_url", sourceCodeUrl ?: "")
+                put("supported_abis", supportedAbis)
             }
 
             val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
@@ -340,7 +359,6 @@ object SupabaseClient {
         if (url.isNullOrBlank()) return false
         val clean = url.trim()
         val lower = clean.lowercase()
-        // Reject web preview / intermediate hosting pages
         if (lower.contains("mediafire.com/file") ||
             lower.contains("drive.google.com") ||
             lower.contains("mega.nz") ||
@@ -377,6 +395,9 @@ object SupabaseClient {
             val desc = obj.optString("description", "")
             val iconUrl = obj.optString("icon_url", "")
             val fileUrl = obj.optString("file_url", "")
+            val isOpenSource = obj.optBoolean("is_open_source", false)
+            val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
+            val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
 
             val featuresList = mutableListOf<String>()
             val featArray = obj.optJSONArray("features")
@@ -394,13 +415,16 @@ object SupabaseClient {
                 }
             }
 
-            val category = mapCategory(categoryStr)
+            val category = if (isOpenSource) AppCategory.OPEN_SOURCE else mapCategory(categoryStr)
+            val tags = mutableListOf(category.titleAr)
+            if (isOpenSource) tags.add("مفتوح المصدر")
+
             AppItem(
                 id = id,
                 name = name,
                 nameAr = name,
                 category = category,
-                tags = listOf(category.titleAr, "مميز"),
+                tags = tags,
                 rating = rating,
                 ratingCount = "2.5K",
                 downloadCount = "+1K",
@@ -418,7 +442,10 @@ object SupabaseClient {
                 isNew = true,
                 iconUrl = iconUrl.ifBlank { null },
                 fileUrl = fileUrl.ifBlank { null },
-                screenshotUrls = screenList
+                screenshotUrls = screenList,
+                isOpenSource = isOpenSource,
+                sourceCodeUrl = sourceCodeUrl,
+                supportedAbis = supportedAbis
             )
         } catch (e: Exception) {
             null
@@ -534,17 +561,28 @@ object SupabaseClient {
     ): String? = uploadStorageBytesDetailed(bytes, path, mimeType, accessToken).getOrNull()
 
     private fun mapCategory(cat: String): AppCategory {
-        return when (cat) {
+        return when (cat.lowercase()) {
             "games", "ألعاب" -> AppCategory.GAMES
             "apps", "تطبيقات" -> AppCategory.APPS
             "trending", "popular", "الأكثر تحميلاً" -> AppCategory.POPULAR
             "entertainment", "الترفيه" -> AppCategory.ENTERTAINMENT
             "sports", "الرياضة" -> AppCategory.SPORTS
-            "business", "العملية" -> AppCategory.BUSINESS
+            "business", "الإنتاجية والعمل" -> AppCategory.BUSINESS
             "education", "التعليم" -> AppCategory.EDUCATION
-            "music", "موسيقى" -> AppCategory.MUSIC
+            "music", "موسيقى وصوتيات" -> AppCategory.MUSIC
+            "tools", "أدوات النظام" -> AppCategory.TOOLS
+            "productivity", "الإنتاجية" -> AppCategory.PRODUCTIVITY
+            "personalization", "التخصيص" -> AppCategory.PERSONALIZATION
+            "media", "الوسائط" -> AppCategory.MEDIA
+            "social", "التواصل الاجتماعي" -> AppCategory.SOCIAL
+            "action", "أكشن ومغامرات" -> AppCategory.ACTION
+            "rpg", "تقمص الأدوار rpg" -> AppCategory.RPG
+            "simulation", "محاكاة" -> AppCategory.SIMULATION
+            "emulators", "المحاكيات" -> AppCategory.EMULATORS
+            "retro", "ريترو وكلاسيك" -> AppCategory.RETRO
+            "root_tools", "أدوات الروت" -> AppCategory.ROOT_TOOLS
+            "open_source", "مفتوح المصدر" -> AppCategory.OPEN_SOURCE
             "video", "فيديو" -> AppCategory.VIDEO
-            "tools", "أدوات" -> AppCategory.TOOLS
             else -> AppCategory.APPS
         }
     }

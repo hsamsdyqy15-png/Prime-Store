@@ -30,7 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,14 +58,32 @@ import com.example.ui.theme.PrimeCardBackground
 import com.example.ui.theme.PrimeTextMuted
 import com.example.ui.theme.PrimeTextSecondary
 
+import androidx.compose.ui.res.painterResource
+import com.example.R
+
 val CATEGORY_LIST = listOf(
     AppCategory.GAMES,
     AppCategory.APPS,
+    AppCategory.ROOT_TOOLS,
+    AppCategory.OPEN_SOURCE,
     AppCategory.POPULAR,
+    AppCategory.NEW_GAMES,
     AppCategory.ENTERTAINMENT,
     AppCategory.SPORTS,
     AppCategory.BUSINESS,
-    AppCategory.EDUCATION
+    AppCategory.EDUCATION,
+    AppCategory.MUSIC,
+    AppCategory.TOOLS,
+    AppCategory.PRODUCTIVITY,
+    AppCategory.PERSONALIZATION,
+    AppCategory.MEDIA,
+    AppCategory.SOCIAL,
+    AppCategory.ACTION,
+    AppCategory.RPG,
+    AppCategory.SIMULATION,
+    AppCategory.EMULATORS,
+    AppCategory.RETRO,
+    AppCategory.VIDEO
 )
 
 @Composable
@@ -175,7 +196,7 @@ fun CategoryLargeCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Icon
+            // Sharp Vector Icon with category accent tint & neon glow
             Box(
                 modifier = Modifier
                     .size(54.dp)
@@ -190,29 +211,52 @@ fun CategoryLargeCard(
                     .border(1.dp, Color(category.accentHex).copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = category.iconEmoji,
-                    fontSize = 28.sp
+                Icon(
+                    painter = painterResource(id = category.iconResId),
+                    contentDescription = category.titleAr,
+                    tint = Color(category.accentHex),
+                    modifier = Modifier.size(28.dp)
                 )
             }
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            // Text: Title & Count/Subtitle
+            // Text: Title & Subtitle
             Column(
                 modifier = Modifier.weight(1f)
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = category.titleAr,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (category == AppCategory.ROOT_TOOLS || category == AppCategory.OPEN_SOURCE) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(category.accentHex).copy(alpha = 0.2f))
+                                .border(1.dp, Color(category.accentHex), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (category == AppCategory.ROOT_TOOLS) "ROOT" else "FOSS",
+                                color = Color(category.accentHex),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
                 Text(
-                    text = category.titleAr,
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = category.countLabel,
+                    text = category.subtitleAr,
                     color = PrimeTextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -236,21 +280,29 @@ fun CategoryAppsList(
     onAppClick: (String) -> Unit,
     onDownloadClick: (String) -> Unit
 ) {
-    val filteredApps = remember(category, allApps, sortOrder) {
-        val list = if (category == AppCategory.POPULAR) {
-            allApps.sortedByDescending { it.rating }
+    var openSourceOnly by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    val filteredApps = remember(category, allApps, sortOrder, openSourceOnly) {
+        val baseList = when (category) {
+            AppCategory.POPULAR -> allApps.sortedByDescending { it.rating }
+            AppCategory.OPEN_SOURCE -> allApps.filter { it.isOpenSource }
+            AppCategory.ROOT_TOOLS -> allApps.filter { it.category == AppCategory.ROOT_TOOLS }
+            else -> allApps.filter { it.category == category }
+        }
+        val sourceFiltered = if (openSourceOnly) {
+            baseList.filter { it.isOpenSource }
         } else {
-            allApps.filter { it.category == category }
+            baseList
         }
         when (sortOrder) {
-            SortOrder.POPULAR -> list.sortedByDescending { it.ratingCount }
-            SortOrder.RATING -> list.sortedByDescending { it.rating }
-            SortOrder.NEWEST -> list.sortedByDescending { it.isNew }
+            SortOrder.POPULAR -> sourceFiltered.sortedByDescending { it.ratingCount }
+            SortOrder.RATING -> sourceFiltered.sortedByDescending { it.rating }
+            SortOrder.NEWEST -> sourceFiltered.sortedByDescending { it.isNew }
         }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Sort Chips
+        // Sort & Filter Chips
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -272,91 +324,166 @@ fun CategoryAppsList(
                 selected = sortOrder == SortOrder.NEWEST,
                 onClick = { onSortChange(SortOrder.NEWEST) }
             )
+            if (category != AppCategory.OPEN_SOURCE) {
+                SortChipItem(
+                    label = "🔓 FOSS فقط",
+                    selected = openSourceOnly,
+                    onClick = { openSourceOnly = !openSourceOnly }
+                )
+            }
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(filteredApps) { app ->
-                NeonCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    onClick = { onAppClick(app.id) }
-                ) {
-                    Row(
+        if (filteredApps.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFF221733))
+                            .border(1.dp, NeonBorder, RoundedCornerShape(18.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        AppIconBadge(
-                            emoji = app.iconEmoji,
-                            accentColor = app.accentColor,
-                            size = 54.dp,
-                            imageUrl = app.iconUrl
+                        Icon(
+                            painter = painterResource(id = category.iconResId),
+                            contentDescription = null,
+                            tint = Color(category.accentHex),
+                            modifier = Modifier.size(32.dp)
                         )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = app.nameAr,
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "لا توجد تطبيقات منشورة في ${category.titleAr} بعد",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "تظهر هنا فقط التطبيقات التي ينشرها الأدمن مباشرة",
+                        color = PrimeTextMuted,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(filteredApps, key = { it.id }) { app ->
+                    NeonCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        onClick = { onAppClick(app.id) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AppIconBadge(
+                                emoji = app.iconEmoji,
+                                accentColor = app.accentColor,
+                                size = 54.dp,
+                                imageUrl = app.iconUrl
                             )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(vertical = 2.dp)
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = app.nameAr,
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (app.isOpenSource) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFF1E3A8A))
+                                                .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                text = "FOSS",
+                                                color = Color(0xFF93C5FD),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Star,
+                                        contentDescription = null,
+                                        tint = AccentGold,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "${app.rating}",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = " (${app.ratingCount}) • ${app.size}",
+                                        color = PrimeTextMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = app.category.titleAr,
+                                        color = NeonPurplePrimary,
+                                        fontSize = 11.sp
+                                    )
+                                    if (app.supportedAbis.isNotBlank()) {
+                                        Text(
+                                            text = " • ${app.supportedAbis.substringBefore("(").trim()}",
+                                            color = PrimeTextMuted,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF281C38))
+                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .clickable { onDownloadClick(app.id) }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Filled.Star,
-                                    contentDescription = null,
-                                    tint = AccentGold,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "${app.rating}",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = " (${app.ratingCount}) • ${app.size}",
-                                    color = PrimeTextMuted,
-                                    fontSize = 11.sp
+                                    imageVector = Icons.Filled.Download,
+                                    contentDescription = "تثبيت",
+                                    tint = NeonPurplePrimary,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            Text(
-                                text = app.tags.joinToString(" • "),
-                                color = NeonPurplePrimary,
-                                fontSize = 11.sp,
-                                maxLines = 1
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF281C38))
-                                .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
-                                .clickable { onDownloadClick(app.id) }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Download,
-                                contentDescription = "تثبيت",
-                                tint = NeonPurplePrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
                         }
                     }
                 }
-            }
-            item {
-                Spacer(modifier = Modifier.height(80.dp))
+                item {
+                    Spacer(modifier = Modifier.height(80.dp))
+                }
             }
         }
     }

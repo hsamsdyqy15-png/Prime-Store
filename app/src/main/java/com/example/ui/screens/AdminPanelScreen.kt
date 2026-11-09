@@ -130,7 +130,10 @@ fun AdminPanelScreen(
         features: List<String>,
         iconUrl: String,
         fileUrl: String,
-        screenshots: List<String>
+        screenshots: List<String>,
+        isOpenSource: Boolean,
+        sourceCodeUrl: String,
+        supportedAbis: String
     ) -> Unit,
     onDeleteApp: (String) -> Unit,
     onBackClick: () -> Unit,
@@ -157,6 +160,11 @@ fun AdminPanelScreen(
     // Uploaded / Existing URLs
     var storedIconUrl by remember { mutableStateOf("") }
     val storedScreenshotUrls = remember { mutableStateListOf<String>() }
+
+    // Open Source & CPU Architecture states
+    var isOpenSource by remember { mutableStateOf(false) }
+    var sourceCodeUrl by remember { mutableStateOf("") }
+    var detectedAbis by remember { mutableStateOf("Universal (All Architectures)") }
 
     // Picked local files
     var pickedIconUri by remember { mutableStateOf<Uri?>(null) }
@@ -244,10 +252,12 @@ fun AdminPanelScreen(
                     return@rememberLauncherForActivityResult
                 }
 
-                // Automatic APK archive reading
+                // Automatic APK archive reading & ABI detection
                 scope.launch(Dispatchers.IO) {
                     val (extractedName, _, iconBytes) = extractApkMetadata(context, uri)
+                    val abis = com.example.data.installer.ApkAbiDetector.detectAbis(context, uri)
                     withContext(Dispatchers.Main) {
+                        detectedAbis = abis
                         if (name.isBlank() && !extractedName.isNullOrBlank()) {
                             name = extractedName
                         }
@@ -273,6 +283,9 @@ fun AdminPanelScreen(
         featuresStr = app.featuresAr.joinToString("\n")
         storedIconUrl = app.iconUrl ?: (if (app.iconEmoji.length <= 4 && !app.iconEmoji.startsWith("http")) app.iconEmoji else "")
         directFileUrl = app.fileUrl.orEmpty()
+        isOpenSource = app.isOpenSource
+        sourceCodeUrl = app.sourceCodeUrl.orEmpty()
+        detectedAbis = app.supportedAbis
         storedScreenshotUrls.clear()
         storedScreenshotUrls.addAll(app.screenshotUrls)
 
@@ -294,6 +307,9 @@ fun AdminPanelScreen(
         featuresStr = ""
         storedIconUrl = ""
         directFileUrl = ""
+        isOpenSource = false
+        sourceCodeUrl = ""
+        detectedAbis = "Universal (All Architectures)"
         storedScreenshotUrls.clear()
 
         pickedIconUri = null
@@ -307,14 +323,25 @@ fun AdminPanelScreen(
     val categoriesList = listOf(
         AppCategory.GAMES,
         AppCategory.APPS,
+        AppCategory.ROOT_TOOLS,
+        AppCategory.OPEN_SOURCE,
+        AppCategory.PRODUCTIVITY,
+        AppCategory.PERSONALIZATION,
+        AppCategory.MEDIA,
+        AppCategory.SOCIAL,
+        AppCategory.ACTION,
+        AppCategory.RPG,
+        AppCategory.SIMULATION,
+        AppCategory.EMULATORS,
+        AppCategory.RETRO,
         AppCategory.POPULAR,
         AppCategory.ENTERTAINMENT,
         AppCategory.SPORTS,
         AppCategory.BUSINESS,
         AppCategory.EDUCATION,
         AppCategory.MUSIC,
-        AppCategory.VIDEO,
-        AppCategory.TOOLS
+        AppCategory.TOOLS,
+        AppCategory.VIDEO
     )
 
     fun startSaveProcess() {
@@ -534,7 +561,10 @@ fun AdminPanelScreen(
                     features,
                     finalIconUrl,
                     finalFileUrl,
-                    finalScreenshots
+                    finalScreenshots,
+                    isOpenSource,
+                    sourceCodeUrl,
+                    detectedAbis
                 )
 
                 // 5. Post-save verification from Supabase: fetch to confirm URLs are persisted
@@ -859,6 +889,52 @@ fun AdminPanelScreen(
                                 singleLine = false,
                                 minLines = 3
                             )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Open Source Toggle & URL Input
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF1E142D), RoundedCornerShape(12.dp))
+                                    .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "مشروع مفتوح المصدر (Open Source FOSS)؟",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "تفعيل عرض شارة المصدر المفتوح ورابط الكود",
+                                        color = PrimeTextMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                androidx.compose.material3.Switch(
+                                    checked = isOpenSource,
+                                    onCheckedChange = { isOpenSource = it },
+                                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = NeonPurplePrimary
+                                    )
+                                )
+                            }
+
+                            androidx.compose.animation.AnimatedVisibility(visible = isOpenSource) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    AdminTextField(
+                                        value = sourceCodeUrl,
+                                        onValueChange = { sourceCodeUrl = it },
+                                        label = "رابط الكود المصدر (GitHub / GitLab URL)"
+                                    )
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(14.dp))
 
@@ -1214,6 +1290,15 @@ fun AdminPanelScreen(
                                 value = directFileUrl,
                                 onValueChange = { directFileUrl = it },
                                 label = "رابط ملف APK المباشر (بديل أو للملفات الكبيرة > 50MB)"
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Supported CPU Architectures (Auto-detected from APK)
+                            AdminTextField(
+                                value = detectedAbis,
+                                onValueChange = { detectedAbis = it },
+                                label = "المعالجات المدعومة (Supported CPU Architecture) - فحص تلقائي من APK"
                             )
 
                             Spacer(modifier = Modifier.height(4.dp))

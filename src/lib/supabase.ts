@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 export const BUCKET = 'store-files';
-export const ADMIN_EMAILS = ['toprsidar2@gmail.com', 'zaim9002@gmail.com', 'ضع_بريدك_هنا'];
+export const ADMIN_EMAILS = ['zaim9002@gmail.com', 'toprsidar2@gmail.com', 'gjhh611@gmail.com'];
 export const supabase = createClient(
   'https://koloemxbxrenwqiajijo.supabase.co',
   'sb_publishable_Ol48kUBezAiwHSYhutTWbQ_ghTohVo6',

@@ -34,7 +34,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,31 +61,26 @@ import com.example.ui.theme.AccentGold
 import com.example.ui.theme.NeonBorder
 import com.example.ui.theme.NeonBorderGlow
 import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurpleGlow
 import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.NeonPurpleSecondary
-import com.example.ui.theme.PrimeCardBackground
 import com.example.ui.theme.PrimeGradientBrush
 import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextPrimary
 import com.example.ui.theme.PrimeTextSecondary
 
 data class CategoryQuickItem(
     val category: AppCategory,
     val title: String,
-    val iconEmoji: String,
     val glowColor: Long
 )
 
 val QUICK_CATEGORIES = listOf(
-    CategoryQuickItem(AppCategory.GAMES, "ألعاب", "🎮", 0xFFA855F7),
-    CategoryQuickItem(AppCategory.APPS, "تطبيقات", "🤖", 0xFF22C55E),
-    CategoryQuickItem(AppCategory.POPULAR, "الأكثر شهرة", "⭐", 0xFFFBBF24),
-    CategoryQuickItem(AppCategory.NEW_GAMES, "الألعاب الجديدة", "🔥", 0xFFF97316),
-    CategoryQuickItem(AppCategory.MUSIC, "موسيقى", "🎵", 0xFF38BDF8),
-    CategoryQuickItem(AppCategory.VIDEO, "فيديو", "▶️", 0xFFEC4899),
-    CategoryQuickItem(AppCategory.TOOLS, "أدوات", "🔧", 0xFF8B5CF6),
-    CategoryQuickItem(AppCategory.MORE, "المزيد", "⊞", 0xFFA855F7)
+    CategoryQuickItem(AppCategory.GAMES, "ألعاب", 0xFFA855F7),
+    CategoryQuickItem(AppCategory.APPS, "تطبيقات", 0xFF22C55E),
+    CategoryQuickItem(AppCategory.ROOT_TOOLS, "أدوات الروت", 0xFFDC2626),
+    CategoryQuickItem(AppCategory.OPEN_SOURCE, "مفتوح المصدر", 0xFF3B82F6),
+    CategoryQuickItem(AppCategory.POPULAR, "الأكثر شهرة", 0xFFFBBF24),
+    CategoryQuickItem(AppCategory.NEW_GAMES, "الجديد", 0xFFF97316),
+    CategoryQuickItem(AppCategory.TOOLS, "أدوات", 0xFF8B5CF6),
+    CategoryQuickItem(AppCategory.MORE, "المزيد", 0xFFA855F7)
 )
 
 @Composable
@@ -95,9 +93,14 @@ fun HomeScreen(
     onDownloadClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val featuredApps = remember(apps) { apps.filter { it.isFeatured } }
-    val trendingApps = remember(apps) { apps.filter { it.isTrending } }
-    val newApps = remember(apps) { apps.filter { it.isNew || it.rating >= 4.5f }.take(6) }
+    var filterOpenSourceOnly by remember { mutableStateOf(false) }
+
+    val displayApps = remember(apps, filterOpenSourceOnly) {
+        if (filterOpenSourceOnly) apps.filter { it.isOpenSource } else apps
+    }
+    val featuredApps = remember(displayApps) { displayApps.filter { it.isFeatured }.ifEmpty { displayApps.take(4) } }
+    val trendingApps = remember(displayApps) { displayApps.filter { it.isTrending }.ifEmpty { displayApps } }
+    val newApps = remember(displayApps) { displayApps.filter { it.isNew || it.rating >= 4.0f }.take(6) }
 
     LazyColumn(
         modifier = modifier
@@ -113,44 +116,106 @@ fun HomeScreen(
             )
         }
 
-        // Hero Banner: GTA V Heist Banner with "تحميل الآن"
+        // Hero Banner: Features real published app or Prime Store
         item {
-            GtaHeroBanner(
-                onDownloadClick = { onDownloadClick("gta_v") },
-                onDetailsClick = { onAppClick("gta_v") }
+            StoreHeroBanner(
+                featuredApp = displayApps.firstOrNull(),
+                onDownloadClick = onDownloadClick,
+                onDetailsClick = onAppClick
             )
         }
 
-        // Section: أقسام المتجر (Store Categories Grid 4x2)
+        // Filter Chips Row (Open Source Filter)
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SortChipItem(
+                    label = "جميع التطبيقات (${apps.size})",
+                    selected = !filterOpenSourceOnly,
+                    onClick = { filterOpenSourceOnly = false }
+                )
+                SortChipItem(
+                    label = "🔓 مفتوح المصدر (FOSS)",
+                    selected = filterOpenSourceOnly,
+                    onClick = { filterOpenSourceOnly = true }
+                )
+            }
+        }
+
+        // Section: أقسام المتجر (Store Categories Grid with sharp vector icons)
         item {
             StoreCategoriesSection(
                 onCategoryClick = onCategoryClick
             )
         }
 
-        // Section: ألعاب مميزة (Featured Games Horizontal List)
-        item {
-            FeaturedGamesSection(
-                games = featuredApps,
-                onAppClick = onAppClick
-            )
-        }
+        if (displayApps.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp, horizontal = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_app_default),
+                            contentDescription = null,
+                            tint = NeonPurplePrimary,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = if (filterOpenSourceOnly) "لا توجد تطبيقات مفتوحة المصدر حالياً" else "لا توجد تطبيقات منشورة حالياً",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "سجل دخولك كأدمن من القائمة الجانبية لنشر أول تطبيق أو لعبة حقيقية 🚀",
+                            color = PrimeTextMuted,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            // Section: ألعاب وتطبيقات مميزة (Featured Games & Apps)
+            if (featuredApps.isNotEmpty()) {
+                item {
+                    FeaturedGamesSection(
+                        games = featuredApps,
+                        onAppClick = onAppClick
+                    )
+                }
+            }
 
-        // Section: تطبيقات رائجة (Trending Apps)
-        item {
-            TrendingAppsSection(
-                apps = trendingApps,
-                onAppClick = onAppClick,
-                onDownloadClick = onDownloadClick
-            )
-        }
+            // Section: تطبيقات رائجة (Trending Apps)
+            if (trendingApps.isNotEmpty()) {
+                item {
+                    TrendingAppsSection(
+                        apps = trendingApps,
+                        onAppClick = onAppClick,
+                        onDownloadClick = onDownloadClick
+                    )
+                }
+            }
 
-        // Section: أضيف حديثاً (Newly Added)
-        item {
-            NewAppsSection(
-                apps = newApps,
-                onAppClick = onAppClick
-            )
+            // Section: أضيف حديثاً (Newly Added)
+            if (newApps.isNotEmpty()) {
+                item {
+                    NewAppsSection(
+                        apps = newApps,
+                        onAppClick = onAppClick
+                    )
+                }
+            }
         }
     }
 }
@@ -168,7 +233,6 @@ fun HomeTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Hamburger Menu (left in screenshot)
         IconButton(
             onClick = onMenuClick,
             modifier = Modifier.testTag("menu_button")
@@ -181,10 +245,7 @@ fun HomeTopBar(
             )
         }
 
-        // Title: Prime Store with Crown Icon (LTR strictly enforced)
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painter = painterResource(id = R.drawable.prime_store_icon),
                 contentDescription = "Prime Store",
@@ -213,7 +274,6 @@ fun HomeTopBar(
             }
         }
 
-        // Search Icon (right in screenshot)
         IconButton(
             onClick = onSearchClick,
             modifier = Modifier.testTag("search_button")
@@ -229,9 +289,10 @@ fun HomeTopBar(
 }
 
 @Composable
-fun GtaHeroBanner(
-    onDownloadClick: () -> Unit,
-    onDetailsClick: () -> Unit,
+fun StoreHeroBanner(
+    featuredApp: AppItem?,
+    onDownloadClick: (String) -> Unit,
+    onDetailsClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -242,144 +303,121 @@ fun GtaHeroBanner(
         NeonCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(205.dp),
+                .height(180.dp),
             shape = RoundedCornerShape(22.dp),
             hasGlow = true,
-            onClick = onDetailsClick
+            onClick = {
+                if (featuredApp != null) onDetailsClick(featuredApp.id)
+            }
         ) {
             Box(
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF2E1065), Color(0xFF180A2D), Color(0xFF0F071D))
+                        )
+                    )
             ) {
-                // Banner background image
-                Image(
-                    painter = painterResource(id = R.drawable.banner_gta5),
-                    contentDescription = "Grand Theft Auto V Promo",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Dark gradient overlay for text readability
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color(0x880B0614),
-                                    Color(0xEE0B0614)
-                                )
-                            )
-                        )
-                )
-
-                // GTA V stylized logo text overlay
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = "grand",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        letterSpacing = 1.sp
+                if (featuredApp != null && !featuredApp.screenshotUrls.firstOrNull().isNullOrBlank()) {
+                    coil.compose.AsyncImage(
+                        model = featuredApp.screenshotUrls.first(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        alpha = 0.35f
                     )
-                    Text(
-                        text = "theft",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        letterSpacing = 1.sp
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "auto ",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = "V",
-                            color = AccentGold,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 20.sp
-                        )
-                    }
                 }
 
-                // Download Button on bottom right (RTL: aligned prominently)
-                Box(
+                Row(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp)
+                        .fillMaxSize()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .shadow(8.dp, RoundedCornerShape(20.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(PrimeGradientBrush)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(color = Color.White)
-                            ) { onDownloadClick() }
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.weight(1f)
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(PrimeGradientBrush)
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = if (featuredApp?.isOpenSource == true) "🔓 مفتوح المصدر (FOSS)" else "👑 مميز في المتجر",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
-                            text = "تحميل الآن",
+                            text = featuredApp?.nameAr ?: "متجر Prime Store",
                             color = Color.White,
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
+
+                        Text(
+                            text = featuredApp?.descriptionAr?.take(60) ?: "تصفح وحمل التطبيقات بروابط مباشرة وتثبيت سلس داخل التطبيق",
+                            color = PrimeTextSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (featuredApp != null) {
+                            Box(
+                                modifier = Modifier
+                                    .shadow(6.dp, RoundedCornerShape(16.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(PrimeGradientBrush)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(color = Color.White)
+                                    ) { onDownloadClick(featuredApp.id) }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Download,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "تحميل (${featuredApp.size})",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (featuredApp != null) {
+                        Spacer(modifier = Modifier.width(12.dp))
+                        AppIconBadge(
+                            emoji = featuredApp.iconEmoji,
+                            accentColor = featuredApp.accentColor,
+                            size = 72.dp,
+                            shape = RoundedCornerShape(18.dp),
+                            imageUrl = featuredApp.iconUrl
                         )
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Carousel indicator dots (active white, 3 smaller gray)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4B4656))
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4B4656))
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4B4656))
-            )
         }
     }
 }
@@ -394,7 +432,6 @@ fun StoreCategoriesSection(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        // Header: أقسام المتجر
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -416,7 +453,6 @@ fun StoreCategoriesSection(
             )
         }
 
-        // 4x2 Grid of categories
         val row1 = QUICK_CATEGORIES.take(4)
         val row2 = QUICK_CATEGORIES.drop(4)
 
@@ -470,9 +506,11 @@ fun CategoryGridItem(
                 .border(1.dp, NeonBorder, RoundedCornerShape(18.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = item.iconEmoji,
-                fontSize = 28.sp
+            Icon(
+                painter = painterResource(id = item.category.iconResId),
+                contentDescription = item.title,
+                tint = Color(item.glowColor),
+                modifier = Modifier.size(28.dp)
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
@@ -499,7 +537,6 @@ fun FeaturedGamesSection(
             .fillMaxWidth()
             .padding(vertical = 12.dp)
     ) {
-        // Section Header: ألعاب مميزة ⭐
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -514,19 +551,18 @@ fun FeaturedGamesSection(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "ألعاب مميزة",
+                text = "تطبيقات وألعاب مميزة",
                 color = Color.White,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        // Horizontal scroll row of cards
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            items(games) { game ->
+            items(games, key = { it.id }) { game ->
                 FeaturedGameCard(game = game, onClick = { onAppClick(game.id) })
             }
         }
@@ -540,8 +576,8 @@ fun FeaturedGameCard(
 ) {
     NeonCard(
         modifier = Modifier
-            .width(135.dp)
-            .height(175.dp),
+            .width(140.dp)
+            .height(185.dp),
         shape = RoundedCornerShape(20.dp),
         hasGlow = true,
         onClick = onClick
@@ -553,7 +589,6 @@ fun FeaturedGameCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Icon
             AppIconBadge(
                 emoji = game.iconEmoji,
                 accentColor = game.accentColor,
@@ -562,9 +597,8 @@ fun FeaturedGameCard(
                 imageUrl = game.iconUrl
             )
 
-            // Name
             Text(
-                text = game.name,
+                text = game.nameAr,
                 color = Color.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -573,10 +607,19 @@ fun FeaturedGameCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Rating
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            if (game.isOpenSource) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF1E3A8A))
+                        .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("🔓 FOSS", color = Color(0xFF93C5FD), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Filled.Star,
                     contentDescription = null,
@@ -585,13 +628,13 @@ fun FeaturedGameCard(
                 )
                 Spacer(modifier = Modifier.width(3.dp))
                 Text(
-                    text = String.format("%.1f", game.rating),
+                    text = String.format(java.util.Locale.US, "%.1f", game.rating),
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = " (${game.ratingCount})",
+                    text = " (${game.size})",
                     color = PrimeTextMuted,
                     fontSize = 10.sp
                 )
@@ -626,7 +669,7 @@ fun TrendingAppsSection(
             )
         }
 
-        apps.take(4).forEach { app ->
+        apps.take(6).forEach { app ->
             NeonCard(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -649,12 +692,28 @@ fun TrendingAppsSection(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = app.nameAr,
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = app.nameAr,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (app.isOpenSource) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF1E3A8A))
+                                        .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                                ) {
+                                    Text("FOSS", color = Color(0xFF93C5FD), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.Star,
@@ -722,7 +781,7 @@ fun NewAppsSection(
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(apps) { app ->
+            items(apps, key = { it.id }) { app ->
                 FeaturedGameCard(game = app, onClick = { onAppClick(app.id) })
             }
         }
