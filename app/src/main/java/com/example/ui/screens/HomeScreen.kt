@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Widgets
@@ -92,6 +93,7 @@ fun HomeScreen(
     onSearchClick: () -> Unit,
     onMenuClick: () -> Unit,
     onDownloadClick: (String) -> Unit,
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var filterOpenSourceOnly by remember { mutableStateOf(false) }
@@ -113,7 +115,8 @@ fun HomeScreen(
         item {
             HomeTopBar(
                 onMenuClick = onMenuClick,
-                onSearchClick = onSearchClick
+                onSearchClick = onSearchClick,
+                onRefresh = onRefresh
             )
         }
 
@@ -225,6 +228,7 @@ fun HomeScreen(
 fun HomeTopBar(
     onMenuClick: () -> Unit,
     onSearchClick: () -> Unit,
+    onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -234,16 +238,29 @@ fun HomeTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(
-            onClick = onMenuClick,
-            modifier = Modifier.testTag("menu_button")
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Menu,
-                contentDescription = "القائمة الجانبية",
-                tint = Color.White,
-                modifier = Modifier.size(26.dp)
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onMenuClick,
+                modifier = Modifier.testTag("menu_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Menu,
+                    contentDescription = "القائمة الجانبية",
+                    tint = Color.White,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            IconButton(
+                onClick = onRefresh,
+                modifier = Modifier.testTag("refresh_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = "تحديث البيانات",
+                    tint = NeonPurplePrimary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {

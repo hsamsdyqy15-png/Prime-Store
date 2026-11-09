@@ -56,7 +56,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -111,6 +113,11 @@ fun AppDetailsScreen(
     val tabs = listOf("حول التطبيق", "مراجعات", "لقطات الشاشة")
     var showMenu by remember { mutableStateOf(false) }
     var showReviewModal by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showSecurityDialog by remember { mutableStateOf(false) }
+    var isScanningSecurity by remember { mutableStateOf(false) }
+    var securityReport by remember { mutableStateOf<com.example.data.security.SecurityReport?>(null) }
 
     android.util.Log.d(
         "PrimeStore",
@@ -433,6 +440,44 @@ fun AppDetailsScreen(
                             onClick = onDownloadClick
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isScanningSecurity = true
+                                showSecurityDialog = true
+                                val apkFile = com.example.data.installer.ApkInstaller.getApkFile(context, app.id)
+                                val report = com.example.data.security.AiSecurityScanner.scanApk(context, apkFile)
+                                securityReport = report
+                                isScanningSecurity = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E142D)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.5f))
+                    ) {
+                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = "فحص الأمان", tint = Color(0xFF34D399))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("فحص الأمان بالذكاء الاصطناعي 🛡️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextButton(
+                        onClick = {
+                            val apkFile = com.example.data.installer.ApkInstaller.getApkFile(context, app.id)
+                            val pkg = com.example.data.installer.ApkInstaller.getApkPackageName(context, apkFile) ?: "com.primestore.${app.name.lowercase().replace(Regex("[^a-z0-9]"), "")}"
+                            if (com.example.data.installer.ApkInstaller.isAppInstalled(context, pkg)) {
+                                com.example.data.installer.ApkInstaller.uninstallPreviousVersion(context, pkg)
+                            } else {
+                                android.widget.Toast.makeText(context, "لا توجد نسخة سابقة مثبتة بهذا الحزمة لتتطلب الحذف", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("حذف النسخة السابقة (حل مشاكل تعارض التوقيع) 🗑️", color = Color(0xFFFFB4AB), fontSize = 12.sp)
+                    }
                 }
             }
 
@@ -676,6 +721,66 @@ fun AppDetailsScreen(
                 onSubmit = { rating, comment ->
                     onAddReview(rating, comment)
                     showReviewModal = false
+                }
+            )
+        }
+
+        // AI Security Report Dialog
+        if (showSecurityDialog) {
+            AlertDialog(
+                onDismissRequest = { showSecurityDialog = false },
+                containerColor = Color(0xFF16101F),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = Color(0xFF34D399))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "تقرير فحص الأمان بالذكاء الاصطناعي 🤖", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                },
+                text = {
+                    if (isScanningSecurity) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(color = NeonPurplePrimary)
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text("جاري فحص التطبيق وتحليل الأكواد والصلاحيات بالذكاء الاصطناعي... ⏳", color = PrimeTextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
+                        }
+                    } else if (securityReport != null) {
+                        val rep = securityReport!!
+                        Column {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (rep.isSafe) Color(0xFF064E3B) else Color(0xFF7F1D1D))
+                                    .padding(12.dp)
+                            ) {
+                                val safetyText = if (rep.isSafe) "🟢 التطبيق آمن 100% ومثالي للتثبيت" else "⚠️ تحذير: يحتوي على صلاحيات حساسة"
+                                Text(
+                                    text = safetyText,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text("اسم الحزمة (Package): ${rep.packageName}", color = PrimeTextSecondary, fontSize = 12.sp)
+                            Text("رقم الإصدار: ${rep.versionName}", color = PrimeTextSecondary, fontSize = 12.sp)
+                            Text("عدد الصلاحيات: ${rep.permissionsCount}", color = PrimeTextSecondary, fontSize = 12.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(rep.aiSummaryAr, color = Color.White, fontSize = 13.sp, lineHeight = 18.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showSecurityDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                    ) {
+                        Text("حسناً، فهمت", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             )
         }

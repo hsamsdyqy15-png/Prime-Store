@@ -23,11 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
@@ -88,6 +90,8 @@ fun SettingsScreen(
     onSignIn: (email: String, pass: String) -> Unit = { _, _ -> },
     onSignUp: (email: String, pass: String) -> Unit = { _, _ -> },
     onToggleLanguage: () -> Unit,
+    onSetLanguage: (String) -> Unit = {},
+    onRefreshData: () -> Unit = {},
     onToggleDarkMode: () -> Unit,
     onToggleNotifications: () -> Unit,
     onClearCache: () -> Unit,
@@ -102,6 +106,7 @@ fun SettingsScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showCacheDialog by remember { mutableStateOf(false) }
     var showAdminLoginDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
 
     // Secret 7-tap counter
     var versionTapCount by remember { mutableIntStateOf(0) }
@@ -239,9 +244,28 @@ fun SettingsScreen(
             item {
                 SettingsOptionItem(
                     title = "اللغة",
-                    subtitle = if (currentLanguage == "ar") "العربية" else "English",
+                    subtitle = when (currentLanguage) {
+                        "ar" -> "🇸🇦 العربية (Arabic)"
+                        "en" -> "🇬🇧 English"
+                        "fr" -> "🇫🇷 Français (French)"
+                        "es" -> "🇪🇸 Español (Spanish)"
+                        "de" -> "🇩🇪 Deutsch (German)"
+                        "tr" -> "🇹🇷 Türkçe (Turkish)"
+                        "ru" -> "🇷🇺 Русский (Russian)"
+                        else -> currentLanguage
+                    },
                     icon = Icons.Filled.Language,
-                    onClick = onToggleLanguage
+                    onClick = { showLanguageDialog = true }
+                )
+            }
+
+            // 1.1 تحديث البيانات والمنشورات فوراً 🔄
+            item {
+                SettingsOptionItem(
+                    title = "تحديث المنشورات والتطبيقات",
+                    subtitle = "إعادة جلب وتحديث كافة التطبيقات من السحابة",
+                    icon = Icons.Filled.Refresh,
+                    onClick = onRefreshData
                 )
             }
 
@@ -701,6 +725,56 @@ fun SettingsScreen(
                 }
             )
         }
+    }
+
+    if (showLanguageDialog) {
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            containerColor = Color(0xFF16101F),
+            title = {
+                Text(text = "اختر لغة التطبيق 🌐", color = Color.White, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column {
+                    val langs = listOf(
+                        "ar" to "🇸🇦 العربية (Arabic)",
+                        "en" to "🇬🇧 English",
+                        "fr" to "🇫🇷 Français (French)",
+                        "es" to "🇪🇸 Español (Spanish)",
+                        "de" to "🇩🇪 Deutsch (German)",
+                        "tr" to "🇹🇷 Türkçe (Turkish)",
+                        "ru" to "🇷🇺 Русский (Russian)"
+                    )
+                    for ((code, label) in langs) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    onSetLanguage(code)
+                                    showLanguageDialog = false
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = label, color = if (currentLanguage == code) NeonPurplePrimary else Color.White, fontWeight = if (currentLanguage == code) FontWeight.Bold else FontWeight.Normal)
+                            if (currentLanguage == code) {
+                                Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = NeonPurplePrimary)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showLanguageDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                ) {
+                    Text("إغلاق", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 

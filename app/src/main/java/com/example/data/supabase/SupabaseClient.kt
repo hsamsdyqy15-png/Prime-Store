@@ -550,7 +550,7 @@ object SupabaseClient {
                 override fun contentLength() = totalBytes
                 override fun writeTo(sink: okio.BufferedSink) {
                     contentResolver.openInputStream(uri)?.use { input ->
-                        val buffer = ByteArray(8192)
+                        val buffer = ByteArray(64 * 1024)
                         var written = 0L
                         var read: Int
                         while (input.read(buffer).also { read = it } != -1) {

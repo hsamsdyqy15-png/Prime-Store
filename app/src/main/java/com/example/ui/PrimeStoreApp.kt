@@ -242,7 +242,8 @@ fun PrimeStoreApp(
                                                         else drawerState.close()
                                                     }
                                                 },
-                                                onDownloadClick = { appId -> viewModel.startDownload(appId) }
+                                                onDownloadClick = { appId -> viewModel.startDownload(appId) },
+                                                onRefresh = { viewModel.refreshData() }
                                             )
                                         }
 

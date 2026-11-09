@@ -200,7 +200,27 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
     fun toggleLanguage() {
         val nextLang = if (_uiState.value.currentLanguage == "ar") "en" else "ar"
-        _uiState.value = _uiState.value.copy(currentLanguage = nextLang)
+        setLanguage(nextLang)
+    }
+
+    fun setLanguage(lang: String) {
+        _uiState.value = _uiState.value.copy(currentLanguage = lang)
+        val langName = when (lang) {
+            "ar" -> "العربية"
+            "en" -> "English"
+            "fr" -> "Français"
+            "es" -> "Español"
+            "de" -> "Deutsch"
+            "tr" -> "Türkçe"
+            "ru" -> "Русский"
+            else -> lang
+        }
+        emitToast("تم تغيير لغة التطبيق إلى $langName 🌐")
+    }
+
+    fun refreshData() {
+        repository.refreshFromSupabase()
+        emitToast("تم تحديث التطبيقات والمنشورات بنجاح 🔄")
     }
 
     fun toggleDarkMode() {
