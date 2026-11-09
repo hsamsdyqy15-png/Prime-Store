@@ -2613,12 +2613,136 @@
         return publicData.publicUrl;
     }
 
+    async function uploadToGitHubReleases(file, appId, appName, onProgress) {
+        if (!file) return null;
+        const max2Gb = 2147483648;
+        if (file.size > max2Gb) {
+            throw new Error("حجم الملف يتجاوز 2 جيجابايت، يرجى تقسيم الملف قبل الرفع");
+        }
+        const ext = file.name.split('.').pop().toLowerCase();
+        const allowed = ['apk', 'obb', 'zip', 'xapk', 'apks'];
+        if (!allowed.includes(ext)) {
+            throw new Error("لا يمكن رفع إلا ملفات apk أو obb أو zip وما شابهها");
+        }
+
+        const ghOwner = localStorage.getItem('gh_owner') || 'hsamsdyqy15-png';
+        const ghRepo = localStorage.getItem('gh_repo') || 'prime-store-files';
+        const ghToken = (localStorage.getItem('gh_token') || '').trim();
+
+        if (!ghToken) {
+            return await uploadFileToBucket(file, 'apks');
+        }
+
+        // 1. Create dedicated release for this app
+        const timestamp = Date.now();
+        const cleanAppId = (appId || 'app').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const tagName = `app-${cleanAppId}-${timestamp}`;
+
+        const createRes = await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/releases`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${ghToken}`,
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tag_name: tagName,
+                name: appName || 'App',
+                draft: false,
+                prerelease: false
+            })
+        });
+
+        if (!createRes.ok) {
+            let msg = `خطأ ${createRes.status}`;
+            if (createRes.status === 401) msg = "401: المفتاح غير صالح أو منتهي";
+            else if (createRes.status === 403) msg = "403: لا توجد صلاحية، أو تم تجاوز حد الطلبات";
+            else if (createRes.status === 404) msg = "404: اسم المستودع أو المالك خطأ";
+            throw new Error(msg);
+        }
+
+        const releaseData = await createRes.json();
+        const releaseId = releaseData.id;
+        const uploadUrl = releaseData.upload_url.split('{')[0];
+
+        // 2. Upload asset via XMLHttpRequest for real-time progress
+        return new Promise((resolve, reject) => {
+            let fileName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const targetUrl = `${uploadUrl}?name=${encodeURIComponent(fileName)}`;
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', targetUrl, true);
+            xhr.setRequestHeader('Authorization', `Bearer ${ghToken}`);
+            xhr.setRequestHeader('Accept', 'application/vnd.github+json');
+            xhr.setRequestHeader('X-GitHub-Api-Version', '2022-11-28');
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable && onProgress) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    const loadedMb = (e.loaded / (1024 * 1024)).toFixed(1);
+                    const totalMb = (e.total / (1024 * 1024)).toFixed(1);
+                    onProgress(percent, loadedMb, totalMb);
+                }
+            };
+
+            xhr.onload = async () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const assetData = JSON.parse(xhr.responseText);
+                        resolve({
+                            downloadUrl: assetData.browser_download_url,
+                            sizeMB: (file.size / (1024 * 1024)).toFixed(1) + ' MB',
+                            fileName: fileName
+                        });
+                    } catch (e) {
+                        reject(new Error("فشل قراءة استجابة GitHub"));
+                    }
+                } else {
+                    // Rollback delete release on failure
+                    try {
+                        await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/releases/${releaseId}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `Bearer ${ghToken}`,
+                                'Accept': 'application/vnd.github+json'
+                            }
+                        });
+                    } catch (_) {}
+
+                    let errText = xhr.responseText;
+                    if (xhr.status === 401) errText = "المفتاح غير صالح أو منتهي";
+                    else if (xhr.status === 403) errText = "لا توجد صلاحية، أو تم تجاوز حد الطلبات";
+                    else if (xhr.status === 404) errText = "اسم المستودع أو المالك خطأ";
+                    else if (xhr.status === 422) errText = "اسم الملف مكرر في نفس الـ Release";
+                    reject(new Error(`فشل الرفع (${xhr.status}): ${errText}`));
+                }
+            };
+
+            xhr.onerror = async () => {
+                try {
+                    await fetch(`https://api.github.com/repos/${ghOwner}/${ghRepo}/releases/${releaseId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${ghToken}`,
+                            'Accept': 'application/vnd.github+json'
+                        }
+                    });
+                } catch (_) {}
+                reject(new Error("انقطاع في الاتصال بالإنترنت أثناء الرفع، يرجى إعادة المحاولة"));
+            };
+
+            xhr.send(file);
+        });
+    }
+
     async function saveAppFromAdmin() {
         const name = document.getElementById('admin-app-name').value.trim();
         const category = document.getElementById('admin-app-category').value;
         const rating = parseFloat(document.getElementById('admin-app-rating').value) || 4.5;
         const downloads = document.getElementById('admin-app-downloads').value.trim() || "+100M";
-        const size = document.getElementById('admin-app-size').value.trim() || "100 MB";
+        let size = document.getElementById('admin-app-size').value.trim() || "100 MB";
         const desc = document.getElementById('admin-app-desc').value.trim();
         const featuresRaw = document.getElementById('admin-app-features').value.trim();
         const features = featuresRaw ? featuresRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
@@ -2642,11 +2766,16 @@
                 if (uploadedIcon) iconUrl = uploadedIcon;
             }
 
-            // رفع ملف APK إن وجد
+            // رفع ملف APK عبر GitHub Releases إن وجد
             const apkFile = document.getElementById('admin-apk-file').files[0];
             if (apkFile) {
-                const uploadedApk = await uploadFileToBucket(apkFile, 'apks');
-                if (uploadedApk) fileUrl = uploadedApk;
+                const ghResult = await uploadToGitHubReleases(apkFile, editId, name, (pct, upMb, totMb) => {
+                    if (statusEl) statusEl.textContent = `جاري رفع APK إلى GitHub Releases: ${pct}% (${upMb}/${totMb} MB)`;
+                });
+                if (ghResult && ghResult.downloadUrl) {
+                    fileUrl = ghResult.downloadUrl;
+                    if (ghResult.sizeMB) size = ghResult.sizeMB;
+                }
             }
 
             // رفع لقطات الشاشة إن وجدت

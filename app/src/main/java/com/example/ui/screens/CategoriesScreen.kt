@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -497,11 +498,13 @@ fun SortChipItem(
 ) {
     Box(
         modifier = Modifier
+            .defaultMinSize(minHeight = 36.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(if (selected) NeonPurplePrimary else Color(0xFF1E162A))
             .border(1.dp, if (selected) NeonBorderGlow else NeonBorder, RoundedCornerShape(12.dp))
             .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 7.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,

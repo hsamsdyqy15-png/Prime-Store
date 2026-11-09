@@ -466,7 +466,7 @@ fun AdminPanelScreen(
                     val apkUri = pickedApkUri!!
                     val max2Gb = 2147483648L
                     if (pickedApkSizeBytes > max2Gb) {
-                        throw Exception("الحد الأقصى 2GB لكل ملف")
+                        throw Exception("حجم الملف يتجاوز 2 جيجابايت، يرجى تقسيم الملف قبل الرفع")
                     }
 
                     // Validate GitHub config
@@ -477,33 +477,22 @@ fun AdminPanelScreen(
 
                     uploadCurrentStep++
                     isUploadingToGitHub = true
-                    uploadStepLabel = "جاري رفع ملف APK إلى GitHub Releases ($uploadCurrentStep/$uploadTotalSteps)"
+                    uploadStepLabel = "جاري إنشاء Release ورفع الملف إلى GitHub ($uploadCurrentStep/$uploadTotalSteps)"
                     uploadProgress = 0f
 
                     // Start Foreground Service for persistence
                     GitHubUploadService.start(context, pickedApkFileName.ifBlank { name })
 
                     try {
-                        // Step A & B: Get or create release with tag "store-files"
-                        val releaseResult = GitHubStorageHelper.getOrCreateReleaseUploadUrl(
+                        val uploadResult = GitHubStorageHelper.uploadAppRelease(
+                            context = context,
                             owner = currentGhConfig.owner,
                             repo = currentGhConfig.repo,
-                            token = currentGhConfig.token
-                        )
-
-                        if (releaseResult.isFailure) {
-                            throw releaseResult.exceptionOrNull() ?: Exception("فشل إنشاء أو الحصول على إصدار GitHub")
-                        }
-
-                        val uploadBaseUrl = releaseResult.getOrThrow()
-
-                        // Step C: Stream APK file to GitHub
-                        val apkResult = GitHubStorageHelper.uploadApkAsset(
-                            context = context,
-                            uploadBaseUrl = uploadBaseUrl,
                             token = currentGhConfig.token,
+                            appId = editingAppId ?: "app_${System.currentTimeMillis()}",
+                            appName = name.ifBlank { "App" },
                             uri = apkUri,
-                            fileName = pickedApkFileName.ifBlank { "app.apk" },
+                            originalFileName = pickedApkFileName.ifBlank { "app.apk" },
                             fileSizeBytes = pickedApkSizeBytes
                         ) { bytesWritten, totalBytes ->
                             val progressFrac = if (totalBytes > 0) (bytesWritten.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
@@ -516,13 +505,13 @@ fun AdminPanelScreen(
                             GitHubUploadService.updateProgress(context, pickedApkFileName, percent, upMb, totMb)
                         }
 
-                        if (apkResult.isFailure) {
-                            throw apkResult.exceptionOrNull() ?: Exception("فشل رفع ملف APK إلى GitHub")
+                        if (uploadResult.isFailure) {
+                            throw uploadResult.exceptionOrNull() ?: Exception("فشل رفع الملف إلى GitHub Releases")
                         }
 
-                        val ghAsset = apkResult.getOrThrow()
+                        val ghAsset = uploadResult.getOrThrow()
                         finalFileUrl = ghAsset.downloadUrl
-                        uploadedApkSizeStr = formatSize(ghAsset.sizeBytes)
+                        uploadedApkSizeStr = ghAsset.sizeMB
 
                     } finally {
                         GitHubUploadService.stop(context)

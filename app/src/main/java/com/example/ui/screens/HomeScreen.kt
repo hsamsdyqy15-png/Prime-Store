@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -298,12 +299,12 @@ fun StoreHeroBanner(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
         NeonCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(180.dp),
+                .wrapContentHeight(),
             shape = RoundedCornerShape(22.dp),
             hasGlow = true,
             onClick = {
@@ -312,7 +313,8 @@ fun StoreHeroBanner(
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .wrapContentHeight()
                     .background(
                         Brush.linearGradient(
                             listOf(Color(0xFF2E1065), Color(0xFF180A2D), Color(0xFF0F071D))
@@ -323,16 +325,26 @@ fun StoreHeroBanner(
                     coil.compose.AsyncImage(
                         model = featuredApp.screenshotUrls.first(),
                         contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.matchParentSize(),
                         contentScale = ContentScale.Crop,
-                        alpha = 0.35f
+                        alpha = 0.22f
+                    )
+                    // High-contrast gradient scrim to ensure text and buttons are 100% visible and readable
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color(0xEE120824), Color(0xF80E061A))
+                                )
+                            )
                     )
                 }
 
                 Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(18.dp),
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -353,7 +365,7 @@ fun StoreHeroBanner(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         Text(
                             text = featuredApp?.nameAr ?: "متجر Prime Store",
@@ -364,8 +376,10 @@ fun StoreHeroBanner(
                             overflow = TextOverflow.Ellipsis
                         )
 
+                        Spacer(modifier = Modifier.height(2.dp))
+
                         Text(
-                            text = featuredApp?.descriptionAr?.take(60) ?: "تصفح وحمل التطبيقات بروابط مباشرة وتثبيت سلس داخل التطبيق",
+                            text = featuredApp?.descriptionAr?.take(70) ?: "تصفح وحمل التطبيقات بروابط مباشرة وتثبيت سلس داخل التطبيق",
                             color = PrimeTextSecondary,
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
@@ -378,21 +392,22 @@ fun StoreHeroBanner(
                         if (featuredApp != null) {
                             Box(
                                 modifier = Modifier
-                                    .shadow(6.dp, RoundedCornerShape(16.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .shadow(6.dp, RoundedCornerShape(14.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(PrimeGradientBrush)
+                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(14.dp))
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = ripple(color = Color.White)
                                     ) { onDownloadClick(featuredApp.id) }
-                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         imageVector = Icons.Filled.Download,
                                         contentDescription = null,
                                         tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
@@ -407,7 +422,7 @@ fun StoreHeroBanner(
                     }
 
                     if (featuredApp != null) {
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
                         AppIconBadge(
                             emoji = featuredApp.iconEmoji,
                             accentColor = featuredApp.accentColor,
