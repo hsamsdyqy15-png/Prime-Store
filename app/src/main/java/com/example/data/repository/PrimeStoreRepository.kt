@@ -475,14 +475,9 @@ class PrimeStoreRepository(private val context: Context) {
     }
 
     fun addApp(app: AppItem, accessToken: String? = null) {
-        val current = _apps.value.toMutableList()
-        current.add(0, app)
-        _apps.value = current
-        emitToast("تمت إضافة تطبيق ${app.nameAr} بنجاح إلى المتجر! ✔")
-
         scope.launch {
             val categoryKey = categoryToString(app.category)
-            com.example.data.supabase.SupabaseClient.insertApp(
+            val result = com.example.data.supabase.SupabaseClient.insertApp(
                 accessToken = accessToken,
                 name = app.nameAr,
                 category = categoryKey,
@@ -493,25 +488,24 @@ class PrimeStoreRepository(private val context: Context) {
                 iconUrl = app.iconUrl ?: app.iconEmoji,
                 fileUrl = app.fileUrl.orEmpty(),
                 screenshots = app.screenshotUrls,
-                isOpenSource = app.isOpenSource,
-                sourceCodeUrl = app.sourceCodeUrl,
-                supportedAbis = app.supportedAbis
+                architecture = app.supportedAbis,
+                version = "1.0.0",
+                packageName = "com.primestore.${app.nameAr.lowercase().replace(Regex("[^a-z0-9]"), "")}",
+                downloads = app.downloadCount
             )
-            refreshFromSupabase()
+            if (result.success) {
+                refreshFromSupabase()
+                emitToast("تم نشر التطبيق في المتجر بنجاح! 🎉")
+            } else {
+                emitToast("خطأ Supabase (${result.code}): ${result.message}")
+            }
         }
     }
 
     fun updateApp(app: AppItem, accessToken: String? = null) {
-        val current = _apps.value.toMutableList()
-        val index = current.indexOfFirst { it.id == app.id }
-        if (index >= 0) {
-            current[index] = app
-            _apps.value = current
-            emitToast("تم تحديث بيانات ${app.nameAr} بنجاح! ✔")
-        }
         scope.launch {
             val categoryKey = categoryToString(app.category)
-            com.example.data.supabase.SupabaseClient.updateApp(
+            val result = com.example.data.supabase.SupabaseClient.updateApp(
                 accessToken = accessToken,
                 id = app.id,
                 name = app.nameAr,
@@ -523,11 +517,17 @@ class PrimeStoreRepository(private val context: Context) {
                 iconUrl = app.iconUrl ?: app.iconEmoji,
                 fileUrl = app.fileUrl.orEmpty(),
                 screenshots = app.screenshotUrls,
-                isOpenSource = app.isOpenSource,
-                sourceCodeUrl = app.sourceCodeUrl,
-                supportedAbis = app.supportedAbis
+                architecture = app.supportedAbis,
+                version = "1.0.0",
+                packageName = "com.primestore.${app.nameAr.lowercase().replace(Regex("[^a-z0-9]"), "")}",
+                downloads = app.downloadCount
             )
-            refreshFromSupabase()
+            if (result.success) {
+                refreshFromSupabase()
+                emitToast("تم تحديث التطبيق بنجاح! ✔")
+            } else {
+                emitToast("خطأ Supabase (${result.code}): ${result.message}")
+            }
         }
     }
 

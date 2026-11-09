@@ -2737,18 +2737,41 @@
         });
     }
 
+    function parseDownloadsCount(rawVal) {
+        if (!rawVal) return 0;
+        if (typeof rawVal === 'number') return Math.round(rawVal);
+        let str = String(rawVal).trim().toUpperCase();
+        str = str.replace(/^[+~]/, '').replace(/,/g, '').trim();
+        if (!str) return 0;
+
+        if (str.endsWith('K')) {
+            const n = parseFloat(str.slice(0, -1));
+            return isNaN(n) ? 0 : Math.round(n * 1000);
+        }
+        if (str.endsWith('M')) {
+            const n = parseFloat(str.slice(0, -1));
+            return isNaN(n) ? 0 : Math.round(n * 1000000);
+        }
+        if (str.endsWith('B')) {
+            const n = parseFloat(str.slice(0, -1));
+            return isNaN(n) ? 0 : Math.round(n * 1000000000);
+        }
+        const parsed = parseInt(str, 10);
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
     async function saveAppFromAdmin() {
-        const name = document.getElementById('admin-app-name').value.trim();
-        const category = document.getElementById('admin-app-category').value;
-        const rating = parseFloat(document.getElementById('admin-app-rating').value) || 4.5;
-        const downloads = document.getElementById('admin-app-downloads').value.trim() || "+100M";
-        let size = document.getElementById('admin-app-size').value.trim() || "100 MB";
-        const desc = document.getElementById('admin-app-desc').value.trim();
-        const featuresRaw = document.getElementById('admin-app-features').value.trim();
+        const name = (document.getElementById('admin-app-name').value || '').trim();
+        const category = (document.getElementById('admin-app-category').value || 'apps').trim();
+        const ratingRaw = document.getElementById('admin-app-rating').value;
+        const downloadsRaw = document.getElementById('admin-app-downloads').value;
+        let size = (document.getElementById('admin-app-size').value || '').trim() || "15.4 MB";
+        const desc = (document.getElementById('admin-app-desc').value || '').trim();
+        const featuresRaw = (document.getElementById('admin-app-features').value || '').trim();
         const features = featuresRaw ? featuresRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
-        let iconUrl = document.getElementById('admin-icon-url').value.trim();
-        let fileUrl = document.getElementById('admin-file-url').value.trim();
-        const editId = document.getElementById('admin-edit-id').value;
+        let iconUrl = (document.getElementById('admin-icon-url').value || '').trim();
+        let fileUrl = (document.getElementById('admin-file-url').value || '').trim();
+        const editId = (document.getElementById('admin-edit-id').value || '').trim();
 
         if (!name) {
             showToast("يرجى إدخال اسم التطبيق");
@@ -2787,41 +2810,62 @@
                     if (shotUrl) screenshots.push(shotUrl);
                 }
             } else {
-                screenshots = [
-                    "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80"
-                ];
+                screenshots = [];
             }
 
-            const appPayload = {
+            const architecture = (document.getElementById('admin-app-arch')?.value || 'Universal').trim();
+            const version = (document.getElementById('admin-app-version')?.value || '1.0.0').trim();
+            const cleanPkgName = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const packageName = (document.getElementById('admin-app-pkg')?.value || '').trim() || (cleanPkgName ? `com.primestore.${cleanPkgName}` : 'com.primestore.app');
+
+            // بناء payload بالأعمدة الـ 13 المصرح بها فقط في جدول apps
+            const payload = {
                 name: name,
                 category: category,
-                rating: rating,
-                downloads: downloads,
+                rating: Number(ratingRaw) || 0,
+                downloads: parseDownloadsCount(downloadsRaw),
                 size: size,
                 description: desc,
-                features: features,
-                icon_url: iconUrl || "🎮",
+                features: Array.isArray(features) ? features : [],
+                icon_url: iconUrl || "",
                 file_url: fileUrl || "",
-                screenshots: screenshots
+                screenshots: Array.isArray(screenshots) ? screenshots : [],
+                architecture: architecture,
+                version: version,
+                package_name: packageName
             };
 
+            let resData = null;
+            let resError = null;
+
             if (editId) {
-                // تعديل تطبيق موجود
-                const { error } = await supabase.from('apps').update(appPayload).eq('id', editId);
-                if (error) throw error;
-                showToast("تم تحديث التطبيق بنجاح! 🚀");
+                const { data, error } = await supabase.from('apps').update(payload).eq('id', editId).select();
+                resData = data;
+                resError = error;
             } else {
-                // إضافة تطبيق جديد
-                const { error } = await supabase.from('apps').insert(appPayload);
-                if (error) throw error;
-                showToast("تم نشر التطبيق في المتجر بنجاح! 🎉");
+                const { data, error } = await supabase.from('apps').insert(payload).select();
+                resData = data;
+                resError = error;
             }
 
+            if (resError) {
+                const errMsg = `message: ${resError.message || 'لا توجد رسالة'}\n` +
+                               `details: ${resError.details || 'لا توجد تفاصيل'}\n` +
+                               `code: ${resError.code || 'غير معروف'}`;
+                alert(`خطأ أثناء حفظ التطبيق في Supabase:\n\n${errMsg}`);
+                console.error("Supabase Save Error:", resError);
+                return;
+            }
+
+            // لا تضف التطبيق ولا تعرض رسالة نجاح إلا إذا لم يرجع error
+            showToast(editId ? "تم تحديث التطبيق بنجاح! 🚀" : "تم حفظ ونشر التطبيق بنجاح! 🎉");
             resetAdminForm();
             closeAdminPanel();
-            fetchApps();
+
+            // بعد النجاح أعد جلب قائمة التطبيقات من Supabase مباشرة بدل الاعتماد على الكاش
+            await fetchApps();
         } catch (err) {
-            showToast("خطأ أثناء الحفظ: " + (err.message || err));
+            alert(`خطأ غير متوقع أثناء المعالجة: ${err.message || err}`);
         } finally {
             if (statusEl) statusEl.style.display = 'none';
         }

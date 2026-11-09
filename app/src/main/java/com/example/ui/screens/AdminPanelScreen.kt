@@ -207,6 +207,7 @@ fun AdminPanelScreen(
     var appToDelete by remember { mutableStateOf<AppItem?>(null) }
     var fullscreenPreviewUrl by remember { mutableStateOf<Any?>(null) }
     var verifiedSavedApp by remember { mutableStateOf<AppItem?>(null) }
+    var supabaseErrorResult by remember { mutableStateOf<com.example.data.supabase.SupabaseClient.SupabaseMutationResult?>(null) }
 
     LaunchedEffect(adminEmail) {
         if (!SupabaseClient.isAdmin(adminEmail)) {
@@ -540,6 +541,74 @@ fun AdminPanelScreen(
                 }
                 val features = featuresStr.split("\n").map { it.trim() }.filter { it.isNotBlank() }
 
+                val categoryKey = when (selectedCategory) {
+                    AppCategory.GAMES -> "games"
+                    AppCategory.APPS -> "apps"
+                    AppCategory.POPULAR -> "popular"
+                    AppCategory.NEW_GAMES -> "new_games"
+                    AppCategory.ENTERTAINMENT -> "entertainment"
+                    AppCategory.SPORTS -> "sports"
+                    AppCategory.BUSINESS -> "business"
+                    AppCategory.EDUCATION -> "education"
+                    AppCategory.MUSIC -> "music"
+                    AppCategory.TOOLS -> "tools"
+                    AppCategory.PRODUCTIVITY -> "productivity"
+                    AppCategory.PERSONALIZATION -> "personalization"
+                    AppCategory.MEDIA -> "media"
+                    AppCategory.SOCIAL -> "social"
+                    AppCategory.ACTION -> "action"
+                    AppCategory.RPG -> "rpg"
+                    AppCategory.SIMULATION -> "simulation"
+                    AppCategory.EMULATORS -> "emulators"
+                    AppCategory.RETRO -> "retro"
+                    AppCategory.ROOT_TOOLS -> "root_tools"
+                    AppCategory.OPEN_SOURCE -> "open_source"
+                    AppCategory.VIDEO -> "video"
+                    AppCategory.MORE -> "more"
+                }
+
+                val mutationResult = if (editingAppId == null) {
+                    SupabaseClient.insertApp(
+                        accessToken = resolvedToken,
+                        name = name,
+                        category = categoryKey,
+                        rating = rating,
+                        size = finalCalculatedSize,
+                        description = description,
+                        features = features,
+                        iconUrl = finalIconUrl,
+                        fileUrl = finalFileUrl,
+                        screenshots = finalScreenshots,
+                        architecture = detectedAbis,
+                        version = "1.0.0",
+                        packageName = "com.primestore.${name.lowercase().replace(Regex("[^a-z0-9]"), "")}",
+                        downloads = "0"
+                    )
+                } else {
+                    SupabaseClient.updateApp(
+                        accessToken = resolvedToken,
+                        id = editingAppId!!,
+                        name = name,
+                        category = categoryKey,
+                        rating = rating,
+                        size = finalCalculatedSize,
+                        description = description,
+                        features = features,
+                        iconUrl = finalIconUrl,
+                        fileUrl = finalFileUrl,
+                        screenshots = finalScreenshots,
+                        architecture = detectedAbis,
+                        version = "1.0.0",
+                        packageName = "com.primestore.${name.lowercase().replace(Regex("[^a-z0-9]"), "")}",
+                        downloads = "0"
+                    )
+                }
+
+                if (!mutationResult.success) {
+                    supabaseErrorResult = mutationResult
+                    return@launch
+                }
+
                 onSaveApp(
                     editingAppId,
                     name,
@@ -559,7 +628,7 @@ fun AdminPanelScreen(
                 // 5. Post-save verification from Supabase: fetch to confirm URLs are persisted
                 var verifiedApp: AppItem? = null
                 withContext(Dispatchers.IO) {
-                    kotlinx.coroutines.delay(1000)
+                    kotlinx.coroutines.delay(800)
                     val allApps = SupabaseClient.fetchApps()
                     verifiedApp = allApps.find { it.name.trim().equals(name.trim(), ignoreCase = true) }
                 }
@@ -1709,6 +1778,62 @@ fun AdminPanelScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
                 ) {
                     Text("تم، رائع!", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (supabaseErrorResult != null) {
+        val err = supabaseErrorResult!!
+        AlertDialog(
+            onDismissRequest = { supabaseErrorResult = null },
+            containerColor = Color(0xFF1E112E),
+            title = {
+                Text(
+                    text = "⚠️ خطأ في حفظ التطبيق (${err.code})",
+                    color = Color(0xFFFF5252),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "تفاصيل الخطأ من Supabase:",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "الرسالة (message):\n${err.message.ifBlank { "غير محددة" }}",
+                        color = Color(0xFFFFB4AB),
+                        fontSize = 12.sp
+                    )
+                    if (err.details.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "التفاصيل (details):\n${err.details}",
+                            color = PrimeTextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                    if (err.code.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "رمز الخطأ (code): ${err.code}",
+                            color = NeonPurplePrimary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { supabaseErrorResult = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                ) {
+                    Text("إغلاق", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         )

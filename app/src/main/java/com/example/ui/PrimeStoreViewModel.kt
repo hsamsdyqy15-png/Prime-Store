@@ -498,12 +498,9 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             sourceCodeUrl = sourceCodeUrl?.ifBlank { null },
             supportedAbis = supportedAbis
         )
-        val token = authPrefs.getString("ps_token", null)
-        if (id == null) {
-            repository.addApp(newApp, token)
-        } else {
-            repository.updateApp(newApp, token)
-        }
+        // The app is saved/updated in Supabase directly by AdminPanelScreen with strict payload;
+        // Refresh catalog from Supabase to immediately load the newly inserted row
+        repository.refreshFromSupabase()
     }
 
     fun deleteAppFromAdmin(appId: String) {

@@ -42,6 +42,13 @@ object SupabaseClient {
         val errorMessage: String? = null
     )
 
+    data class SupabaseMutationResult(
+        val success: Boolean,
+        val message: String = "",
+        val details: String = "",
+        val code: String = ""
+    )
+
     suspend fun signInWithPassword(email: String, pass: String): AuthResponse = withContext(Dispatchers.IO) {
         try {
             val bodyJson = JSONObject().apply {
@@ -212,6 +219,22 @@ object SupabaseClient {
         }
     }
 
+    fun parseDownloads(raw: String?): Long {
+        if (raw.isNullOrBlank()) return 0L
+        val s = raw.trim().uppercase().removePrefix("+").removePrefix("~").replace(",", "")
+        if (s.isBlank()) return 0L
+        return try {
+            when {
+                s.endsWith("K") -> ((s.dropLast(1).toDoubleOrNull() ?: 0.0) * 1000).toLong()
+                s.endsWith("M") -> ((s.dropLast(1).toDoubleOrNull() ?: 0.0) * 1000000).toLong()
+                s.endsWith("B") -> ((s.dropLast(1).toDoubleOrNull() ?: 0.0) * 1000000000).toLong()
+                else -> s.toLongOrNull() ?: 0L
+            }
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     suspend fun insertApp(
         accessToken: String?,
         name: String,
@@ -223,24 +246,33 @@ object SupabaseClient {
         iconUrl: String,
         fileUrl: String,
         screenshots: List<String>,
-        isOpenSource: Boolean = false,
-        sourceCodeUrl: String? = null,
-        supportedAbis: String = "Universal (All Architectures)"
-    ): Boolean = withContext(Dispatchers.IO) {
+        architecture: String = "Universal",
+        version: String = "1.0.0",
+        packageName: String = "",
+        downloads: String = "0"
+    ): SupabaseMutationResult = withContext(Dispatchers.IO) {
         try {
+            val downloadsLong = parseDownloads(downloads)
+            val cleanPkg = packageName.ifBlank {
+                val clean = name.lowercase().replace(Regex("[^a-z0-9]"), "")
+                if (clean.isNotBlank()) "com.primestore.$clean" else "com.primestore.app"
+            }
+
+            // Columns in Supabase apps table: ONLY these 13 columns!
             val payload = JSONObject().apply {
-                put("name", name)
-                put("category", category)
+                put("name", name.trim())
+                put("category", category.trim())
                 put("rating", rating)
-                put("size", size)
-                put("description", description)
+                put("downloads", downloadsLong)
+                put("size", size.trim())
+                put("description", description.trim())
                 put("features", JSONArray(features))
-                put("icon_url", iconUrl)
-                put("file_url", fileUrl)
+                put("icon_url", iconUrl.trim())
+                put("file_url", fileUrl.trim())
                 put("screenshots", JSONArray(screenshots))
-                put("is_open_source", isOpenSource)
-                put("source_code_url", sourceCodeUrl ?: "")
-                put("supported_abis", supportedAbis)
+                put("architecture", architecture.ifBlank { "Universal" }.trim())
+                put("version", version.ifBlank { "1.0.0" }.trim())
+                put("package_name", cleanPkg.trim())
             }
 
             val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
@@ -249,14 +281,33 @@ object SupabaseClient {
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $token")
                 .header("Content-Type", "application/json")
-                .header("Prefer", "return=minimal")
+                .header("Prefer", "return=representation")
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
             val response = client.newCall(request).execute()
-            response.isSuccessful
+            val respBody = response.body?.string().orEmpty()
+            if (response.isSuccessful) {
+                SupabaseMutationResult(success = true)
+            } else {
+                val json = try { JSONObject(respBody) } catch (_: Exception) { null }
+                val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
+                val details = json?.optString("details", "").orEmpty()
+                val code = json?.optString("code", "${response.code}").orEmpty().ifBlank { "${response.code}" }
+                SupabaseMutationResult(
+                    success = false,
+                    message = msg,
+                    details = details,
+                    code = code
+                )
+            }
         } catch (e: Exception) {
-            false
+            SupabaseMutationResult(
+                success = false,
+                message = e.message ?: "فشل الاتصال بخادم Supabase",
+                details = e.stackTraceToString().take(200),
+                code = "EXCEPTION"
+            )
         }
     }
 
@@ -272,24 +323,33 @@ object SupabaseClient {
         iconUrl: String,
         fileUrl: String,
         screenshots: List<String>,
-        isOpenSource: Boolean = false,
-        sourceCodeUrl: String? = null,
-        supportedAbis: String = "Universal (All Architectures)"
-    ): Boolean = withContext(Dispatchers.IO) {
+        architecture: String = "Universal",
+        version: String = "1.0.0",
+        packageName: String = "",
+        downloads: String = "0"
+    ): SupabaseMutationResult = withContext(Dispatchers.IO) {
         try {
+            val downloadsLong = parseDownloads(downloads)
+            val cleanPkg = packageName.ifBlank {
+                val clean = name.lowercase().replace(Regex("[^a-z0-9]"), "")
+                if (clean.isNotBlank()) "com.primestore.$clean" else "com.primestore.app"
+            }
+
+            // Columns in Supabase apps table: ONLY these 13 columns!
             val payload = JSONObject().apply {
-                put("name", name)
-                put("category", category)
+                put("name", name.trim())
+                put("category", category.trim())
                 put("rating", rating)
-                put("size", size)
-                put("description", description)
+                put("downloads", downloadsLong)
+                put("size", size.trim())
+                put("description", description.trim())
                 put("features", JSONArray(features))
-                put("icon_url", iconUrl)
-                put("file_url", fileUrl)
+                put("icon_url", iconUrl.trim())
+                put("file_url", fileUrl.trim())
                 put("screenshots", JSONArray(screenshots))
-                put("is_open_source", isOpenSource)
-                put("source_code_url", sourceCodeUrl ?: "")
-                put("supported_abis", supportedAbis)
+                put("architecture", architecture.ifBlank { "Universal" }.trim())
+                put("version", version.ifBlank { "1.0.0" }.trim())
+                put("package_name", cleanPkg.trim())
             }
 
             val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
@@ -298,13 +358,33 @@ object SupabaseClient {
                 .header("apikey", SUPABASE_KEY)
                 .header("Authorization", "Bearer $token")
                 .header("Content-Type", "application/json")
+                .header("Prefer", "return=representation")
                 .patch(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
             val response = client.newCall(request).execute()
-            response.isSuccessful
+            val respBody = response.body?.string().orEmpty()
+            if (response.isSuccessful) {
+                SupabaseMutationResult(success = true)
+            } else {
+                val json = try { JSONObject(respBody) } catch (_: Exception) { null }
+                val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
+                val details = json?.optString("details", "").orEmpty()
+                val code = json?.optString("code", "${response.code}").orEmpty().ifBlank { "${response.code}" }
+                SupabaseMutationResult(
+                    success = false,
+                    message = msg,
+                    details = details,
+                    code = code
+                )
+            }
         } catch (e: Exception) {
-            false
+            SupabaseMutationResult(
+                success = false,
+                message = e.message ?: "فشل الاتصال بخادم Supabase",
+                details = e.stackTraceToString().take(200),
+                code = "EXCEPTION"
+            )
         }
     }
 
