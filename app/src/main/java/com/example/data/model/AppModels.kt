@@ -62,7 +62,9 @@ data class AppItem(
     val screenshotUrls: List<String> = emptyList(),
     val isOpenSource: Boolean = false,
     val sourceCodeUrl: String? = null,
-    val supportedAbis: String = "Universal (All Architectures)"
+    val supportedAbis: String = "Universal (All Architectures)",
+    val packageName: String? = null,
+    val version: String = "1.0.0"
 )
 
 enum class DownloadStatus {

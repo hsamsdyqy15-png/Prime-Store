@@ -1,13 +1,22 @@
 package com.example.data.supabase
 
+import android.content.Context
+import android.content.SharedPreferences
+import android.net.Uri
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -27,12 +36,178 @@ object SupabaseClient {
     }
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
+    private var appContext: Context? = null
+    private var securePrefs: SharedPreferences? = null
+    private val tokenMutex = Mutex()
+
+    var onSessionExpiredListener: (() -> Unit)? = null
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        getEncryptedPrefs()
+    }
+
+    private fun getEncryptedPrefs(): SharedPreferences? {
+        if (securePrefs != null) return securePrefs
+        val ctx = appContext ?: return null
+        securePrefs = try {
+            val masterKey = MasterKey.Builder(ctx)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                ctx,
+                "supabase_encrypted_session_store",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (_: Exception) {
+            ctx.getSharedPreferences("supabase_encrypted_session_store_fallback", Context.MODE_PRIVATE)
+        }
+        return securePrefs
+    }
+
+    fun saveSession(email: String, accessToken: String, refreshToken: String, expiresAt: Long) {
+        getEncryptedPrefs()?.edit()
+            ?.putString("user_email", email)
+            ?.putString("access_token", accessToken)
+            ?.putString("refresh_token", refreshToken)
+            ?.putLong("expires_at", expiresAt)
+            ?.apply()
+
+        // Sync with legacy authPrefs so any old observers stay intact
+        appContext?.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)?.edit()
+            ?.putString("ps_email", email)
+            ?.putString("ps_token", accessToken)
+            ?.putString("ps_rt", refreshToken)
+            ?.putLong("ps_expires_at", expiresAt)
+            ?.apply()
+    }
+
+    fun clearSession() {
+        getEncryptedPrefs()?.edit()?.clear()?.apply()
+        appContext?.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)?.edit()
+            ?.remove("ps_token")
+            ?.remove("ps_rt")
+            ?.remove("ps_expires_at")
+            ?.apply()
+    }
+
+    fun getSavedUserEmail(): String? {
+        return getEncryptedPrefs()?.getString("user_email", null)
+            ?: appContext?.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)?.getString("ps_email", null)
+    }
+
+    fun isTokenExpiredError(code: Int, text: String): Boolean {
+        if (code == 401) return true
+        val lower = text.lowercase()
+        return lower.contains("\"exp\" claim") ||
+                lower.contains("exp claim") ||
+                lower.contains("jwt expired") ||
+                lower.contains("token is expired") ||
+                lower.contains("invalid claim") ||
+                lower.contains("unauthorized")
+    }
+
+    data class RefreshResponse(
+        val success: Boolean,
+        val accessToken: String? = null,
+        val refreshToken: String? = null,
+        val isTerminalFailure: Boolean = false,
+        val errorMessage: String? = null
+    )
+
+    private suspend fun refreshAccessTokenInternal(refreshToken: String): RefreshResponse = withContext(Dispatchers.IO) {
+        try {
+            val bodyJson = JSONObject().apply {
+                put("refresh_token", refreshToken.trim())
+            }
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/auth/v1/token?grant_type=refresh_token")
+                .header("apikey", SUPABASE_KEY)
+                .header("Content-Type", "application/json")
+                .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val respBody = response.body?.string().orEmpty()
+
+            if (response.isSuccessful && respBody.isNotBlank()) {
+                val json = JSONObject(respBody)
+                val newAccessToken = json.getString("access_token")
+                val newRefreshToken = json.optString("refresh_token", refreshToken)
+                val expiresIn = json.optLong("expires_in", 3600L)
+                val expiresAt = json.optLong("expires_at", (System.currentTimeMillis() / 1000L) + expiresIn)
+                val userObj = json.optJSONObject("user")
+                val email = userObj?.optString("email") ?: getSavedUserEmail() ?: ""
+
+                saveSession(email, newAccessToken, newRefreshToken, expiresAt)
+                RefreshResponse(
+                    success = true,
+                    accessToken = newAccessToken,
+                    refreshToken = newRefreshToken
+                )
+            } else {
+                val isTerminal = response.code in 400..403 ||
+                        respBody.contains("invalid_grant", ignoreCase = true) ||
+                        respBody.contains("expired", ignoreCase = true) ||
+                        respBody.contains("not found", ignoreCase = true)
+
+                RefreshResponse(
+                    success = false,
+                    isTerminalFailure = isTerminal,
+                    errorMessage = "HTTP ${response.code}: $respBody"
+                )
+            }
+        } catch (e: Exception) {
+            RefreshResponse(
+                success = false,
+                isTerminalFailure = false,
+                errorMessage = e.localizedMessage
+            )
+        }
+    }
+
+    suspend fun getValidToken(forceRefresh: Boolean = false): String? = withContext(Dispatchers.IO) {
+        tokenMutex.withLock {
+            val prefs = getEncryptedPrefs()
+            val accessToken = prefs?.getString("access_token", null)?.ifBlank { null }
+            val refreshToken = prefs?.getString("refresh_token", null)?.ifBlank { null }
+            val expiresAt = prefs?.getLong("expires_at", 0L) ?: 0L
+            val nowSec = System.currentTimeMillis() / 1000L
+
+            // If not forced, access_token exists, and remaining valid time >= 120s, return it immediately
+            if (!forceRefresh && accessToken != null && (expiresAt - nowSec) >= 120) {
+                return@withContext accessToken
+            }
+
+            // If we have no refresh token, return whatever access token is present (or null)
+            if (refreshToken.isNullOrBlank()) {
+                return@withContext accessToken
+            }
+
+            // Attempt token renewal via POST
+            val result = refreshAccessTokenInternal(refreshToken)
+            if (result.success && !result.accessToken.isNullOrBlank()) {
+                return@withContext result.accessToken
+            } else {
+                if (result.isTerminalFailure) {
+                    clearSession()
+                    withContext(Dispatchers.Main) {
+                        onSessionExpiredListener?.invoke()
+                    }
+                }
+                return@withContext if (!forceRefresh) accessToken else null
+            }
+        }
+    }
 
     data class AuthResponse(
         val success: Boolean,
@@ -46,7 +221,8 @@ object SupabaseClient {
         val success: Boolean,
         val message: String = "",
         val details: String = "",
-        val code: String = ""
+        val code: String = "",
+        val httpCode: Int = 200
     )
 
     suspend fun signInWithPassword(email: String, pass: String): AuthResponse = withContext(Dispatchers.IO) {
@@ -69,8 +245,13 @@ object SupabaseClient {
                 val json = JSONObject(respBody)
                 val token = json.optString("access_token", "")
                 val rt = json.optString("refresh_token", "")
+                val expiresIn = json.optLong("expires_in", 3600L)
+                val expiresAt = json.optLong("expires_at", (System.currentTimeMillis() / 1000L) + expiresIn)
                 val userObj = json.optJSONObject("user")
                 val userEmail = userObj?.optString("email", email) ?: email
+
+                saveSession(userEmail, token, rt, expiresAt)
+
                 AuthResponse(
                     success = true,
                     email = userEmail,
@@ -78,7 +259,7 @@ object SupabaseClient {
                     refreshToken = rt
                 )
             } else {
-                val errJson = try { JSONObject(respBody) } catch (e: Exception) { null }
+                val errJson = try { JSONObject(respBody) } catch (_: Exception) { null }
                 val msg = errJson?.optString("msg")
                     ?: errJson?.optString("message")
                     ?: errJson?.optString("error_description")
@@ -110,8 +291,13 @@ object SupabaseClient {
                 val json = JSONObject(respBody)
                 val token = json.optString("access_token", "")
                 val rt = json.optString("refresh_token", "")
+                val expiresIn = json.optLong("expires_in", 3600L)
+                val expiresAt = json.optLong("expires_at", (System.currentTimeMillis() / 1000L) + expiresIn)
                 val userObj = json.optJSONObject("user")
                 val userEmail = userObj?.optString("email", email) ?: email
+
+                saveSession(userEmail, token, rt, expiresAt)
+
                 AuthResponse(
                     success = true,
                     email = userEmail,
@@ -119,7 +305,7 @@ object SupabaseClient {
                     refreshToken = rt
                 )
             } else {
-                val errJson = try { JSONObject(respBody) } catch (e: Exception) { null }
+                val errJson = try { JSONObject(respBody) } catch (_: Exception) { null }
                 val msg = errJson?.optString("msg")
                     ?: errJson?.optString("message")
                     ?: "تعذر إنشاء الحساب"
@@ -132,10 +318,11 @@ object SupabaseClient {
 
     suspend fun fetchApps(): List<AppItem> = withContext(Dispatchers.IO) {
         try {
+            val token = getValidToken() ?: SUPABASE_KEY
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/apps?select=*&order=created_at.desc")
                 .header("apikey", SUPABASE_KEY)
-                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Authorization", "Bearer $token")
                 .get()
                 .build()
 
@@ -160,6 +347,8 @@ object SupabaseClient {
                 val isOpenSource = obj.optBoolean("is_open_source", false)
                 val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
                 val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
+                val version = obj.optString("version", "1.0.0")
+                val packageName = obj.optString("package_name", "").ifBlank { null }
 
                 val featuresList = mutableListOf<String>()
                 val featArray = obj.optJSONArray("features")
@@ -209,12 +398,14 @@ object SupabaseClient {
                         screenshotUrls = screenList,
                         isOpenSource = isOpenSource,
                         sourceCodeUrl = sourceCodeUrl,
-                        supportedAbis = supportedAbis
+                        supportedAbis = supportedAbis,
+                        packageName = packageName,
+                        version = version
                     )
                 )
             }
             result
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -235,8 +426,8 @@ object SupabaseClient {
         }
     }
 
-    suspend fun insertApp(
-        accessToken: String?,
+    private fun rawInsertApp(
+        token: String,
         name: String,
         category: String,
         rating: Float,
@@ -246,19 +437,19 @@ object SupabaseClient {
         iconUrl: String,
         fileUrl: String,
         screenshots: List<String>,
-        architecture: String = "Universal",
-        version: String = "1.0.0",
-        packageName: String = "",
-        downloads: String = "0"
-    ): SupabaseMutationResult = withContext(Dispatchers.IO) {
-        try {
+        architecture: String,
+        version: String,
+        packageName: String,
+        downloads: String
+    ): SupabaseMutationResult {
+        return try {
             val downloadsLong = parseDownloads(downloads)
             val cleanPkg = packageName.ifBlank {
                 val clean = name.lowercase().replace(Regex("[^a-z0-9]"), "")
                 if (clean.isNotBlank()) "com.primestore.$clean" else "com.primestore.app"
             }
 
-            // Columns in Supabase apps table: ONLY these 13 columns!
+            // Exactly the 13 columns present in Supabase apps table
             val payload = JSONObject().apply {
                 put("name", name.trim())
                 put("category", category.trim())
@@ -275,7 +466,6 @@ object SupabaseClient {
                 put("package_name", cleanPkg.trim())
             }
 
-            val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/apps")
                 .header("apikey", SUPABASE_KEY)
@@ -288,7 +478,7 @@ object SupabaseClient {
             val response = client.newCall(request).execute()
             val respBody = response.body?.string().orEmpty()
             if (response.isSuccessful) {
-                SupabaseMutationResult(success = true)
+                SupabaseMutationResult(success = true, httpCode = response.code)
             } else {
                 val json = try { JSONObject(respBody) } catch (_: Exception) { null }
                 val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
@@ -298,7 +488,8 @@ object SupabaseClient {
                     success = false,
                     message = msg,
                     details = details,
-                    code = code
+                    code = code,
+                    httpCode = response.code
                 )
             }
         } catch (e: Exception) {
@@ -306,13 +497,150 @@ object SupabaseClient {
                 success = false,
                 message = e.message ?: "فشل الاتصال بخادم Supabase",
                 details = e.stackTraceToString().take(200),
-                code = "EXCEPTION"
+                code = "EXCEPTION",
+                httpCode = 0
+            )
+        }
+    }
+
+    suspend fun insertApp(
+        accessToken: String? = null,
+        name: String,
+        category: String,
+        rating: Float,
+        size: String,
+        description: String,
+        features: List<String>,
+        iconUrl: String,
+        fileUrl: String,
+        screenshots: List<String>,
+        architecture: String = "Universal",
+        version: String = "1.0.0",
+        packageName: String = "",
+        downloads: String = "0"
+    ): SupabaseMutationResult = withContext(Dispatchers.IO) {
+        val initialToken = getValidToken() ?: accessToken ?: SUPABASE_KEY
+        var result = rawInsertApp(
+            token = initialToken,
+            name = name,
+            category = category,
+            rating = rating,
+            size = size,
+            description = description,
+            features = features,
+            iconUrl = iconUrl,
+            fileUrl = fileUrl,
+            screenshots = screenshots,
+            architecture = architecture,
+            version = version,
+            packageName = packageName,
+            downloads = downloads
+        )
+
+        // Automatic retry once if 401 or "exp" claim expired token
+        if (!result.success && isTokenExpiredError(result.httpCode, "${result.message} ${result.details}")) {
+            val freshToken = getValidToken(forceRefresh = true)
+            if (!freshToken.isNullOrBlank()) {
+                result = rawInsertApp(
+                    token = freshToken,
+                    name = name,
+                    category = category,
+                    rating = rating,
+                    size = size,
+                    description = description,
+                    features = features,
+                    iconUrl = iconUrl,
+                    fileUrl = fileUrl,
+                    screenshots = screenshots,
+                    architecture = architecture,
+                    version = version,
+                    packageName = packageName,
+                    downloads = downloads
+                )
+            }
+        }
+        result
+    }
+
+    private fun rawUpdateApp(
+        token: String,
+        id: String,
+        name: String,
+        category: String,
+        rating: Float,
+        size: String,
+        description: String,
+        features: List<String>,
+        iconUrl: String,
+        fileUrl: String,
+        screenshots: List<String>,
+        architecture: String,
+        version: String,
+        packageName: String,
+        downloads: String
+    ): SupabaseMutationResult {
+        return try {
+            val downloadsLong = parseDownloads(downloads)
+            val cleanPkg = packageName.ifBlank {
+                val clean = name.lowercase().replace(Regex("[^a-z0-9]"), "")
+                if (clean.isNotBlank()) "com.primestore.$clean" else "com.primestore.app"
+            }
+
+            val payload = JSONObject().apply {
+                put("name", name.trim())
+                put("category", category.trim())
+                put("rating", rating)
+                put("downloads", downloadsLong)
+                put("size", size.trim())
+                put("description", description.trim())
+                put("features", JSONArray(features))
+                put("icon_url", iconUrl.trim())
+                put("file_url", fileUrl.trim())
+                put("screenshots", JSONArray(screenshots))
+                put("architecture", architecture.ifBlank { "Universal" }.trim())
+                put("version", version.ifBlank { "1.0.0" }.trim())
+                put("package_name", cleanPkg.trim())
+            }
+
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/apps?id=eq.$id")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .header("Prefer", "return=representation")
+                .patch(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val respBody = response.body?.string().orEmpty()
+            if (response.isSuccessful) {
+                SupabaseMutationResult(success = true, httpCode = response.code)
+            } else {
+                val json = try { JSONObject(respBody) } catch (_: Exception) { null }
+                val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
+                val details = json?.optString("details", "").orEmpty()
+                val code = json?.optString("code", "${response.code}").orEmpty().ifBlank { "${response.code}" }
+                SupabaseMutationResult(
+                    success = false,
+                    message = msg,
+                    details = details,
+                    code = code,
+                    httpCode = response.code
+                )
+            }
+        } catch (e: Exception) {
+            SupabaseMutationResult(
+                success = false,
+                message = e.message ?: "فشل الاتصال بخادم Supabase",
+                details = e.stackTraceToString().take(200),
+                code = "EXCEPTION",
+                httpCode = 0
             )
         }
     }
 
     suspend fun updateApp(
-        accessToken: String?,
+        accessToken: String? = null,
         id: String,
         name: String,
         category: String,
@@ -328,69 +656,53 @@ object SupabaseClient {
         packageName: String = "",
         downloads: String = "0"
     ): SupabaseMutationResult = withContext(Dispatchers.IO) {
-        try {
-            val downloadsLong = parseDownloads(downloads)
-            val cleanPkg = packageName.ifBlank {
-                val clean = name.lowercase().replace(Regex("[^a-z0-9]"), "")
-                if (clean.isNotBlank()) "com.primestore.$clean" else "com.primestore.app"
-            }
+        val initialToken = getValidToken() ?: accessToken ?: SUPABASE_KEY
+        var result = rawUpdateApp(
+            token = initialToken,
+            id = id,
+            name = name,
+            category = category,
+            rating = rating,
+            size = size,
+            description = description,
+            features = features,
+            iconUrl = iconUrl,
+            fileUrl = fileUrl,
+            screenshots = screenshots,
+            architecture = architecture,
+            version = version,
+            packageName = packageName,
+            downloads = downloads
+        )
 
-            // Columns in Supabase apps table: ONLY these 13 columns!
-            val payload = JSONObject().apply {
-                put("name", name.trim())
-                put("category", category.trim())
-                put("rating", rating)
-                put("downloads", downloadsLong)
-                put("size", size.trim())
-                put("description", description.trim())
-                put("features", JSONArray(features))
-                put("icon_url", iconUrl.trim())
-                put("file_url", fileUrl.trim())
-                put("screenshots", JSONArray(screenshots))
-                put("architecture", architecture.ifBlank { "Universal" }.trim())
-                put("version", version.ifBlank { "1.0.0" }.trim())
-                put("package_name", cleanPkg.trim())
-            }
-
-            val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
-            val request = Request.Builder()
-                .url("$SUPABASE_URL/rest/v1/apps?id=eq.$id")
-                .header("apikey", SUPABASE_KEY)
-                .header("Authorization", "Bearer $token")
-                .header("Content-Type", "application/json")
-                .header("Prefer", "return=representation")
-                .patch(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .build()
-
-            val response = client.newCall(request).execute()
-            val respBody = response.body?.string().orEmpty()
-            if (response.isSuccessful) {
-                SupabaseMutationResult(success = true)
-            } else {
-                val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
-                val details = json?.optString("details", "").orEmpty()
-                val code = json?.optString("code", "${response.code}").orEmpty().ifBlank { "${response.code}" }
-                SupabaseMutationResult(
-                    success = false,
-                    message = msg,
-                    details = details,
-                    code = code
+        // Automatic retry once if 401 or "exp" claim expired token
+        if (!result.success && isTokenExpiredError(result.httpCode, "${result.message} ${result.details}")) {
+            val freshToken = getValidToken(forceRefresh = true)
+            if (!freshToken.isNullOrBlank()) {
+                result = rawUpdateApp(
+                    token = freshToken,
+                    id = id,
+                    name = name,
+                    category = category,
+                    rating = rating,
+                    size = size,
+                    description = description,
+                    features = features,
+                    iconUrl = iconUrl,
+                    fileUrl = fileUrl,
+                    screenshots = screenshots,
+                    architecture = architecture,
+                    version = version,
+                    packageName = packageName,
+                    downloads = downloads
                 )
             }
-        } catch (e: Exception) {
-            SupabaseMutationResult(
-                success = false,
-                message = e.message ?: "فشل الاتصال بخادم Supabase",
-                details = e.stackTraceToString().take(200),
-                code = "EXCEPTION"
-            )
         }
+        result
     }
 
-    suspend fun deleteApp(accessToken: String?, id: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
+    private fun rawDeleteApp(token: String, id: String): Triple<Boolean, Int, String> {
+        return try {
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/apps?id=eq.$id")
                 .header("apikey", SUPABASE_KEY)
@@ -399,35 +711,57 @@ object SupabaseClient {
                 .build()
 
             val response = client.newCall(request).execute()
-            response.isSuccessful
+            val body = response.body?.string().orEmpty()
+            Triple(response.isSuccessful, response.code, body)
         } catch (e: Exception) {
-            false
+            Triple(false, 0, e.message.orEmpty())
         }
     }
 
-    suspend fun incrementDownloads(appId: String): Boolean = withContext(Dispatchers.IO) {
-        try {
+    suspend fun deleteApp(accessToken: String?, id: String): Boolean = withContext(Dispatchers.IO) {
+        val initialToken = getValidToken() ?: accessToken ?: SUPABASE_KEY
+        val (success, code, body) = rawDeleteApp(initialToken, id)
+        if (!success && isTokenExpiredError(code, body)) {
+            val freshToken = getValidToken(forceRefresh = true)
+            if (!freshToken.isNullOrBlank()) {
+                return@withContext rawDeleteApp(freshToken, id).first
+            }
+        }
+        success
+    }
+
+    private fun rawIncrementDownloads(token: String, appId: String): Triple<Boolean, Int, String> {
+        return try {
             val payload = JSONObject().apply {
                 val num = appId.toLongOrNull()
-                if (num != null) {
-                    put("p_app_id", num)
-                } else {
-                    put("p_app_id", appId)
-                }
+                if (num != null) put("p_app_id", num) else put("p_app_id", appId)
             }
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/rpc/increment_downloads")
                 .header("apikey", SUPABASE_KEY)
-                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Authorization", "Bearer $token")
                 .header("Content-Type", "application/json")
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
             val response = client.newCall(request).execute()
-            response.isSuccessful
+            val body = response.body?.string().orEmpty()
+            Triple(response.isSuccessful, response.code, body)
         } catch (e: Exception) {
-            false
+            Triple(false, 0, e.message.orEmpty())
         }
+    }
+
+    suspend fun incrementDownloads(appId: String): Boolean = withContext(Dispatchers.IO) {
+        val initialToken = getValidToken() ?: SUPABASE_KEY
+        val (success, code, body) = rawIncrementDownloads(initialToken, appId)
+        if (!success && isTokenExpiredError(code, body)) {
+            val freshToken = getValidToken(forceRefresh = true)
+            if (!freshToken.isNullOrBlank()) {
+                return@withContext rawIncrementDownloads(freshToken, appId).first
+            }
+        }
+        success
     }
 
     fun getPublicUrl(path: String): String {
@@ -454,10 +788,11 @@ object SupabaseClient {
 
     suspend fun fetchAppById(appId: String): AppItem? = withContext(Dispatchers.IO) {
         try {
+            val token = getValidToken() ?: SUPABASE_KEY
             val request = Request.Builder()
                 .url("$SUPABASE_URL/rest/v1/apps?id=eq.$appId")
                 .header("apikey", SUPABASE_KEY)
-                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Authorization", "Bearer $token")
                 .get()
                 .build()
 
@@ -478,6 +813,8 @@ object SupabaseClient {
             val isOpenSource = obj.optBoolean("is_open_source", false)
             val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
             val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
+            val version = obj.optString("version", "1.0.0")
+            val packageName = obj.optString("package_name", "").ifBlank { null }
 
             val featuresList = mutableListOf<String>()
             val featArray = obj.optJSONArray("features")
@@ -525,30 +862,32 @@ object SupabaseClient {
                 screenshotUrls = screenList,
                 isOpenSource = isOpenSource,
                 sourceCodeUrl = sourceCodeUrl,
-                supportedAbis = supportedAbis
+                supportedAbis = supportedAbis,
+                packageName = packageName,
+                version = version
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
 
-    suspend fun uploadStorageFileDetailed(
-        context: android.content.Context,
-        uri: android.net.Uri,
+    private fun rawUploadStorageFile(
+        context: Context,
+        uri: Uri,
         path: String,
         mimeType: String,
-        accessToken: String?,
-        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
-    ): Result<String> = withContext(Dispatchers.IO) {
-        try {
+        token: String,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit
+    ): Result<String> {
+        return try {
             val cleanPath = path.trimStart('/')
             val contentResolver = context.contentResolver
             val totalBytes = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
 
-            val requestBody = object : okhttp3.RequestBody() {
+            val requestBody = object : RequestBody() {
                 override fun contentType() = mimeType.toMediaType()
                 override fun contentLength() = totalBytes
-                override fun writeTo(sink: okio.BufferedSink) {
+                override fun writeTo(sink: BufferedSink) {
                     contentResolver.openInputStream(uri)?.use { input ->
                         val buffer = ByteArray(64 * 1024)
                         var written = 0L
@@ -562,7 +901,6 @@ object SupabaseClient {
                 }
             }
 
-            val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
             val request = Request.Builder()
                 .url("$SUPABASE_URL/storage/v1/object/$BUCKET/$cleanPath")
                 .header("apikey", SUPABASE_KEY)
@@ -579,25 +917,47 @@ object SupabaseClient {
                 val parsedMsg = try {
                     val json = JSONObject(errorBody)
                     json.optString("message", json.optString("error", errorBody))
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     errorBody.ifBlank { "HTTP ${response.code}: ${response.message}" }
                 }
-                Result.failure(Exception(parsedMsg))
+                Result.failure(Exception("HTTP ${response.code}: $parsedMsg"))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun uploadStorageBytesDetailed(
+    suspend fun uploadStorageFileDetailed(
+        context: Context,
+        uri: Uri,
+        path: String,
+        mimeType: String,
+        accessToken: String?,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val initialToken = getValidToken() ?: accessToken ?: SUPABASE_KEY
+        var attempt = rawUploadStorageFile(context, uri, path, mimeType, initialToken, onProgress)
+
+        if (attempt.isFailure) {
+            val err = attempt.exceptionOrNull()?.message.orEmpty()
+            if (isTokenExpiredError(0, err)) {
+                val freshToken = getValidToken(forceRefresh = true)
+                if (!freshToken.isNullOrBlank()) {
+                    attempt = rawUploadStorageFile(context, uri, path, mimeType, freshToken, onProgress)
+                }
+            }
+        }
+        attempt
+    }
+
+    private fun rawUploadStorageBytes(
         bytes: ByteArray,
         path: String,
         mimeType: String,
-        accessToken: String?
-    ): Result<String> = withContext(Dispatchers.IO) {
-        try {
+        token: String
+    ): Result<String> {
+        return try {
             val cleanPath = path.trimStart('/')
-            val token = if (!accessToken.isNullOrBlank()) accessToken else SUPABASE_KEY
             val request = Request.Builder()
                 .url("$SUPABASE_URL/storage/v1/object/$BUCKET/$cleanPath")
                 .header("apikey", SUPABASE_KEY)
@@ -614,19 +974,40 @@ object SupabaseClient {
                 val parsedMsg = try {
                     val json = JSONObject(errorBody)
                     json.optString("message", json.optString("error", errorBody))
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     errorBody.ifBlank { "HTTP ${response.code}: ${response.message}" }
                 }
-                Result.failure(Exception(parsedMsg))
+                Result.failure(Exception("HTTP ${response.code}: $parsedMsg"))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    suspend fun uploadStorageBytesDetailed(
+        bytes: ByteArray,
+        path: String,
+        mimeType: String,
+        accessToken: String?
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val initialToken = getValidToken() ?: accessToken ?: SUPABASE_KEY
+        var attempt = rawUploadStorageBytes(bytes, path, mimeType, initialToken)
+
+        if (attempt.isFailure) {
+            val err = attempt.exceptionOrNull()?.message.orEmpty()
+            if (isTokenExpiredError(0, err)) {
+                val freshToken = getValidToken(forceRefresh = true)
+                if (!freshToken.isNullOrBlank()) {
+                    attempt = rawUploadStorageBytes(bytes, path, mimeType, freshToken)
+                }
+            }
+        }
+        attempt
+    }
+
     suspend fun uploadStorageFile(
-        context: android.content.Context,
-        uri: android.net.Uri,
+        context: Context,
+        uri: Uri,
         path: String,
         mimeType: String,
         accessToken: String?,

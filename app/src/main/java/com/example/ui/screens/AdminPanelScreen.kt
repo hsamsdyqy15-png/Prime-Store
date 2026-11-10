@@ -394,7 +394,8 @@ fun AdminPanelScreen(
             try {
                 var finalIconUrl = storedIconUrl
 
-                // 1. Upload Icon (to Supabase Storage)
+                // 1. Upload Icon (to Supabase Storage) - Ensure valid token before starting
+                val iconToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
                 if (pickedIconUri != null) {
                     uploadCurrentStep++
                     uploadStepLabel = "جاري رفع الأيقونة ($uploadCurrentStep/$uploadTotalSteps)"
@@ -406,7 +407,7 @@ fun AdminPanelScreen(
                         uri = pickedIconUri!!,
                         path = path,
                         mimeType = mime,
-                        accessToken = resolvedToken
+                        accessToken = iconToken
                     ) { written, tot ->
                         if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
                     }
@@ -424,7 +425,7 @@ fun AdminPanelScreen(
                         bytes = apkExtractedIconBytes!!,
                         path = path,
                         mimeType = "image/png",
-                        accessToken = resolvedToken
+                        accessToken = iconToken
                     )
                     if (uploadResult.isSuccess) {
                         finalIconUrl = uploadResult.getOrThrow()
@@ -434,7 +435,8 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // 2. Upload Screenshots (to Supabase Storage)
+                // 2. Upload Screenshots (to Supabase Storage) - Ensure valid token before screenshots
+                val shotToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
                 val finalScreenshots = storedScreenshotUrls.toMutableList()
                 for ((idx, sUri) in pickedShotUris.withIndex()) {
                     uploadCurrentStep++
@@ -447,7 +449,7 @@ fun AdminPanelScreen(
                         uri = sUri,
                         path = path,
                         mimeType = mime,
-                        accessToken = resolvedToken
+                        accessToken = shotToken
                     ) { written, tot ->
                         if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
                     }
@@ -567,9 +569,12 @@ fun AdminPanelScreen(
                     AppCategory.MORE -> "more"
                 }
 
+                // Ensure token is fresh right before final save step in apps table
+                val finalFreshToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
+
                 val mutationResult = if (editingAppId == null) {
                     SupabaseClient.insertApp(
-                        accessToken = resolvedToken,
+                        accessToken = finalFreshToken,
                         name = name,
                         category = categoryKey,
                         rating = rating,
@@ -586,7 +591,7 @@ fun AdminPanelScreen(
                     )
                 } else {
                     SupabaseClient.updateApp(
-                        accessToken = resolvedToken,
+                        accessToken = finalFreshToken,
                         id = editingAppId!!,
                         name = name,
                         category = categoryKey,
@@ -605,7 +610,12 @@ fun AdminPanelScreen(
                 }
 
                 if (!mutationResult.success) {
-                    supabaseErrorResult = mutationResult
+                    if (SupabaseClient.isTokenExpiredError(mutationResult.httpCode, "${mutationResult.message} ${mutationResult.details}")) {
+                        snackbarHostState.showSnackbar("انتهت الجلسة، سجّل الدخول من جديد")
+                        onBackClick()
+                    } else {
+                        supabaseErrorResult = mutationResult
+                    }
                     return@launch
                 }
 
@@ -643,7 +653,13 @@ fun AdminPanelScreen(
                 clearForm()
 
             } catch (e: Exception) {
-                snackbarHostState.showSnackbar("❌ فشل الحفظ: ${e.message ?: "حدث خطأ غير متوقع"}")
+                val msg = e.message.orEmpty()
+                if (SupabaseClient.isTokenExpiredError(0, msg)) {
+                    snackbarHostState.showSnackbar("انتهت الجلسة، سجّل الدخول من جديد")
+                    onBackClick()
+                } else {
+                    snackbarHostState.showSnackbar("❌ فشل الحفظ: ${e.message ?: "حدث خطأ غير متوقع"}")
+                }
             } finally {
                 isUploading = false
                 isSaving = false

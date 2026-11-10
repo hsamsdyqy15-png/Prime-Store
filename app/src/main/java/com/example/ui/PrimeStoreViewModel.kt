@@ -98,7 +98,13 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     private val authPrefs = application.getSharedPreferences("prime_store_auth", android.content.Context.MODE_PRIVATE)
 
     init {
+        com.example.data.supabase.SupabaseClient.init(application.applicationContext)
+        com.example.data.supabase.SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
         restoreSession()
+        val savedLang = authPrefs.getString("ps_language", "auto") ?: "auto"
+        val activeLang = if (savedLang == "auto") detectDeviceLanguage() else savedLang
+        _uiState.value = _uiState.value.copy(currentLanguage = activeLang)
+
         repository.onApkDownloadCompleted = { appId, apkFile ->
             val app = getApplication<Application>()
             if (com.example.data.installer.ApkInstaller.canRequestPackageInstalls(app)) {
@@ -117,7 +123,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun restoreSession() {
-        val email = authPrefs.getString("ps_email", null)
+        val email = com.example.data.supabase.SupabaseClient.getSavedUserEmail() ?: authPrefs.getString("ps_email", null)
         if (!email.isNullOrBlank()) {
             val isUserAdmin = com.example.data.supabase.SupabaseClient.isAdmin(email)
             _uiState.value = _uiState.value.copy(
@@ -128,7 +134,24 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 ),
                 isAdmin = isUserAdmin
             )
+            // Seamlessly validate and refresh token in background on startup
+            viewModelScope.launch {
+                com.example.data.supabase.SupabaseClient.getValidToken(forceRefresh = false)
+            }
         }
+    }
+
+    fun onSessionExpired() {
+        com.example.data.supabase.SupabaseClient.clearSession()
+        authPrefs.edit().clear().apply()
+        _uiState.value = _uiState.value.copy(
+            userProfile = null,
+            isAdmin = false,
+            showAdminPanel = false,
+            showLoginDialog = true,
+            authErrorMessage = "انتهت الجلسة، سجّل الدخول من جديد"
+        )
+        emitToast("انتهت الجلسة، سجّل الدخول من جديد")
     }
 
     fun dismissSplash() {
@@ -198,14 +221,30 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.value = _uiState.value.copy(isDrawerOpen = next)
     }
 
+    fun detectDeviceLanguage(): String {
+        val lang = java.util.Locale.getDefault().language.lowercase()
+        return when {
+            lang.startsWith("ar") -> "ar"
+            lang.startsWith("fr") -> "fr"
+            lang.startsWith("es") -> "es"
+            lang.startsWith("de") -> "de"
+            lang.startsWith("tr") -> "tr"
+            lang.startsWith("ru") -> "ru"
+            else -> "en"
+        }
+    }
+
     fun toggleLanguage() {
         val nextLang = if (_uiState.value.currentLanguage == "ar") "en" else "ar"
         setLanguage(nextLang)
     }
 
     fun setLanguage(lang: String) {
-        _uiState.value = _uiState.value.copy(currentLanguage = lang)
+        val effectiveLang = if (lang == "auto") detectDeviceLanguage() else lang
+        _uiState.value = _uiState.value.copy(currentLanguage = effectiveLang)
+        authPrefs.edit().putString("ps_language", lang).apply()
         val langName = when (lang) {
+            "auto" -> "تلقائي (لغة الجهاز الافتراضية)"
             "ar" -> "العربية"
             "en" -> "English"
             "fr" -> "Français"
@@ -215,7 +254,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             "ru" -> "Русский"
             else -> lang
         }
-        emitToast("تم تغيير لغة التطبيق إلى $langName 🌐")
+        emitToast("تم ضبط لغة التطبيق: $langName 🌐")
     }
 
     fun refreshData() {
@@ -428,6 +467,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun signOutAll() {
+        com.example.data.supabase.SupabaseClient.clearSession()
         authPrefs.edit().clear().apply()
         _uiState.value = _uiState.value.copy(
             userProfile = null,

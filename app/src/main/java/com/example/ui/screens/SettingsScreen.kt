@@ -737,6 +737,7 @@ fun SettingsScreen(
             text = {
                 Column {
                     val langs = listOf(
+                        "auto" to "🌐 لغة الجهاز الافتراضية (تلقائي)",
                         "ar" to "🇸🇦 العربية (Arabic)",
                         "en" to "🇬🇧 English",
                         "fr" to "🇫🇷 Français (French)",
