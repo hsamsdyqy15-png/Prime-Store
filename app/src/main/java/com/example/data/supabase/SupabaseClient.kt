@@ -316,6 +316,77 @@ object SupabaseClient {
         }
     }
 
+    fun parseAppItem(obj: JSONObject, i: Int = 0): AppItem {
+        val id = obj.optString("id", "")
+        val name = obj.optString("name", "تطبيق")
+        val categoryStr = obj.optString("category", "apps").lowercase()
+        val rating = obj.optDouble("rating", 4.5).toFloat()
+        val downloads = obj.optString("downloads", "+100")
+        val size = obj.optString("size", "25 MB")
+        val desc = obj.optString("description", "")
+        val iconUrl = obj.optString("icon_url", "")
+        val fileUrl = obj.optString("file_url", "")
+        val isOpenSource = obj.optBoolean("is_open_source", false)
+        val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
+        val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
+        val version = obj.optString("version", "1.0.0")
+        val packageName = obj.optString("package_name", "").ifBlank { null }
+
+        val featuresList = mutableListOf<String>()
+        val featArray = obj.optJSONArray("features")
+        if (featArray != null) {
+            for (f in 0 until featArray.length()) {
+                featuresList.add(featArray.getString(f))
+            }
+        }
+
+        val screenList = mutableListOf<String>()
+        val screenArray = obj.optJSONArray("screenshots")
+        if (screenArray != null) {
+            for (s in 0 until screenArray.length()) {
+                screenList.add(screenArray.getString(s))
+            }
+        }
+
+        val category = if (isOpenSource) AppCategory.OPEN_SOURCE else mapCategory(categoryStr)
+        val categoryTitle = com.example.data.model.StoreCategories.getTitleAr(categoryStr)
+        val tags = mutableListOf(categoryTitle)
+        if (isOpenSource) tags.add("مفتوح المصدر")
+        if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
+
+        return AppItem(
+            id = id,
+            name = name,
+            nameAr = name,
+            category = category,
+            tags = tags,
+            rating = rating,
+            ratingCount = "2.5K",
+            downloadCount = downloads,
+            size = size,
+            sizeBytes = 25_000_000L,
+            iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else com.example.data.model.StoreCategories.getEmoji(categoryStr),
+            accentColor = category.accentHex,
+            bannerRes = null,
+            descriptionAr = desc.ifBlank { "تطبيق رائع متاح للتحميل المجاني." },
+            descriptionEn = desc,
+            featuresAr = featuresList.ifEmpty { listOf("تحديثات مستمرة", "دعم كامل للغة العربية") },
+            screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
+            isFeatured = i < 2,
+            isTrending = i % 2 == 0,
+            isNew = true,
+            iconUrl = iconUrl.ifBlank { null },
+            fileUrl = fileUrl.ifBlank { null },
+            screenshotUrls = screenList,
+            isOpenSource = isOpenSource,
+            sourceCodeUrl = sourceCodeUrl,
+            supportedAbis = supportedAbis,
+            packageName = packageName,
+            version = version,
+            categoryKey = categoryStr
+        )
+    }
+
     suspend fun fetchApps(): List<AppItem> = withContext(Dispatchers.IO) {
         try {
             val token = getValidToken() ?: SUPABASE_KEY
@@ -332,77 +403,42 @@ object SupabaseClient {
 
             val jsonArray = JSONArray(body)
             val result = mutableListOf<AppItem>()
-
             for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val id = obj.optString("id", "")
-                val name = obj.optString("name", "تطبيق")
-                val categoryStr = obj.optString("category", "apps").lowercase()
-                val rating = obj.optDouble("rating", 4.5).toFloat()
-                val downloads = obj.optString("downloads", "+100")
-                val size = obj.optString("size", "25 MB")
-                val desc = obj.optString("description", "")
-                val iconUrl = obj.optString("icon_url", "")
-                val fileUrl = obj.optString("file_url", "")
-                val isOpenSource = obj.optBoolean("is_open_source", false)
-                val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
-                val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
-                val version = obj.optString("version", "1.0.0")
-                val packageName = obj.optString("package_name", "").ifBlank { null }
+                result.add(parseAppItem(jsonArray.getJSONObject(i), i))
+            }
+            result
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
 
-                val featuresList = mutableListOf<String>()
-                val featArray = obj.optJSONArray("features")
-                if (featArray != null) {
-                    for (f in 0 until featArray.length()) {
-                        featuresList.add(featArray.getString(f))
-                    }
-                }
+    suspend fun fetchAppsPaged(
+        limit: Int = 20,
+        offset: Int = 0,
+        categoryKey: String? = null
+    ): List<AppItem> = withContext(Dispatchers.IO) {
+        try {
+            val token = getValidToken() ?: SUPABASE_KEY
+            val catParam = if (!categoryKey.isNullOrBlank() && categoryKey != "all") {
+                "&category=eq.$categoryKey"
+            } else ""
 
-                val screenList = mutableListOf<String>()
-                val screenArray = obj.optJSONArray("screenshots")
-                if (screenArray != null) {
-                    for (s in 0 until screenArray.length()) {
-                        screenList.add(screenArray.getString(s))
-                    }
-                }
+            val url = "$SUPABASE_URL/rest/v1/apps?select=*&order=created_at.desc&limit=$limit&offset=$offset$catParam"
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
 
-                val category = if (isOpenSource) AppCategory.OPEN_SOURCE else mapCategory(categoryStr)
-                val tags = mutableListOf(category.titleAr)
-                if (isOpenSource) tags.add("مفتوح المصدر")
-                if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
+            val response = client.newCall(request).execute()
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful || body.isBlank()) return@withContext emptyList()
 
-                result.add(
-                    AppItem(
-                        id = id,
-                        name = name,
-                        nameAr = name,
-                        category = category,
-                        tags = tags,
-                        rating = rating,
-                        ratingCount = "2.5K",
-                        downloadCount = downloads,
-                        size = size,
-                        sizeBytes = 25_000_000L,
-                        iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else category.iconEmoji,
-                        accentColor = category.accentHex,
-                        bannerRes = null,
-                        descriptionAr = desc.ifBlank { "تطبيق رائع متاح للتحميل المجاني." },
-                        descriptionEn = desc,
-                        featuresAr = featuresList.ifEmpty { listOf("تحديثات مستمرة", "دعم كامل للغة العربية") },
-                        screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
-                        isFeatured = i < 2,
-                        isTrending = i % 2 == 0,
-                        isNew = true,
-                        iconUrl = iconUrl.ifBlank { null },
-                        fileUrl = fileUrl.ifBlank { null },
-                        screenshotUrls = screenList,
-                        isOpenSource = isOpenSource,
-                        sourceCodeUrl = sourceCodeUrl,
-                        supportedAbis = supportedAbis,
-                        packageName = packageName,
-                        version = version
-                    )
-                )
+            val jsonArray = JSONArray(body)
+            val result = mutableListOf<AppItem>()
+            for (i in 0 until jsonArray.length()) {
+                result.add(parseAppItem(jsonArray.getJSONObject(i), offset + i))
             }
             result
         } catch (_: Exception) {
@@ -801,73 +837,101 @@ object SupabaseClient {
             val body = response.body?.string().orEmpty()
             val array = JSONArray(body)
             if (array.length() == 0) return@withContext null
-            val obj = array.getJSONObject(0)
-            val id = obj.optString("id", appId)
-            val name = obj.optString("name", "")
-            val categoryStr = obj.optString("category", "apps")
-            val rating = obj.optDouble("rating", 4.5).toFloat()
-            val size = obj.optString("size", "25 MB")
-            val desc = obj.optString("description", "")
-            val iconUrl = obj.optString("icon_url", "")
-            val fileUrl = obj.optString("file_url", "")
-            val isOpenSource = obj.optBoolean("is_open_source", false)
-            val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
-            val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
-            val version = obj.optString("version", "1.0.0")
-            val packageName = obj.optString("package_name", "").ifBlank { null }
+            parseAppItem(array.getJSONObject(0))
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-            val featuresList = mutableListOf<String>()
-            val featArray = obj.optJSONArray("features")
-            if (featArray != null) {
-                for (f in 0 until featArray.length()) {
-                    featuresList.add(featArray.getString(f))
-                }
-            }
+    suspend fun fetchStoreUpdate(): com.example.data.model.StoreUpdateInfo? = withContext(Dispatchers.IO) {
+        try {
+            val token = getValidToken() ?: SUPABASE_KEY
+            val request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/store_update?id=eq.1")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
 
-            val screenList = mutableListOf<String>()
-            val screenArray = obj.optJSONArray("screenshots")
-            if (screenArray != null) {
-                for (s in 0 until screenArray.length()) {
-                    screenList.add(screenArray.getString(s))
-                }
-            }
+            val response = client.newCall(request).execute()
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful || body.isBlank()) return@withContext null
 
-            val category = if (isOpenSource) AppCategory.OPEN_SOURCE else mapCategory(categoryStr)
-            val tags = mutableListOf(category.titleAr)
-            if (isOpenSource) tags.add("مفتوح المصدر")
-
-            AppItem(
-                id = id,
-                name = name,
-                nameAr = name,
-                category = category,
-                tags = tags,
-                rating = rating,
-                ratingCount = "2.5K",
-                downloadCount = "+1K",
-                size = size,
-                sizeBytes = 25_000_000L,
-                iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else category.iconEmoji,
-                accentColor = category.accentHex,
-                bannerRes = null,
-                descriptionAr = desc.ifBlank { "تطبيق رائع متاح للتحميل المجاني." },
-                descriptionEn = desc,
-                featuresAr = featuresList.ifEmpty { listOf("تحديثات مستمرة", "دعم كامل للغة العربية") },
-                screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
-                isFeatured = false,
-                isTrending = false,
-                isNew = true,
-                iconUrl = iconUrl.ifBlank { null },
-                fileUrl = fileUrl.ifBlank { null },
-                screenshotUrls = screenList,
-                isOpenSource = isOpenSource,
-                sourceCodeUrl = sourceCodeUrl,
-                supportedAbis = supportedAbis,
-                packageName = packageName,
-                version = version
+            val jsonArray = JSONArray(body)
+            if (jsonArray.length() == 0) return@withContext null
+            val obj = jsonArray.getJSONObject(0)
+            com.example.data.model.StoreUpdateInfo(
+                id = obj.optInt("id", 1),
+                versionCode = obj.optInt("version_code", 1),
+                versionName = obj.optString("version_name", "1.0.0"),
+                notes = obj.optString("notes", ""),
+                apkUrl = obj.optString("apk_url", ""),
+                updatedAt = obj.optString("updated_at", null)
             )
         } catch (_: Exception) {
             null
+        }
+    }
+
+    suspend fun updateStoreUpdate(
+        versionCode: Int,
+        versionName: String,
+        notes: String,
+        apkUrl: String
+    ): SupabaseMutationResult = withContext(Dispatchers.IO) {
+        try {
+            val token = getValidToken() ?: SUPABASE_KEY
+            val payload = JSONObject().apply {
+                put("version_code", versionCode)
+                put("version_name", versionName.trim())
+                put("notes", notes.trim())
+                put("apk_url", apkUrl.trim())
+            }
+
+            // Attempt PATCH on store_update row 1
+            var request = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/store_update?id=eq.1")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .header("Prefer", "return=representation")
+                .patch(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            var response = client.newCall(request).execute()
+            var respBody = response.body?.string().orEmpty()
+
+            // If row 1 did not exist yet, insert row 1 with upsert
+            if (response.isSuccessful && (respBody == "[]" || respBody.isBlank())) {
+                payload.put("id", 1)
+                request = Request.Builder()
+                    .url("$SUPABASE_URL/rest/v1/store_update")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $token")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "resolution=merge-duplicates,return=representation")
+                    .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                    .build()
+                response = client.newCall(request).execute()
+                respBody = response.body?.string().orEmpty()
+            }
+
+            if (response.isSuccessful) {
+                SupabaseMutationResult(success = true, httpCode = response.code)
+            } else {
+                SupabaseMutationResult(
+                    success = false,
+                    message = "فشل تحديث بيانات التحديث: HTTP ${response.code}",
+                    details = respBody,
+                    httpCode = response.code
+                )
+            }
+        } catch (e: Exception) {
+            SupabaseMutationResult(
+                success = false,
+                message = e.localizedMessage ?: "فشل الاتصال بتحديث المتجر",
+                httpCode = 0
+            )
         }
     }
 

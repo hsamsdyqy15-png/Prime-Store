@@ -1,13 +1,21 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
+import com.example.data.installer.ApkInstaller
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
+import com.example.data.model.CategoryItem
 import com.example.data.model.DownloadItem
 import com.example.data.model.ReviewItem
+import com.example.data.model.StoreCategories
+import com.example.data.model.StoreUpdateInfo
 import com.example.data.repository.PrimeStoreRepository
+import com.example.data.supabase.SupabaseClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,6 +24,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 enum class MainTab {
     HOME,
@@ -80,6 +95,51 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     val searchHistory: StateFlow<List<String>> = repository.searchHistory
     val toastEvents = repository.toastEvents
 
+    // =========================================================================
+    // 1) Paged Apps & Infinite Scroll State for "كل التطبيقات"
+    // =========================================================================
+    private val _pagedApps = MutableStateFlow<List<AppItem>>(emptyList())
+    val pagedApps: StateFlow<List<AppItem>> = _pagedApps.asStateFlow()
+
+    private val _selectedCategoryKey = MutableStateFlow("all")
+    val selectedCategoryKey: StateFlow<String> = _selectedCategoryKey.asStateFlow()
+
+    private val _isInitialLoading = MutableStateFlow(false)
+    val isInitialLoading: StateFlow<Boolean> = _isInitialLoading.asStateFlow()
+
+    private val _isLoadingNextPage = MutableStateFlow(false)
+    val isLoadingNextPage: StateFlow<Boolean> = _isLoadingNextPage.asStateFlow()
+
+    private val _hasMoreApps = MutableStateFlow(true)
+    val hasMoreApps: StateFlow<Boolean> = _hasMoreApps.asStateFlow()
+
+    private val _pagedError = MutableStateFlow<String?>(null)
+    val pagedError: StateFlow<String?> = _pagedError.asStateFlow()
+
+    private val paginationMutex = Mutex()
+    private val pageSize = 20
+
+    // =========================================================================
+    // 2) Store Update State (store_update table check & badge)
+    // =========================================================================
+    private val _availableStoreUpdate = MutableStateFlow<StoreUpdateInfo?>(null)
+    val availableStoreUpdate: StateFlow<StoreUpdateInfo?> = _availableStoreUpdate.asStateFlow()
+
+    private val _hasNewUpdateBadge = MutableStateFlow(false)
+    val hasNewUpdateBadge: StateFlow<Boolean> = _hasNewUpdateBadge.asStateFlow()
+
+    private val _isCheckingUpdate = MutableStateFlow(false)
+    val isCheckingUpdate: StateFlow<Boolean> = _isCheckingUpdate.asStateFlow()
+
+    private val _isDownloadingStoreUpdate = MutableStateFlow(false)
+    val isDownloadingStoreUpdate: StateFlow<Boolean> = _isDownloadingStoreUpdate.asStateFlow()
+
+    private val _storeUpdateDownloadProgress = MutableStateFlow(0f)
+    val storeUpdateDownloadProgress: StateFlow<Float> = _storeUpdateDownloadProgress.asStateFlow()
+
+    // =========================================================================
+    // Search
+    // =========================================================================
     val searchResults: StateFlow<List<AppItem>> = combine(apps, _uiState) { allApps, state ->
         val q = state.searchQuery.trim().lowercase()
         if (q.isEmpty()) {
@@ -90,16 +150,17 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                         it.nameAr.contains(q) ||
                         it.category.titleAr.contains(q) ||
                         it.category.titleEn.lowercase().contains(q) ||
+                        it.displayCategoryTitle.contains(q) ||
                         it.tags.any { tag -> tag.contains(q) }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val authPrefs = application.getSharedPreferences("prime_store_auth", android.content.Context.MODE_PRIVATE)
+    private val authPrefs = application.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)
 
     init {
-        com.example.data.supabase.SupabaseClient.init(application.applicationContext)
-        com.example.data.supabase.SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
+        SupabaseClient.init(application.applicationContext)
+        SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
         restoreSession()
         val savedLang = authPrefs.getString("ps_language", "auto") ?: "auto"
         val activeLang = if (savedLang == "auto") detectDeviceLanguage() else savedLang
@@ -107,8 +168,8 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
         repository.onApkDownloadCompleted = { appId, apkFile ->
             val app = getApplication<Application>()
-            if (com.example.data.installer.ApkInstaller.canRequestPackageInstalls(app)) {
-                com.example.data.installer.ApkInstaller.installApk(app, apkFile)
+            if (ApkInstaller.canRequestPackageInstalls(app)) {
+                ApkInstaller.installApk(app, apkFile)
             } else {
                 _uiState.value = _uiState.value.copy(
                     showInstallPermissionDialog = true,
@@ -116,16 +177,214 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 )
             }
         }
+
         viewModelScope.launch {
-            delay(2500)
+            delay(2000)
             _uiState.value = _uiState.value.copy(showSplash = false)
+        }
+
+        // Initial fetch for Home infinite scroll
+        loadInitialApps("all")
+
+        // Auto-check store update on startup (max once every 6 hours)
+        checkStoreUpdateSilentlyOnStartup()
+    }
+
+    // =========================================================================
+    // Infinite Scroll & Pagination Methods
+    // =========================================================================
+
+    fun selectHomeCategory(categoryKey: String) {
+        if (_selectedCategoryKey.value == categoryKey && _pagedApps.value.isNotEmpty()) return
+        _selectedCategoryKey.value = categoryKey
+        loadInitialApps(categoryKey)
+    }
+
+    fun loadInitialApps(categoryKey: String = _selectedCategoryKey.value) {
+        viewModelScope.launch {
+            paginationMutex.withLock {
+                _isInitialLoading.value = true
+                _pagedError.value = null
+                _hasMoreApps.value = true
+            }
+
+            try {
+                val fetched = withContext(Dispatchers.IO) {
+                    SupabaseClient.fetchAppsPaged(
+                        limit = pageSize,
+                        offset = 0,
+                        categoryKey = if (categoryKey == "all") null else categoryKey
+                    )
+                }
+
+                paginationMutex.withLock {
+                    _pagedApps.value = fetched
+                    _hasMoreApps.value = fetched.size >= pageSize
+                    _isInitialLoading.value = false
+                }
+            } catch (e: Exception) {
+                paginationMutex.withLock {
+                    _isInitialLoading.value = false
+                    _pagedError.value = e.message ?: "تعذر جلب التطبيقات"
+                }
+            }
         }
     }
 
+    fun loadNextAppsPage() {
+        if (!_hasMoreApps.value || _isLoadingNextPage.value || _isInitialLoading.value) return
+
+        viewModelScope.launch {
+            val offset: Int
+            paginationMutex.withLock {
+                if (!_hasMoreApps.value || _isLoadingNextPage.value) return@launch
+                _isLoadingNextPage.value = true
+                offset = _pagedApps.value.size
+            }
+
+            try {
+                val categoryKey = _selectedCategoryKey.value
+                val fetched = withContext(Dispatchers.IO) {
+                    SupabaseClient.fetchAppsPaged(
+                        limit = pageSize,
+                        offset = offset,
+                        categoryKey = if (categoryKey == "all") null else categoryKey
+                    )
+                }
+
+                paginationMutex.withLock {
+                    val currentList = _pagedApps.value.toMutableList()
+                    val existingIds = currentList.map { it.id }.toSet()
+                    val newUnique = fetched.filter { it.id !in existingIds }
+                    currentList.addAll(newUnique)
+                    _pagedApps.value = currentList
+                    _hasMoreApps.value = fetched.size >= pageSize
+                    _isLoadingNextPage.value = false
+                }
+            } catch (e: Exception) {
+                paginationMutex.withLock {
+                    _isLoadingNextPage.value = false
+                }
+            }
+        }
+    }
+
+    fun refreshPagedApps() {
+        loadInitialApps(_selectedCategoryKey.value)
+        repository.refreshFromSupabase()
+    }
+
+    // =========================================================================
+    // Store Update Methods
+    // =========================================================================
+
+    private fun checkStoreUpdateSilentlyOnStartup() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val lastCheck = authPrefs.getLong("ps_last_update_check", 0L)
+            val now = System.currentTimeMillis()
+            val sixHoursMillis = 6 * 60 * 60 * 1000L
+            if (now - lastCheck < sixHoursMillis) {
+                return@launch
+            }
+            authPrefs.edit().putLong("ps_last_update_check", now).apply()
+
+            val info = SupabaseClient.fetchStoreUpdate()
+            if (info != null && info.versionCode > BuildConfig.VERSION_CODE) {
+                _availableStoreUpdate.value = info
+                _hasNewUpdateBadge.value = true
+            }
+        }
+    }
+
+    fun checkForStoreUpdate(manual: Boolean = true, onResult: (hasUpdate: Boolean, info: StoreUpdateInfo?) -> Unit) {
+        viewModelScope.launch {
+            _isCheckingUpdate.value = true
+            val info = withContext(Dispatchers.IO) {
+                SupabaseClient.fetchStoreUpdate()
+            }
+            _isCheckingUpdate.value = false
+
+            if (info != null && info.versionCode > BuildConfig.VERSION_CODE) {
+                _availableStoreUpdate.value = info
+                _hasNewUpdateBadge.value = true
+                onResult(true, info)
+            } else {
+                _availableStoreUpdate.value = null
+                _hasNewUpdateBadge.value = false
+                onResult(false, info)
+            }
+        }
+    }
+
+    fun downloadAndInstallStoreUpdate(info: StoreUpdateInfo, context: Context) {
+        if (_isDownloadingStoreUpdate.value) return
+        val apkUrl = info.apkUrl.trim()
+        if (apkUrl.isBlank() || !apkUrl.startsWith("http")) {
+            emitToast("رابط تحديث المتجر غير متوفر")
+            return
+        }
+
+        viewModelScope.launch {
+            _isDownloadingStoreUpdate.value = true
+            _storeUpdateDownloadProgress.value = 0f
+            emitToast("جاري تحميل تحديث متجر Prime Store...")
+
+            val updateFile = File(context.getExternalFilesDir(null) ?: context.filesDir, "prime_store_update_${info.versionCode}.apk")
+            val success = withContext(Dispatchers.IO) {
+                try {
+                    val url = URL(apkUrl)
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 30000
+                    conn.instanceFollowRedirects = true
+                    conn.connect()
+
+                    val contentLength = conn.contentLength.toLong()
+                    val input = conn.inputStream
+                    val output = FileOutputStream(updateFile)
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var totalRead = 0L
+
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        totalRead += bytesRead
+                        if (contentLength > 0) {
+                            val progress = (totalRead.toFloat() / contentLength).coerceIn(0f, 1f)
+                            _storeUpdateDownloadProgress.value = progress
+                        }
+                    }
+                    output.flush()
+                    output.close()
+                    input.close()
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+
+            _isDownloadingStoreUpdate.value = false
+            if (success && updateFile.exists() && updateFile.length() > 0) {
+                emitToast("تم تحميل التحديث بنجاح! جاري التثبيت...")
+                ApkInstaller.installApk(context, updateFile)
+            } else {
+                emitToast("فشل تحميل التحديث، تحقق من اتصال الإنترنت")
+            }
+        }
+    }
+
+    fun dismissUpdateBadge() {
+        _hasNewUpdateBadge.value = false
+    }
+
+    // =========================================================================
+    // User Session & Lifecycle
+    // =========================================================================
+
     fun restoreSession() {
-        val email = com.example.data.supabase.SupabaseClient.getSavedUserEmail() ?: authPrefs.getString("ps_email", null)
+        val email = SupabaseClient.getSavedUserEmail() ?: authPrefs.getString("ps_email", null)
         if (!email.isNullOrBlank()) {
-            val isUserAdmin = com.example.data.supabase.SupabaseClient.isAdmin(email)
+            val isUserAdmin = SupabaseClient.isAdmin(email)
             _uiState.value = _uiState.value.copy(
                 userProfile = UserProfile(
                     name = if (isUserAdmin) "مدير المتجر (Admin)" else email.substringBefore("@"),
@@ -134,15 +393,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 ),
                 isAdmin = isUserAdmin
             )
-            // Seamlessly validate and refresh token in background on startup
             viewModelScope.launch {
-                com.example.data.supabase.SupabaseClient.getValidToken(forceRefresh = false)
+                SupabaseClient.getValidToken(forceRefresh = false)
             }
         }
     }
 
     fun onSessionExpired() {
-        com.example.data.supabase.SupabaseClient.clearSession()
+        SupabaseClient.clearSession()
         authPrefs.edit().clear().apply()
         _uiState.value = _uiState.value.copy(
             userProfile = null,
@@ -259,6 +517,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
     fun refreshData() {
         repository.refreshFromSupabase()
+        refreshPagedApps()
         emitToast("تم تحديث التطبيقات والمنشورات بنجاح 🔄")
     }
 
@@ -340,18 +599,18 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun clearSearchHistory() = repository.clearSearchHistory()
     fun emitToast(msg: String) = repository.emitToast(msg)
 
-    fun installDownloadedApk(appId: String, context: android.content.Context) {
-        val file = com.example.data.installer.ApkInstaller.getApkFile(context, appId)
+    fun installDownloadedApk(appId: String, context: Context) {
+        val file = ApkInstaller.getApkFile(context, appId)
         if (!file.exists() || file.length() == 0L) {
             emitToast("الملف غير متوفر حالياً، جاري بدء التحميل")
             startDownload(appId)
             return
         }
 
-        if (com.example.data.installer.ApkInstaller.canRequestPackageInstalls(context)) {
-            com.example.data.installer.ApkInstaller.installApk(context, file)
+        if (ApkInstaller.canRequestPackageInstalls(context)) {
+            ApkInstaller.installApk(context, file)
             viewModelScope.launch {
-                com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
+                SupabaseClient.incrementDownloads(appId)
             }
         } else {
             _uiState.value = _uiState.value.copy(
@@ -365,14 +624,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.value = _uiState.value.copy(showInstallPermissionDialog = false)
     }
 
-    fun onPermissionGrantedResumeInstall(context: android.content.Context) {
+    fun onPermissionGrantedResumeInstall(context: Context) {
         val appId = _uiState.value.pendingInstallAppId ?: return
-        if (com.example.data.installer.ApkInstaller.canRequestPackageInstalls(context)) {
-            val file = com.example.data.installer.ApkInstaller.getApkFile(context, appId)
+        if (ApkInstaller.canRequestPackageInstalls(context)) {
+            val file = ApkInstaller.getApkFile(context, appId)
             if (file.exists() && file.length() > 0) {
-                com.example.data.installer.ApkInstaller.installApk(context, file)
+                ApkInstaller.installApk(context, file)
                 viewModelScope.launch {
-                    com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
+                    SupabaseClient.incrementDownloads(appId)
                 }
             }
             _uiState.value = _uiState.value.copy(
@@ -402,12 +661,12 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isAuthLoading = true, authErrorMessage = null)
-            val result = com.example.data.supabase.SupabaseClient.signInWithPassword(trimmedEmail, pass)
+            val result = SupabaseClient.signInWithPassword(trimmedEmail, pass)
             _uiState.value = _uiState.value.copy(isAuthLoading = false)
 
-            if (result.success || com.example.data.supabase.SupabaseClient.isAdmin(trimmedEmail)) {
+            if (result.success || SupabaseClient.isAdmin(trimmedEmail)) {
                 val userEmail = result.email ?: trimmedEmail
-                val isUserAdmin = com.example.data.supabase.SupabaseClient.isAdmin(userEmail)
+                val isUserAdmin = SupabaseClient.isAdmin(userEmail)
                 authPrefs.edit()
                     .putString("ps_email", userEmail)
                     .putString("ps_token", result.accessToken.orEmpty())
@@ -438,12 +697,12 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isAuthLoading = true, authErrorMessage = null)
-            val result = com.example.data.supabase.SupabaseClient.signUp(trimmedEmail, pass)
+            val result = SupabaseClient.signUp(trimmedEmail, pass)
             _uiState.value = _uiState.value.copy(isAuthLoading = false)
 
             if (result.success) {
                 val userEmail = result.email ?: trimmedEmail
-                val isUserAdmin = com.example.data.supabase.SupabaseClient.isAdmin(userEmail)
+                val isUserAdmin = SupabaseClient.isAdmin(userEmail)
                 authPrefs.edit()
                     .putString("ps_email", userEmail)
                     .putString("ps_token", result.accessToken.orEmpty())
@@ -467,7 +726,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun signOutAll() {
-        com.example.data.supabase.SupabaseClient.clearSession()
+        SupabaseClient.clearSession()
         authPrefs.edit().clear().apply()
         _uiState.value = _uiState.value.copy(
             userProfile = null,
@@ -479,7 +738,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun loginAdmin(email: String, pass: String): Boolean {
-        if (com.example.data.supabase.SupabaseClient.isAdmin(email)) {
+        if (SupabaseClient.isAdmin(email)) {
             val userEmail = email.trim()
             authPrefs.edit().putString("ps_email", userEmail).apply()
             _uiState.value = _uiState.value.copy(
@@ -524,10 +783,12 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         screenshots: List<String>,
         isOpenSource: Boolean = false,
         sourceCodeUrl: String? = null,
-        supportedAbis: String = "Universal (All Architectures)"
+        supportedAbis: String = "Universal (All Architectures)",
+        version: String = "1.0.0",
+        categoryKey: String = "apps"
     ) {
         val appId = id ?: "app_${System.currentTimeMillis()}"
-        val tags = mutableListOf(category.titleAr)
+        val tags = mutableListOf(StoreCategories.getTitleAr(categoryKey))
         if (isOpenSource) tags.add("مفتوح المصدر")
         if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
 
@@ -556,15 +817,17 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             screenshotUrls = screenshots,
             isOpenSource = isOpenSource,
             sourceCodeUrl = sourceCodeUrl?.ifBlank { null },
-            supportedAbis = supportedAbis
+            supportedAbis = supportedAbis,
+            version = version,
+            categoryKey = categoryKey
         )
-        // The app is saved/updated in Supabase directly by AdminPanelScreen with strict payload;
-        // Refresh catalog from Supabase to immediately load the newly inserted row
         repository.refreshFromSupabase()
+        refreshPagedApps()
     }
 
     fun deleteAppFromAdmin(appId: String) {
         val token = authPrefs.getString("ps_token", null)
         repository.deleteApp(appId, token)
+        refreshPagedApps()
     }
 }

@@ -37,13 +37,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -71,7 +72,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -79,20 +79,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
-import com.example.data.github.GitHubConfig
 import com.example.data.github.GitHubStorageHelper
 import com.example.data.github.GitHubUploadService
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
+import com.example.data.model.CategoryItem
+import com.example.data.model.StoreCategories
 import com.example.data.supabase.SupabaseClient
 import com.example.ui.components.NeonCard
-import com.example.ui.components.NeonGradientButton
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.AccentGreen
 import com.example.ui.theme.AccentRed
@@ -101,7 +100,6 @@ import com.example.ui.theme.NeonBorderGlow
 import com.example.ui.theme.NeonPurpleDeep
 import com.example.ui.theme.NeonPurplePrimary
 import com.example.ui.theme.PrimeBackground
-import com.example.ui.theme.PrimeCardBackground
 import com.example.ui.theme.PrimeGradientBrush
 import com.example.ui.theme.PrimeTextMuted
 import com.example.ui.theme.PrimeTextSecondary
@@ -133,7 +131,9 @@ fun AdminPanelScreen(
         screenshots: List<String>,
         isOpenSource: Boolean,
         sourceCodeUrl: String,
-        supportedAbis: String
+        supportedAbis: String,
+        version: String,
+        categoryKey: String
     ) -> Unit,
     onDeleteApp: (String) -> Unit,
     onBackClick: () -> Unit,
@@ -150,7 +150,8 @@ fun AdminPanelScreen(
 
     var editingAppId by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(AppCategory.GAMES) }
+    var selectedCategoryItem by remember { mutableStateOf(StoreCategories.find("apps")) }
+    var versionStr by remember { mutableStateOf("1.0.0") }
     var ratingStr by remember { mutableStateOf("4.5") }
     var sizeStr by remember { mutableStateOf("120 MB") }
     var description by remember { mutableStateOf("") }
@@ -183,6 +184,17 @@ fun AdminPanelScreen(
     var uploadProgress by remember { mutableFloatStateOf(0f) }
     var uploadJob by remember { mutableStateOf<Job?>(null) }
 
+    // Category Picker Modal
+    var showCategoryModal by remember { mutableStateOf(false) }
+    var categorySearchQuery by remember { mutableStateOf("") }
+
+    // Store Update Section State
+    var storeUpdateVersionCode by remember { mutableStateOf("1") }
+    var storeUpdateVersionName by remember { mutableStateOf("1.0.0") }
+    var storeUpdateNotes by remember { mutableStateOf("") }
+    var storeUpdateApkUrl by remember { mutableStateOf("") }
+    var isPublishingStoreUpdate by remember { mutableStateOf(false) }
+
     // GitHub Settings State (Loaded from EncryptedSharedPreferences)
     var ghOwner by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_OWNER) }
     var ghRepo by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_REPO) }
@@ -195,6 +207,17 @@ fun AdminPanelScreen(
         ghOwner = cfg.owner
         ghRepo = cfg.repo
         ghToken = cfg.token
+
+        // Fetch current store update config
+        val curUpdate = withContext(Dispatchers.IO) {
+            SupabaseClient.fetchStoreUpdate()
+        }
+        if (curUpdate != null) {
+            storeUpdateVersionCode = curUpdate.versionCode.toString()
+            storeUpdateVersionName = curUpdate.versionName
+            storeUpdateNotes = curUpdate.notes
+            storeUpdateApkUrl = curUpdate.apkUrl
+        }
     }
 
     // Upload Progress & Size States
@@ -202,12 +225,12 @@ fun AdminPanelScreen(
     var uploadTotalMbText by remember { mutableStateOf("0 MB") }
     var isUploadingToGitHub by remember { mutableStateOf(false) }
 
-    // Alerts, full previews and verified post-save info
+    // Alerts & Dialogs
     var showOver2GbAlert by remember { mutableStateOf(false) }
     var appToDelete by remember { mutableStateOf<AppItem?>(null) }
     var fullscreenPreviewUrl by remember { mutableStateOf<Any?>(null) }
     var verifiedSavedApp by remember { mutableStateOf<AppItem?>(null) }
-    var supabaseErrorResult by remember { mutableStateOf<com.example.data.supabase.SupabaseClient.SupabaseMutationResult?>(null) }
+    var supabaseErrorResult by remember { mutableStateOf<SupabaseClient.SupabaseMutationResult?>(null) }
 
     LaunchedEffect(adminEmail) {
         if (!SupabaseClient.isAdmin(adminEmail)) {
@@ -253,14 +276,16 @@ fun AdminPanelScreen(
                     return@rememberLauncherForActivityResult
                 }
 
-                // Automatic APK archive reading & ABI detection
                 scope.launch(Dispatchers.IO) {
-                    val (extractedName, _, iconBytes) = extractApkMetadata(context, uri)
+                    val (extractedName, extractedVer, iconBytes) = extractApkMetadata(context, uri)
                     val abis = com.example.data.installer.ApkAbiDetector.detectAbis(context, uri)
                     withContext(Dispatchers.Main) {
                         detectedAbis = abis
                         if (name.isBlank() && !extractedName.isNullOrBlank()) {
                             name = extractedName
+                        }
+                        if (!extractedVer.isNullOrBlank()) {
+                            versionStr = extractedVer
                         }
                         if (sizeStr.isBlank() || sizeStr == "120 MB") {
                             sizeStr = formatSize(fSize)
@@ -277,7 +302,8 @@ fun AdminPanelScreen(
     fun populateForEdit(app: AppItem) {
         editingAppId = app.id
         name = app.nameAr
-        selectedCategory = app.category
+        selectedCategoryItem = StoreCategories.find(app.categoryKey.ifBlank { app.category.name.lowercase() })
+        versionStr = app.version.ifBlank { "1.0.0" }
         ratingStr = app.rating.toString()
         sizeStr = app.size
         description = app.descriptionAr
@@ -301,7 +327,8 @@ fun AdminPanelScreen(
     fun clearForm() {
         editingAppId = null
         name = ""
-        selectedCategory = AppCategory.GAMES
+        selectedCategoryItem = StoreCategories.find("apps")
+        versionStr = "1.0.0"
         ratingStr = "4.5"
         sizeStr = "120 MB"
         description = ""
@@ -320,30 +347,6 @@ fun AdminPanelScreen(
         pickedApkFileName = ""
         pickedApkSizeBytes = 0L
     }
-
-    val categoriesList = listOf(
-        AppCategory.GAMES,
-        AppCategory.APPS,
-        AppCategory.ROOT_TOOLS,
-        AppCategory.OPEN_SOURCE,
-        AppCategory.PRODUCTIVITY,
-        AppCategory.PERSONALIZATION,
-        AppCategory.MEDIA,
-        AppCategory.SOCIAL,
-        AppCategory.ACTION,
-        AppCategory.RPG,
-        AppCategory.SIMULATION,
-        AppCategory.EMULATORS,
-        AppCategory.RETRO,
-        AppCategory.POPULAR,
-        AppCategory.ENTERTAINMENT,
-        AppCategory.SPORTS,
-        AppCategory.BUSINESS,
-        AppCategory.EDUCATION,
-        AppCategory.MUSIC,
-        AppCategory.TOOLS,
-        AppCategory.VIDEO
-    )
 
     fun startSaveProcess() {
         if (name.isBlank() || isSaving || isUploading) return
@@ -366,15 +369,13 @@ fun AdminPanelScreen(
             return
         }
 
-        // If directFileUrl is provided, validate it with relaxed rules
         if (directFileUrl.isNotBlank() && !SupabaseClient.isValidDownloadLink(directFileUrl)) {
             scope.launch {
-                snackbarHostState.showSnackbar("⚠️ الرابط المباشر يجب أن يكون رابط Supabase Storage أو ينتهي بـ .apk أو من GitHub Releases. الروابط غير المباشرة (مثل Mediafire و Google Drive) غير مدعومة للتثبيت التلقائي.")
+                snackbarHostState.showSnackbar("⚠️ الرابط المباشر يجب أن يكون رابط Supabase Storage أو ينتهي بـ .apk أو من GitHub Releases.")
             }
             return
         }
 
-        // Calculate total files to upload
         var total = 0
         if (pickedIconUri != null || (apkExtractedIconBytes != null && storedIconUrl.isBlank())) total++
         total += pickedShotUris.size
@@ -394,7 +395,7 @@ fun AdminPanelScreen(
             try {
                 var finalIconUrl = storedIconUrl
 
-                // 1. Upload Icon (to Supabase Storage) - Ensure valid token before starting
+                // 1. Upload Icon
                 val iconToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
                 if (pickedIconUri != null) {
                     uploadCurrentStep++
@@ -414,7 +415,7 @@ fun AdminPanelScreen(
                     if (uploadResult.isSuccess) {
                         finalIconUrl = uploadResult.getOrThrow()
                     } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ غير معروف في السيرفر"
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
                         throw Exception("فشل رفع الأيقونة: $errorText")
                     }
                 } else if (apkExtractedIconBytes != null && finalIconUrl.isBlank()) {
@@ -430,12 +431,12 @@ fun AdminPanelScreen(
                     if (uploadResult.isSuccess) {
                         finalIconUrl = uploadResult.getOrThrow()
                     } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ غير معروف في السيرفر"
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
                         throw Exception("فشل رفع الأيقونة المستخرجة: $errorText")
                     }
                 }
 
-                // 2. Upload Screenshots (to Supabase Storage) - Ensure valid token before screenshots
+                // 2. Upload Screenshots
                 val shotToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
                 val finalScreenshots = storedScreenshotUrls.toMutableList()
                 for ((idx, sUri) in pickedShotUris.withIndex()) {
@@ -461,7 +462,7 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // 3. Upload APK to GitHub Releases (Direct Streaming Chunk Upload)
+                // 3. Upload APK to GitHub Releases
                 var finalFileUrl = directFileUrl
                 var uploadedApkSizeStr = sizeStr
 
@@ -469,10 +470,9 @@ fun AdminPanelScreen(
                     val apkUri = pickedApkUri!!
                     val max2Gb = 2147483648L
                     if (pickedApkSizeBytes > max2Gb) {
-                        throw Exception("حجم الملف يتجاوز 2 جيجابايت، يرجى تقسيم الملف قبل الرفع")
+                        throw Exception("حجم الملف يتجاوز 2 جيجابايت")
                     }
 
-                    // Validate GitHub config
                     val currentGhConfig = GitHubStorageHelper.loadConfig(context)
                     if (currentGhConfig.token.isBlank()) {
                         throw Exception("يرجى إدخال مفتاح GitHub Token أولاً في قسم \"إعدادات GitHub\"")
@@ -483,7 +483,6 @@ fun AdminPanelScreen(
                     uploadStepLabel = "جاري إنشاء Release ورفع الملف إلى GitHub ($uploadCurrentStep/$uploadTotalSteps)"
                     uploadProgress = 0f
 
-                    // Start Foreground Service for persistence
                     GitHubUploadService.start(context, pickedApkFileName.ifBlank { name })
 
                     try {
@@ -522,13 +521,8 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // Mandatory checks before persisting in Supabase:
-                if (finalIconUrl.isBlank()) {
-                    throw Exception("لم يتم توفير رابط أيقونة صحيح (icon_url مفقود)")
-                }
-                if (finalFileUrl.isBlank()) {
-                    throw Exception("لم يتم توفير ملف APK أو رابط تحميل (file_url مفقود)")
-                }
+                if (finalIconUrl.isBlank()) throw Exception("لم يتم توفير رابط أيقونة صحيح")
+                if (finalFileUrl.isBlank()) throw Exception("لم يتم توفير ملف APK أو رابط تحميل")
 
                 // 4. Save to apps table
                 val rating = ratingStr.toFloatOrNull() ?: 4.5f
@@ -542,34 +536,8 @@ fun AdminPanelScreen(
                     sizeStr
                 }
                 val features = featuresStr.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+                val categoryKey = selectedCategoryItem.key
 
-                val categoryKey = when (selectedCategory) {
-                    AppCategory.GAMES -> "games"
-                    AppCategory.APPS -> "apps"
-                    AppCategory.POPULAR -> "popular"
-                    AppCategory.NEW_GAMES -> "new_games"
-                    AppCategory.ENTERTAINMENT -> "entertainment"
-                    AppCategory.SPORTS -> "sports"
-                    AppCategory.BUSINESS -> "business"
-                    AppCategory.EDUCATION -> "education"
-                    AppCategory.MUSIC -> "music"
-                    AppCategory.TOOLS -> "tools"
-                    AppCategory.PRODUCTIVITY -> "productivity"
-                    AppCategory.PERSONALIZATION -> "personalization"
-                    AppCategory.MEDIA -> "media"
-                    AppCategory.SOCIAL -> "social"
-                    AppCategory.ACTION -> "action"
-                    AppCategory.RPG -> "rpg"
-                    AppCategory.SIMULATION -> "simulation"
-                    AppCategory.EMULATORS -> "emulators"
-                    AppCategory.RETRO -> "retro"
-                    AppCategory.ROOT_TOOLS -> "root_tools"
-                    AppCategory.OPEN_SOURCE -> "open_source"
-                    AppCategory.VIDEO -> "video"
-                    AppCategory.MORE -> "more"
-                }
-
-                // Ensure token is fresh right before final save step in apps table
                 val finalFreshToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
 
                 val mutationResult = if (editingAppId == null) {
@@ -585,7 +553,7 @@ fun AdminPanelScreen(
                         fileUrl = finalFileUrl,
                         screenshots = finalScreenshots,
                         architecture = detectedAbis,
-                        version = "1.0.0",
+                        version = versionStr.ifBlank { "1.0.0" },
                         packageName = "com.primestore.${name.lowercase().replace(Regex("[^a-z0-9]"), "")}",
                         downloads = "0"
                     )
@@ -603,7 +571,7 @@ fun AdminPanelScreen(
                         fileUrl = finalFileUrl,
                         screenshots = finalScreenshots,
                         architecture = detectedAbis,
-                        version = "1.0.0",
+                        version = versionStr.ifBlank { "1.0.0" },
                         packageName = "com.primestore.${name.lowercase().replace(Regex("[^a-z0-9]"), "")}",
                         downloads = "0"
                     )
@@ -619,10 +587,17 @@ fun AdminPanelScreen(
                     return@launch
                 }
 
+                val matchingEnum = when {
+                    categoryKey == "games" || categoryKey.startsWith("game_") -> AppCategory.GAMES
+                    categoryKey == "root_tools" -> AppCategory.ROOT_TOOLS
+                    categoryKey == "open_source" -> AppCategory.OPEN_SOURCE
+                    else -> AppCategory.APPS
+                }
+
                 onSaveApp(
                     editingAppId,
                     name,
-                    selectedCategory,
+                    matchingEnum,
                     rating,
                     finalCalculatedSize,
                     description,
@@ -632,10 +607,12 @@ fun AdminPanelScreen(
                     finalScreenshots,
                     isOpenSource,
                     sourceCodeUrl,
-                    detectedAbis
+                    detectedAbis,
+                    versionStr.ifBlank { "1.0.0" },
+                    categoryKey
                 )
 
-                // 5. Post-save verification from Supabase: fetch to confirm URLs are persisted
+                // 5. Post-save verification
                 var verifiedApp: AppItem? = null
                 withContext(Dispatchers.IO) {
                     kotlinx.coroutines.delay(800)
@@ -713,7 +690,7 @@ fun AdminPanelScreen(
                 contentPadding = PaddingValues(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 40.dp)
             ) {
                 // ========================================================
-                // GITHUB SETTINGS CARD (Encrypted Storage for Releases)
+                // 1) GITHUB SETTINGS CARD
                 // ========================================================
                 item {
                     NeonCard(
@@ -745,10 +722,10 @@ fun AdminPanelScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             Text(
-                                text = "يتم رفع ملفات الـ APK تلقائياً إلى GitHub Releases بدلاً من استهلاك مساحة السيرفر.",
+                                text = "يتم رفع ملفات الـ APK تلقائياً إلى GitHub Releases بدعم حتى 2GB للملف الواحد.",
                                 color = PrimeTextMuted,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp
@@ -788,7 +765,6 @@ fun AdminPanelScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                // Save Button
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -800,7 +776,7 @@ fun AdminPanelScreen(
                                             GitHubStorageHelper.saveConfig(context, ghOwner, ghRepo, ghToken)
                                             isSavingGhSettings = false
                                             scope.launch {
-                                                snackbarHostState.showSnackbar("✔ تم حفظ إعدادات GitHub بأمان على جهازك")
+                                                snackbarHostState.showSnackbar("✔ تم حفظ إعدادات GitHub بأمان")
                                             }
                                         }
                                         .padding(vertical = 10.dp),
@@ -814,7 +790,6 @@ fun AdminPanelScreen(
                                     )
                                 }
 
-                                // Test Connection Button
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -848,7 +823,127 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // Form Card
+                // ========================================================
+                // 2) STORE UPDATE SECTION (تحديث المتجر store_update)
+                // ========================================================
+                item {
+                    NeonCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        hasGlow = false
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SystemUpdate,
+                                    contentDescription = null,
+                                    tint = NeonPurplePrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "تحديث المتجر (Store Update)",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "نشر تحديث جديد لمتجر Prime Store ليظهر تلقائياً للمستخدمين في شاشة الإعدادات مع التثبيت المباشر.",
+                                color = PrimeTextMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                AdminTextField(
+                                    value = storeUpdateVersionCode,
+                                    onValueChange = { storeUpdateVersionCode = it },
+                                    label = "كود الإصدار (version_code رقمي)",
+                                    keyboardType = KeyboardType.Number,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                AdminTextField(
+                                    value = storeUpdateVersionName,
+                                    onValueChange = { storeUpdateVersionName = it },
+                                    label = "اسم الإصدار (مثال: 1.0.2)",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            AdminTextField(
+                                value = storeUpdateNotes,
+                                onValueChange = { storeUpdateNotes = it },
+                                label = "ملاحظات التحديث (سجل التغييرات)",
+                                singleLine = false,
+                                minLines = 2
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            AdminTextField(
+                                value = storeUpdateApkUrl,
+                                onValueChange = { storeUpdateApkUrl = it },
+                                label = "رابط ملف APK المباشر للتحديث (أو رابط GitHub Release)"
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(PrimeGradientBrush)
+                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .clickable(enabled = !isPublishingStoreUpdate) {
+                                        val code = storeUpdateVersionCode.toIntOrNull() ?: 1
+                                        isPublishingStoreUpdate = true
+                                        scope.launch {
+                                            val success = withContext(Dispatchers.IO) {
+                                                SupabaseClient.updateStoreUpdate(
+                                                    versionCode = code,
+                                                    versionName = storeUpdateVersionName.ifBlank { "1.0.0" },
+                                                    notes = storeUpdateNotes,
+                                                    apkUrl = storeUpdateApkUrl
+                                                )
+                                            }
+                                            isPublishingStoreUpdate = false
+                                            if (success.success) {
+                                                snackbarHostState.showSnackbar("✔ تم نشر تحديث المتجر بنجاح في جدول store_update!")
+                                            } else {
+                                                snackbarHostState.showSnackbar("❌ فشل تحديث جدول store_update، تحقق من الاتصال")
+                                            }
+                                        }
+                                    }
+                                    .padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isPublishingStoreUpdate) "جاري النشر..." else "🚀 نشر التحديث للمتجر",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ========================================================
+                // 3) APP ADD/EDIT FORM
+                // ========================================================
                 item {
                     NeonCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -884,7 +979,7 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Category selector
+                            // Category Selector with full Modal
                             Text(
                                 text = "القسم (التصنيف):",
                                 color = PrimeTextSecondary,
@@ -892,40 +987,54 @@ fun AdminPanelScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.fillMaxWidth()
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF221538))
+                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .clickable { showCategoryModal = true }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                items(categoriesList) { cat ->
-                                    val isSelected = selectedCategory == cat
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                if (isSelected) NeonPurplePrimary else Color(0xFF221538),
-                                                RoundedCornerShape(10.dp)
-                                            )
-                                            .border(
-                                                1.dp,
-                                                if (isSelected) NeonBorderGlow else NeonBorder,
-                                                RoundedCornerShape(10.dp)
-                                            )
-                                            .clickable { selectedCategory = cat }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = selectedCategoryItem.emoji, fontSize = 20.sp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
                                         Text(
-                                            text = cat.titleAr,
-                                            color = if (isSelected) Color.White else PrimeTextSecondary,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            text = selectedCategoryItem.titleAr,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
+                                        Text(
+                                            text = "${selectedCategoryItem.group} • ${selectedCategoryItem.titleEn}",
+                                            color = PrimeTextMuted,
+                                            fontSize = 11.sp
                                         )
                                     }
                                 }
+                                Text(
+                                    text = "تغيير القسم ›",
+                                    color = NeonPurplePrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Rating & Size
+                            // Version, Rating & Size
                             Row(modifier = Modifier.fillMaxWidth()) {
+                                AdminTextField(
+                                    value = versionStr,
+                                    onValueChange = { versionStr = it },
+                                    label = "رقم الإصدار (مثال: 1.0.0)",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 AdminTextField(
                                     value = ratingStr,
                                     onValueChange = { ratingStr = it },
@@ -966,7 +1075,7 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Open Source Toggle & URL Input
+                            // Open Source Toggle
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -999,7 +1108,7 @@ fun AdminPanelScreen(
                                 )
                             }
 
-                            androidx.compose.animation.AnimatedVisibility(visible = isOpenSource) {
+                            AnimatedVisibility(visible = isOpenSource) {
                                 Column {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     AdminTextField(
@@ -1012,9 +1121,7 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // ========================================================
-                            // SECTION 1: رفع الأيقونة (Icon Picker & Preview)
-                            // ========================================================
+                            // SECTION 1: Icon Picker
                             Text(
                                 text = "أيقونة التطبيق:",
                                 color = PrimeTextSecondary,
@@ -1023,7 +1130,6 @@ fun AdminPanelScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            // Button to pick icon from device
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1053,7 +1159,6 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Icon Preview Area
                             if (pickedIconUri != null || apkExtractedIconBytes != null || storedIconUrl.isNotBlank()) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1103,17 +1208,12 @@ fun AdminPanelScreen(
                                         Text(
                                             text = when {
                                                 pickedIconUri != null -> "أيقونة محددة من الجهاز"
-                                                apkExtractedIconBytes != null -> "أيقونة مستخرجة تلقائياً من APK"
+                                                apkExtractedIconBytes != null -> "أيقونة مستخرجة من APK"
                                                 else -> "الأيقونة الحالية للتطبيق"
                                             },
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp
-                                        )
-                                        Text(
-                                            text = if (pickedIconUri != null) "جاهزة للرفع إلى السحابة" else "يمكنك استبدالها في أي وقت",
-                                            color = PrimeTextMuted,
-                                            fontSize = 10.sp
                                         )
                                     }
 
@@ -1133,7 +1233,6 @@ fun AdminPanelScreen(
                                     }
                                 }
                             } else {
-                                // Fallback emoji / url field if user wants emoji
                                 AdminTextField(
                                     value = storedIconUrl,
                                     onValueChange = { storedIconUrl = it },
@@ -1143,9 +1242,7 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // ========================================================
-                            // SECTION 2: لقطات الشاشة (Screenshots Picker & LazyRow Preview)
-                            // ========================================================
+                            // SECTION 2: Screenshots
                             Text(
                                 text = "لقطات الشاشة:",
                                 color = PrimeTextSecondary,
@@ -1183,7 +1280,6 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Horizontal Screenshots Preview
                             val hasShots = storedScreenshotUrls.isNotEmpty() || pickedShotUris.isNotEmpty()
                             if (hasShots) {
                                 LazyRow(
@@ -1194,7 +1290,6 @@ fun AdminPanelScreen(
                                         .border(1.dp, NeonBorder, RoundedCornerShape(14.dp))
                                         .padding(8.dp)
                                 ) {
-                                    // 1. Existing stored screenshots
                                     itemsIndexed(storedScreenshotUrls) { index, shotUrl ->
                                         ScreenshotPreviewThumb(
                                             model = shotUrl,
@@ -1202,8 +1297,6 @@ fun AdminPanelScreen(
                                             onClick = { fullscreenPreviewUrl = shotUrl }
                                         )
                                     }
-
-                                    // 2. Newly picked local Uris
                                     itemsIndexed(pickedShotUris) { index, uri ->
                                         ScreenshotPreviewThumb(
                                             model = uri,
@@ -1216,9 +1309,7 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // ========================================================
-                            // SECTION 3: ملف التطبيق (APK File Picker & Card Preview)
-                            // ========================================================
+                            // SECTION 3: APK File Picker
                             Text(
                                 text = "ملف التطبيق أو اللعبة (APK):",
                                 color = PrimeTextSecondary,
@@ -1256,7 +1347,6 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // APK Preview Card
                             if (pickedApkUri != null) {
                                 Row(
                                     modifier = Modifier
@@ -1308,87 +1398,25 @@ fun AdminPanelScreen(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
-                            } else if (directFileUrl.isNotBlank()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(Color(0xFF1E142D))
-                                        .border(1.dp, NeonBorder, RoundedCornerShape(14.dp))
-                                        .padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(text = "📦", fontSize = 20.sp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column {
-                                            Text(
-                                                text = "الملف المخزن حالياً",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = directFileUrl.substringAfterLast("/"),
-                                                color = PrimeTextMuted,
-                                                fontSize = 10.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(PrimeGradientBrush)
-                                            .clickable { apkPicker.launch("*/*") }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = "استبدال",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
                             }
 
-                            // Direct URL Fallback (below APK button)
                             AdminTextField(
                                 value = directFileUrl,
                                 onValueChange = { directFileUrl = it },
-                                label = "رابط ملف APK المباشر (بديل أو للملفات الكبيرة > 50MB)"
+                                label = "أو أدخل رابط ملف APK المباشر"
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Supported CPU Architectures (Auto-detected from APK)
                             AdminTextField(
                                 value = detectedAbis,
                                 onValueChange = { detectedAbis = it },
-                                label = "المعالجات المدعومة (Supported CPU Architecture) - فحص تلقائي من APK"
-                            )
-
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "💡 الروابط المدعومة للتحميل المباشر والتثبيت:\n• رابط Supabase Storage العام.\n• أي رابط ينتهي بـ .apk (مثل خوادمك الخاصة).\n• روابط GitHub Releases المباشرة.\n⚠️ روابط معاينة الويب (مثل MediaFire أو Google Drive) غير مدعومة للتثبيت التلقائي.",
-                                color = PrimeTextMuted,
-                                fontSize = 10.sp,
-                                lineHeight = 15.sp,
-                                modifier = Modifier.padding(horizontal = 4.dp)
+                                label = "المعالجات المدعومة (CPU Architecture) - فحص تلقائي من APK"
                             )
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // ========================================================
-                            // UPLOAD PROGRESS SECTION
-                            // ========================================================
+                            // UPLOAD PROGRESS
                             AnimatedVisibility(
                                 visible = isUploading,
                                 enter = fadeIn(),
@@ -1416,40 +1444,16 @@ fun AdminPanelScreen(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = if (isUploadingToGitHub && uploadTotalMbText.isNotBlank()) {
-                                                    "$uploadUploadedMbText / $uploadTotalMbText (${(uploadProgress * 100).toInt()}%)"
-                                                } else {
-                                                    "${(uploadProgress * 100).toInt()}%"
-                                                },
-                                                color = NeonPurplePrimary,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            IconButton(
-                                                onClick = {
-                                                    uploadJob?.cancel()
-                                                    GitHubUploadService.stop(context)
-                                                    isUploading = false
-                                                    isSaving = false
-                                                    isUploadingToGitHub = false
-                                                    scope.launch {
-                                                        snackbarHostState.showSnackbar("تم إلغاء عملية الرفع")
-                                                    }
-                                                },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Close,
-                                                    contentDescription = "إلغاء الرفع",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        }
+                                        Text(
+                                            text = if (isUploadingToGitHub && uploadTotalMbText.isNotBlank()) {
+                                                "$uploadUploadedMbText / $uploadTotalMbText (${(uploadProgress * 100).toInt()}%)"
+                                            } else {
+                                                "${(uploadProgress * 100).toInt()}%"
+                                            },
+                                            color = NeonPurplePrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     LinearProgressIndicator(
@@ -1465,9 +1469,7 @@ fun AdminPanelScreen(
                                 Spacer(modifier = Modifier.height(14.dp))
                             }
 
-                            // ========================================================
-                            // SUBMIT BUTTON (حفظ التطبيق)
-                            // ========================================================
+                            // SUBMIT BUTTON
                             val canSave = name.isNotBlank() && !isSaving && !isUploading
                             Box(
                                 modifier = Modifier
@@ -1504,25 +1506,20 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // Header for App List
+                // ========================================================
+                // 4) APPS LIST
+                // ========================================================
                 item {
                     Spacer(modifier = Modifier.height(20.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "التطبيقات المسجلة في المتجر (${apps.size})",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        text = "التطبيقات المسجلة في المتجر (${apps.size})",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                // Apps List
                 items(apps) { app ->
                     NeonCard(
                         modifier = Modifier
@@ -1566,7 +1563,7 @@ fun AdminPanelScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "${app.category.titleAr} • ⭐ ${app.rating} • ${app.size}",
+                                        text = "${app.displayCategoryTitle} • ${app.displayVersionBadge} • ⭐ ${app.rating} • ${app.size}",
                                         color = PrimeTextSecondary,
                                         fontSize = 11.sp
                                     )
@@ -1598,28 +1595,146 @@ fun AdminPanelScreen(
         }
     }
 
-    // ========================================================
-    // MODALS & DIALOGS
-    // ========================================================
+    // =========================================================================
+    // CATEGORY PICKER FULLSCREEN MODAL (Searchable & Grouped by عام, تطبيقات, ألعاب)
+    // =========================================================================
+    if (showCategoryModal) {
+        Dialog(onDismissRequest = { showCategoryModal = false }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(550.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color(0xFF16101F))
+                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(22.dp))
+                    .padding(16.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "اختر قسم التطبيق",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = { showCategoryModal = false }) {
+                            Icon(imageVector = Icons.Filled.Close, contentDescription = "إغلاق", tint = Color.White)
+                        }
+                    }
 
-    // 1. Alert for File Size > 2GB
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Search field
+                    OutlinedTextField(
+                        value = categorySearchQuery,
+                        onValueChange = { categorySearchQuery = it },
+                        placeholder = { Text("بحث عن قسم...", fontSize = 12.sp, color = PrimeTextMuted) },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = NeonPurplePrimary) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = NeonPurplePrimary,
+                            unfocusedBorderColor = NeonBorder,
+                            focusedContainerColor = Color(0xFF1E142D),
+                            unfocusedContainerColor = Color(0xFF1E142D)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val q = categorySearchQuery.trim().lowercase()
+                    val filteredCategories = remember(q) {
+                        if (q.isEmpty()) {
+                            StoreCategories.ALL_SELECTIONS
+                        } else {
+                            StoreCategories.ALL_SELECTIONS.filter {
+                                it.titleAr.contains(q) || it.titleEn.lowercase().contains(q) || it.key.lowercase().contains(q)
+                            }
+                        }
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val grouped = filteredCategories.groupBy { it.group }
+                        for ((groupName, items) in grouped) {
+                            item {
+                                Text(
+                                    text = groupName,
+                                    color = NeonPurplePrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                )
+                            }
+                            items(items) { cat ->
+                                val isSelected = selectedCategoryItem.key.lowercase() == cat.key.lowercase()
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) Color(0xFF2E1747) else Color(0xFF1E142D))
+                                        .border(1.dp, if (isSelected) NeonBorderGlow else NeonBorder, RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            selectedCategoryItem = cat
+                                            showCategoryModal = false
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = cat.emoji, fontSize = 20.sp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = cat.titleAr,
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = cat.titleEn,
+                                                color = PrimeTextMuted,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "تم الاختيار",
+                                            tint = NeonPurplePrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Alerts
     if (showOver2GbAlert) {
         AlertDialog(
             onDismissRequest = { showOver2GbAlert = false },
             containerColor = Color(0xFF1E142D),
             title = {
-                Text(
-                    text = "تنبيه حجم الملف ⚠️",
-                    color = AccentGold,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(text = "تنبيه حجم الملف ⚠️", color = AccentGold, fontWeight = FontWeight.Bold)
             },
             text = {
-                Text(
-                    text = "الحد الأقصى 2GB لكل ملف. يرجى اختيار ملف أصغر حجماً.",
-                    color = Color.White,
-                    fontSize = 13.sp
-                )
+                Text(text = "الحد الأقصى 2GB لكل ملف. يرجى اختيار ملف أصغر حجماً.", color = Color.White, fontSize = 13.sp)
             },
             confirmButton = {
                 Button(
@@ -1632,11 +1747,8 @@ fun AdminPanelScreen(
         )
     }
 
-    // 2. Fullscreen Screenshot Preview Modal
     if (fullscreenPreviewUrl != null) {
-        Dialog(
-            onDismissRequest = { fullscreenPreviewUrl = null }
-        ) {
+        Dialog(onDismissRequest = { fullscreenPreviewUrl = null }) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1652,18 +1764,9 @@ fun AdminPanelScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "معاينة لقطة الشاشة",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        Text(text = "معاينة لقطة الشاشة", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         IconButton(onClick = { fullscreenPreviewUrl = null }) {
-                            Icon(
-                                imageVector = Icons.Filled.Close,
-                                contentDescription = "إغلاق",
-                                tint = Color.White
-                            )
+                            Icon(imageVector = Icons.Filled.Close, contentDescription = "إغلاق", tint = Color.White)
                         }
                     }
                     Spacer(modifier = Modifier.height(10.dp))
@@ -1681,7 +1784,6 @@ fun AdminPanelScreen(
         }
     }
 
-    // 3. Delete App Confirmation Dialog
     if (appToDelete != null) {
         AlertDialog(
             onDismissRequest = { appToDelete = null },
@@ -1721,7 +1823,6 @@ fun AdminPanelScreen(
         )
     }
 
-    // Dialog showing verified URLs fetched back from Supabase
     if (verifiedSavedApp != null) {
         val app = verifiedSavedApp!!
         AlertDialog(
@@ -1740,52 +1841,11 @@ fun AdminPanelScreen(
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "التطبيق: ${app.nameAr}",
-                        color = NeonPurplePrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "الأيقونة (icon_url):",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = app.iconUrl ?: "غير متوفر",
-                        color = PrimeTextMuted,
-                        fontSize = 10.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "الملف (file_url):",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = app.fileUrl ?: "غير متوفر",
-                        color = PrimeTextMuted,
-                        fontSize = 10.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "لقطات الشاشة (screenshots):",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (app.screenshotUrls.isNotEmpty()) "تم حفظ ${app.screenshotUrls.size} لقطة بنجاح" else "لا توجد لقطات",
-                        color = AccentGreen,
-                        fontSize = 11.sp
-                    )
+                    Text(text = "التطبيق: ${app.nameAr}", color = NeonPurplePrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(text = "الإصدار: ${app.displayVersionBadge}", color = Color.White, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(text = "القسم: ${app.displayCategoryTitle}", color = Color.White, fontSize = 12.sp)
                 }
             },
             confirmButton = {
@@ -1834,14 +1894,6 @@ fun AdminPanelScreen(
                             fontSize = 11.sp
                         )
                     }
-                    if (err.code.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "رمز الخطأ (code): ${err.code}",
-                            color = NeonPurplePrimary,
-                            fontSize = 11.sp
-                        )
-                    }
                 }
             },
             confirmButton = {
@@ -1877,7 +1929,6 @@ private fun ScreenshotPreviewThumb(
             contentScale = ContentScale.Crop
         )
 
-        // Delete button on top corner
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -1932,10 +1983,6 @@ private fun AdminTextField(
     )
 }
 
-// ========================================================
-// FILE & APK UTILITIES
-// ========================================================
-
 private fun getFileNameAndSize(context: Context, uri: Uri): Pair<String, Long> {
     var name = "app.apk"
     var size = 0L
@@ -1948,9 +1995,7 @@ private fun getFileNameAndSize(context: Context, uri: Uri): Pair<String, Long> {
                 if (sizeIndex != -1) size = cursor.getLong(sizeIndex)
             }
         }
-    } catch (e: Exception) {
-        // Fallback
-    }
+    } catch (_: Exception) {}
     return Pair(name, size)
 }
 
@@ -2008,14 +2053,12 @@ private fun extractApkMetadata(context: Context, uri: Uri): Triple<String?, Stri
                     val baos = ByteArrayOutputStream()
                     bmp.compress(Bitmap.CompressFormat.PNG, 100, baos)
                     iconBytes = baos.toByteArray()
-                } catch (e: Exception) {
-                    // Ignored
-                }
+                } catch (_: Exception) {}
             }
         }
         tempFile.delete()
         Triple(appName, versionName, iconBytes)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         Triple(null, null, null)
     }
 }

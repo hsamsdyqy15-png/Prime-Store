@@ -266,11 +266,28 @@ fun AppDetailsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Tags badges
+                    // Tags & Version badges
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
+                        // Version Badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF2E1065))
+                                .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = app.displayVersionBadge,
+                                color = Color(0xFFE9D5FF),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
                         app.tags.forEach { tag ->
                             Box(
                                 modifier = Modifier

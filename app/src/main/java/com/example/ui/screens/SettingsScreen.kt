@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
@@ -33,11 +34,13 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
@@ -60,17 +63,19 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
+import com.example.data.model.StoreUpdateInfo
 import com.example.ui.UserProfile
 import com.example.ui.components.NeonCard
 import com.example.ui.components.NeonGradientButton
+import com.example.ui.theme.AccentRed
 import com.example.ui.theme.NeonBorder
 import com.example.ui.theme.NeonBorderGlow
 import com.example.ui.theme.NeonPurpleDeep
 import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeCardBackground
+import com.example.ui.theme.PrimeGradientBrush
 import com.example.ui.theme.PrimeTextMuted
 import com.example.ui.theme.PrimeTextSecondary
 
@@ -82,6 +87,11 @@ fun SettingsScreen(
     cacheSize: String,
     userProfile: UserProfile?,
     isAdmin: Boolean = false,
+    hasNewUpdateBadge: Boolean = false,
+    isCheckingUpdate: Boolean = false,
+    availableStoreUpdate: StoreUpdateInfo? = null,
+    isDownloadingStoreUpdate: Boolean = false,
+    storeUpdateDownloadProgress: Float = 0f,
     showLoginDialog: Boolean = false,
     isAuthLoading: Boolean = false,
     authErrorMessage: String? = null,
@@ -92,6 +102,9 @@ fun SettingsScreen(
     onToggleLanguage: () -> Unit,
     onSetLanguage: (String) -> Unit = {},
     onRefreshData: () -> Unit = {},
+    onCheckForUpdate: (onResult: (hasUpdate: Boolean, info: StoreUpdateInfo?) -> Unit) -> Unit = {},
+    onDownloadStoreUpdate: (StoreUpdateInfo) -> Unit = {},
+    onDismissUpdateBadge: () -> Unit = {},
     onToggleDarkMode: () -> Unit,
     onToggleNotifications: () -> Unit,
     onClearCache: () -> Unit,
@@ -107,6 +120,11 @@ fun SettingsScreen(
     var showCacheDialog by remember { mutableStateOf(false) }
     var showAdminLoginDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+
+    // Store update dialog states
+    var showUpdateFoundDialog by remember { mutableStateOf(false) }
+    var showUpToDateDialog by remember { mutableStateOf(false) }
+    var pendingUpdateInfo by remember { mutableStateOf<StoreUpdateInfo?>(null) }
 
     // Secret 7-tap counter
     var versionTapCount by remember { mutableIntStateOf(0) }
@@ -240,6 +258,99 @@ fun SettingsScreen(
                 }
             }
 
+            // =================================================================
+            // Store Version & Update Check Row (مع نقطة حمراء وزر فحص التحديث)
+            // =================================================================
+            item {
+                NeonCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            onCheckForUpdate { hasUpdate, info ->
+                                if (hasUpdate && info != null) {
+                                    pendingUpdateInfo = info
+                                    showUpdateFoundDialog = true
+                                } else {
+                                    showUpToDateDialog = true
+                                }
+                            }
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "الإصدار",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (hasNewUpdateBadge) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(AccentRed)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "تحديث جديد متوفر!",
+                                        color = AccentRed,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Prime Store v${BuildConfig.VERSION_NAME} (كود ${BuildConfig.VERSION_CODE})",
+                                color = PrimeTextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    color = NeonPurplePrimary,
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .then(if (hasNewUpdateBadge) Modifier.background(PrimeGradientBrush) else Modifier.background(Color(0xFF281C38)))
+                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = if (isCheckingUpdate) "فحص..." else "بحث عن تحديث",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Filled.SystemUpdate,
+                                contentDescription = null,
+                                tint = NeonPurplePrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
             // 1. اللغة (Language) 🌐
             item {
                 SettingsOptionItem(
@@ -344,7 +455,7 @@ fun SettingsScreen(
             item {
                 SettingsOptionItem(
                     title = "حول التطبيق",
-                    subtitle = "الإصدار 2.5.0 (Prime Store)",
+                    subtitle = "الإصدار ${BuildConfig.VERSION_NAME} (Prime Store)",
                     icon = Icons.Filled.Info,
                     onClick = { showAboutDialog = true }
                 )
@@ -370,7 +481,7 @@ fun SettingsScreen(
                 )
             }
 
-            // 8. زر الإجراء: تسجيل الدخول أو تسجيل الخروج (مدرج داخل القائمة لضمان التمرير الكامل دون قص)
+            // 8. زر الإجراء: تسجيل الدخول أو تسجيل الخروج
             item {
                 Spacer(modifier = Modifier.height(14.dp))
                 if (userProfile == null) {
@@ -392,6 +503,139 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(30.dp))
             }
+        }
+
+        // =====================================================================
+        // Store Update Dialogs
+        // =====================================================================
+
+        // Update Found Dialog
+        if (showUpdateFoundDialog && pendingUpdateInfo != null) {
+            val update = pendingUpdateInfo!!
+            AlertDialog(
+                onDismissRequest = { showUpdateFoundDialog = false },
+                containerColor = Color(0xFF16101F),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "🚀", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "تحديث جديد لـ Prime Store!",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
+                        )
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "الإصدار الجديد: ${update.versionName} (كود ${update.versionCode})",
+                            color = NeonPurplePrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (update.notes.isNotBlank()) {
+                            Text(
+                                text = "ملاحظات التحديث:",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = update.notes,
+                                color = PrimeTextSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp
+                            )
+                        } else {
+                            Text(
+                                text = "يتضمن هذا التحديث تحسينات في الأداء وإصلاحات لمشاكل التثبيت والتنزيل.",
+                                color = PrimeTextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        if (isDownloadingStoreUpdate) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "جاري تحميل التحديث... ${(storeUpdateDownloadProgress * 100).toInt()}%",
+                                color = NeonPurplePrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = { storeUpdateDownloadProgress },
+                                color = NeonPurplePrimary,
+                                trackColor = Color(0xFF281C38),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onDownloadStoreUpdate(update)
+                            onDismissUpdateBadge()
+                        },
+                        enabled = !isDownloadingStoreUpdate,
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.CloudDownload,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("تحديث الآن", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUpdateFoundDialog = false }) {
+                        Text("لاحقاً", color = PrimeTextMuted)
+                    }
+                }
+            )
+        }
+
+        // Already Up-To-Date Dialog
+        if (showUpToDateDialog) {
+            AlertDialog(
+                onDismissRequest = { showUpToDateDialog = false },
+                containerColor = Color(0xFF16101F),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = NeonPurplePrimary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "أنت على آخر إصدار", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Text(
+                        text = "أنت تستخدم أحدث نسخة من متجر Prime Store (${BuildConfig.VERSION_NAME}). لا توجد تحديثات جديدة حالياً.",
+                        color = PrimeTextSecondary,
+                        fontSize = 13.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showUpToDateDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                    ) {
+                        Text("حسناً", color = Color.White)
+                    }
+                }
+            )
         }
 
         // About Dialog with Secret 7-Tap on Version
@@ -451,7 +695,7 @@ fun SettingsScreen(
                                 .padding(10.dp)
                         ) {
                             Text(
-                                text = "الإصدار: v2.5.0 • أحدث تحديث 2026\nجميع الحقوق محفوظة © Prime Store Team",
+                                text = "الإصدار: v${BuildConfig.VERSION_NAME} (كود ${BuildConfig.VERSION_CODE})\nجميع الحقوق محفوظة © Prime Store Team",
                                 color = PrimeTextMuted,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp
@@ -597,7 +841,7 @@ fun SettingsScreen(
                             value = userEmailInput,
                             onValueChange = { userEmailInput = it },
                             label = { Text("البريد الإلكتروني", fontSize = 11.sp) },
-                            placeholder = { Text("toprsidar2@gmail.com", fontSize = 11.sp) },
+                            placeholder = { Text("user@example.com", fontSize = 11.sp) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                             colors = OutlinedTextFieldDefaults.colors(

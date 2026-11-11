@@ -1,6 +1,6 @@
 package com.example.ui
 
-import android.widget.Toast
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -27,12 +27,6 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.compose.ui.text.font.FontWeight
-import com.example.data.installer.ApkInstaller
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeTextMuted
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,10 +38,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.installer.ApkInstaller
 import com.example.ui.components.NavigationDrawerContent
 import com.example.ui.components.PrimeBottomNavBar
 import com.example.ui.screens.AdminPanelScreen
@@ -60,7 +58,9 @@ import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SplashScreen
 import com.example.ui.theme.NeonBorderGlow
+import com.example.ui.theme.NeonPurplePrimary
 import com.example.ui.theme.PrimeBackground
+import com.example.ui.theme.PrimeTextMuted
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -78,10 +78,23 @@ fun PrimeStoreApp(
     val searchResults by viewModel.searchResults.collectAsState()
     val searchHistory by viewModel.searchHistory.collectAsState()
 
+    // Infinite scroll & Store update states
+    val pagedApps by viewModel.pagedApps.collectAsState()
+    val selectedCategoryKey by viewModel.selectedCategoryKey.collectAsState()
+    val isInitialLoading by viewModel.isInitialLoading.collectAsState()
+    val isLoadingNextPage by viewModel.isLoadingNextPage.collectAsState()
+    val hasMoreApps by viewModel.hasMoreApps.collectAsState()
+    val pagedError by viewModel.pagedError.collectAsState()
+
+    val hasNewUpdateBadge by viewModel.hasNewUpdateBadge.collectAsState()
+    val availableStoreUpdate by viewModel.availableStoreUpdate.collectAsState()
+    val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
+    val isDownloadingStoreUpdate by viewModel.isDownloadingStoreUpdate.collectAsState()
+    val storeUpdateDownloadProgress by viewModel.storeUpdateDownloadProgress.collectAsState()
+
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     var activeToast by remember { mutableStateOf<String?>(null) }
 
-    // Collect Toast events
     LaunchedEffect(Unit) {
         viewModel.toastEvents.collect { message ->
             activeToast = message
@@ -92,7 +105,6 @@ fun PrimeStoreApp(
         }
     }
 
-    // Force Arabic RTL layout direction for authentic Arabic experience
     val layoutDirection = if (uiState.currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
@@ -101,13 +113,11 @@ fun PrimeStoreApp(
                 .fillMaxSize()
                 .background(PrimeBackground)
         ) {
-            // First: Splash Screen on launch
             if (uiState.showSplash) {
                 SplashScreen(
                     onDismiss = { viewModel.dismissSplash() }
                 )
             } else {
-                // Main Application with Navigation Drawer and Bottom Bar
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     gesturesEnabled = !uiState.isSearching && uiState.selectedAppId == null,
@@ -157,23 +167,25 @@ fun PrimeStoreApp(
                             if (uiState.showAdminPanel) {
                                 AdminPanelScreen(
                                     adminEmail = uiState.userProfile?.email ?: ADMIN_EMAIL,
-                                    accessToken = context.getSharedPreferences("prime_store_auth", android.content.Context.MODE_PRIVATE).getString("ps_token", null),
+                                    accessToken = context.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE).getString("ps_token", null),
                                     apps = apps,
-                                    onSaveApp = { id, name, category, rating, size, description, features, iconUrl, fileUrl, screenshots, isOpenSource, sourceCodeUrl, supportedAbis ->
+                                    onSaveApp = { id, name, category, rating, size, description, features, iconUrl, fileUrl, screenshots, isOpenSource, sourceCodeUrl, supportedAbis, version, categoryKey ->
                                         viewModel.saveAppFromAdmin(
-                                            id,
-                                            name,
-                                            category,
-                                            rating,
-                                            size,
-                                            description,
-                                            features,
-                                            iconUrl,
-                                            fileUrl,
-                                            screenshots,
-                                            isOpenSource,
-                                            sourceCodeUrl,
-                                            supportedAbis
+                                            id = id,
+                                            name = name,
+                                            category = category,
+                                            rating = rating,
+                                            size = size,
+                                            description = description,
+                                            features = features,
+                                            iconUrl = iconUrl,
+                                            fileUrl = fileUrl,
+                                            screenshots = screenshots,
+                                            isOpenSource = isOpenSource,
+                                            sourceCodeUrl = sourceCodeUrl,
+                                            supportedAbis = supportedAbis,
+                                            version = version,
+                                            categoryKey = categoryKey
                                         )
                                     },
                                     onDeleteApp = { appId ->
@@ -184,7 +196,7 @@ fun PrimeStoreApp(
                             }
                             // Sub-screen 1: App Details Screen
                             else if (uiState.selectedAppId != null) {
-                                val selectedApp = apps.find { it.id == uiState.selectedAppId }
+                                val selectedApp = apps.find { it.id == uiState.selectedAppId } ?: pagedApps.find { it.id == uiState.selectedAppId }
                                 if (selectedApp != null) {
                                     AppDetailsScreen(
                                         app = selectedApp,
@@ -232,9 +244,18 @@ fun PrimeStoreApp(
                                     when (tab) {
                                         MainTab.HOME -> {
                                             HomeScreen(
-                                                apps = apps,
+                                                allApps = apps,
+                                                pagedApps = pagedApps,
+                                                selectedCategoryKey = selectedCategoryKey,
+                                                isInitialLoading = isInitialLoading,
+                                                isLoadingNextPage = isLoadingNextPage,
+                                                hasMoreApps = hasMoreApps,
+                                                pagedError = pagedError,
+                                                downloads = downloads,
                                                 onAppClick = { appId -> viewModel.openAppDetails(appId) },
                                                 onCategoryClick = { category -> viewModel.openCategory(category) },
+                                                onCategorySelect = { key -> viewModel.selectHomeCategory(key) },
+                                                onLoadNextPage = { viewModel.loadNextAppsPage() },
                                                 onSearchClick = { viewModel.openSearch() },
                                                 onMenuClick = {
                                                     scope.launch {
@@ -243,6 +264,7 @@ fun PrimeStoreApp(
                                                     }
                                                 },
                                                 onDownloadClick = { appId -> viewModel.startDownload(appId) },
+                                                onInstallClick = { appId -> viewModel.installDownloadedApk(appId, context) },
                                                 onRefresh = { viewModel.refreshData() }
                                             )
                                         }
@@ -298,6 +320,11 @@ fun PrimeStoreApp(
                                                 cacheSize = uiState.cacheSize,
                                                 userProfile = uiState.userProfile,
                                                 isAdmin = uiState.isAdmin,
+                                                hasNewUpdateBadge = hasNewUpdateBadge,
+                                                isCheckingUpdate = isCheckingUpdate,
+                                                availableStoreUpdate = availableStoreUpdate,
+                                                isDownloadingStoreUpdate = isDownloadingStoreUpdate,
+                                                storeUpdateDownloadProgress = storeUpdateDownloadProgress,
                                                 showLoginDialog = uiState.showLoginDialog,
                                                 isAuthLoading = uiState.isAuthLoading,
                                                 authErrorMessage = uiState.authErrorMessage,
@@ -306,6 +333,15 @@ fun PrimeStoreApp(
                                                 onSignIn = { email, pass -> viewModel.signIn(email, pass) },
                                                 onSignUp = { email, pass -> viewModel.signUp(email, pass) },
                                                 onToggleLanguage = { viewModel.toggleLanguage() },
+                                                onSetLanguage = { lang -> viewModel.setLanguage(lang) },
+                                                onRefreshData = { viewModel.refreshData() },
+                                                onCheckForUpdate = { onResult ->
+                                                    viewModel.checkForStoreUpdate(manual = true, onResult = onResult)
+                                                },
+                                                onDownloadStoreUpdate = { info ->
+                                                    viewModel.downloadAndInstallStoreUpdate(info, context)
+                                                },
+                                                onDismissUpdateBadge = { viewModel.dismissUpdateBadge() },
                                                 onToggleDarkMode = { viewModel.toggleDarkMode() },
                                                 onToggleNotifications = { viewModel.toggleNotifications() },
                                                 onClearCache = { viewModel.clearCache() },

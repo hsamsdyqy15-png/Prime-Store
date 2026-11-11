@@ -36,6 +36,134 @@ enum class AppCategory(
     MORE("المزيد", "More", "استكشف كافة الأقسام", "⊞", "الكل", 0xFFA855F7, R.drawable.ic_cat_more)
 }
 
+data class CategoryItem(
+    val key: String,
+    val titleAr: String,
+    val titleEn: String,
+    val emoji: String,
+    val group: String, // "عام", "تطبيقات", "ألعاب"
+    val iconResId: Int = R.drawable.ic_cat_apps
+)
+
+object StoreCategories {
+    // 1) عام (General)
+    val GENERAL = listOf(
+        CategoryItem("all", "جميع الأصناف", "All", "🌐", "عام", R.drawable.ic_cat_more),
+        CategoryItem("trending", "الأكثر تحميلاً", "Trending", "🔥", "عام", R.drawable.ic_cat_popular),
+        CategoryItem("games", "ألعاب (عام)", "Games", "🎮", "عام", R.drawable.ic_cat_games),
+        CategoryItem("apps", "تطبيقات (عام)", "Apps", "🤖", "عام", R.drawable.ic_cat_apps)
+    )
+
+    // 2) تطبيقات (Google Play Apps Categories)
+    val APPS = listOf(
+        CategoryItem("art_design", "فن وتصميم", "Art & Design", "🎨", "تطبيقات"),
+        CategoryItem("auto_vehicles", "سيارات ومركبات", "Auto & Vehicles", "🚗", "تطبيقات"),
+        CategoryItem("beauty", "جمال", "Beauty", "💄", "تطبيقات"),
+        CategoryItem("books_reference", "كتب ومراجع", "Books & Reference", "📚", "تطبيقات"),
+        CategoryItem("business", "أعمال", "Business", "💼", "تطبيقات", R.drawable.ic_cat_business),
+        CategoryItem("comics", "قصص مصورة", "Comics", "💬", "تطبيقات"),
+        CategoryItem("communication", "تواصل", "Communication", "📞", "تطبيقات", R.drawable.ic_cat_social),
+        CategoryItem("dating", "تعارف", "Dating", "❤️", "تطبيقات"),
+        CategoryItem("education", "تعليم", "Education", "🎓", "تطبيقات", R.drawable.ic_cat_education),
+        CategoryItem("entertainment", "ترفيه", "Entertainment", "▶️", "تطبيقات", R.drawable.ic_cat_entertainment),
+        CategoryItem("events", "فعاليات", "Events", "🎟️", "تطبيقات"),
+        CategoryItem("finance", "مال", "Finance", "💰", "تطبيقات"),
+        CategoryItem("food_drink", "طعام وشراب", "Food & Drink", "🍔", "تطبيقات"),
+        CategoryItem("health_fitness", "صحة ولياقة", "Health & Fitness", "🏃", "تطبيقات"),
+        CategoryItem("house_home", "المنزل والديكور", "House & Home", "🏡", "تطبيقات"),
+        CategoryItem("libraries_demo", "مكتبات وعروض", "Libraries & Demo", "📦", "تطبيقات"),
+        CategoryItem("lifestyle", "نمط الحياة", "Lifestyle", "✨", "تطبيقات"),
+        CategoryItem("maps_navigation", "خرائط وملاحة", "Maps & Navigation", "🗺️", "تطبيقات"),
+        CategoryItem("medical", "طبي", "Medical", "🩺", "تطبيقات"),
+        CategoryItem("music_audio", "موسيقى وصوتيات", "Music & Audio", "🎵", "تطبيقات", R.drawable.ic_cat_music),
+        CategoryItem("news_magazines", "أخبار ومجلات", "News & Magazines", "📰", "تطبيقات"),
+        CategoryItem("parenting", "الأبوة والأمومة", "Parenting", "🍼", "تطبيقات"),
+        CategoryItem("personalization", "تخصيص", "Personalization", "🎭", "تطبيقات", R.drawable.ic_cat_personalization),
+        CategoryItem("photography", "تصوير", "Photography", "📷", "تطبيقات"),
+        CategoryItem("productivity", "إنتاجية", "Productivity", "📊", "تطبيقات", R.drawable.ic_cat_productivity),
+        CategoryItem("shopping", "تسوق", "Shopping", "🛍️", "تطبيقات"),
+        CategoryItem("social", "اجتماعي", "Social", "👥", "تطبيقات", R.drawable.ic_cat_social),
+        CategoryItem("sports", "رياضة", "Sports", "⚽", "تطبيقات", R.drawable.ic_cat_sports),
+        CategoryItem("tools", "أدوات", "Tools", "🔧", "تطبيقات", R.drawable.ic_cat_tools),
+        CategoryItem("travel_local", "سفر ومحلي", "Travel & Local", "✈️", "تطبيقات"),
+        CategoryItem("video_players_editors", "مشغلات ومحررات الفيديو", "Video Players & Editors", "🎬", "تطبيقات", R.drawable.ic_cat_video),
+        CategoryItem("weather", "طقس", "Weather", "🌤️", "تطبيقات")
+    )
+
+    // 3) ألعاب (Google Play Games Categories)
+    val GAMES = listOf(
+        CategoryItem("game_action", "أكشن", "Action", "⚔️", "ألعاب", R.drawable.ic_cat_action),
+        CategoryItem("game_adventure", "مغامرات", "Adventure", "🧭", "ألعاب"),
+        CategoryItem("game_arcade", "أركيد", "Arcade", "🕹️", "ألعاب"),
+        CategoryItem("game_board", "ألواح", "Board", "🎲", "ألعاب"),
+        CategoryItem("game_card", "ورق", "Card", "🃏", "ألعاب"),
+        CategoryItem("game_casino", "كازينو", "Casino", "🎰", "ألعاب"),
+        CategoryItem("game_casual", "ترفيهية خفيفة", "Casual", "🎈", "ألعاب"),
+        CategoryItem("game_educational", "تعليمية", "Educational", "🧩", "ألعاب"),
+        CategoryItem("game_music", "موسيقى", "Music", "🎼", "ألعاب"),
+        CategoryItem("game_puzzle", "ألغاز", "Puzzle", "🧠", "ألعاب"),
+        CategoryItem("game_racing", "سباق", "Racing", "🏎️", "ألعاب"),
+        CategoryItem("game_role_playing", "تقمص أدوار", "Role Playing", "🛡️", "ألعاب", R.drawable.ic_cat_rpg),
+        CategoryItem("game_simulation", "محاكاة", "Simulation", "🛫", "ألعاب", R.drawable.ic_cat_simulation),
+        CategoryItem("game_strategy", "استراتيجية", "Strategy", "🏰", "ألعاب"),
+        CategoryItem("game_sports", "رياضة", "Sports", "🏆", "ألعاب", R.drawable.ic_cat_sports),
+        CategoryItem("game_trivia", "معلومات عامة", "Trivia", "❓", "ألعاب"),
+        CategoryItem("game_word", "كلمات", "Word", "🔤", "ألعاب")
+    )
+
+    // All categories combined for selection & filtering
+    val ALL_SELECTIONS: List<CategoryItem> = GENERAL.filter { it.key != "all" } + APPS + GAMES
+
+    // All including "all" filter
+    val ALL_FILTER_ITEMS: List<CategoryItem> = listOf(GENERAL.first()) + GENERAL.drop(1) + APPS + GAMES
+
+    // Legacy Key Mappings
+    private val LEGACY_MAP = mapOf(
+        "music" to "موسيقى وصوتيات",
+        "video" to "مشغلات ومحررات الفيديو",
+        "root_tools" to "أدوات الروت",
+        "open_source" to "مفتوح المصدر",
+        "new_games" to "ألعاب جديدة",
+        "popular" to "الأكثر تحميلاً",
+        "tools" to "أدوات",
+        "games" to "ألعاب (عام)",
+        "apps" to "تطبيقات (عام)",
+        "sports" to "رياضة",
+        "education" to "تعليم",
+        "entertainment" to "ترفيه",
+        "business" to "أعمال"
+    )
+
+    fun getTitleAr(key: String?): String {
+        if (key.isNullOrBlank()) return "تطبيقات"
+        val clean = key.trim().lowercase()
+        val match = ALL_FILTER_ITEMS.find { it.key.lowercase() == clean }
+        if (match != null) return match.titleAr
+        return LEGACY_MAP[clean] ?: clean
+    }
+
+    fun getEmoji(key: String?): String {
+        if (key.isNullOrBlank()) return "📱"
+        val clean = key.trim().lowercase()
+        return ALL_FILTER_ITEMS.find { it.key.lowercase() == clean }?.emoji ?: "📱"
+    }
+
+    fun find(key: String?): CategoryItem {
+        val clean = key?.trim()?.lowercase().orEmpty()
+        return ALL_FILTER_ITEMS.find { it.key.lowercase() == clean }
+            ?: CategoryItem(key = clean.ifBlank { "apps" }, titleAr = getTitleAr(clean), titleEn = "App", emoji = getEmoji(clean), group = "تطبيقات")
+    }
+}
+
+data class StoreUpdateInfo(
+    val id: Int = 1,
+    val versionCode: Int = 1,
+    val versionName: String = "1.0.0",
+    val notes: String = "",
+    val apkUrl: String = "",
+    val updatedAt: String? = null
+)
+
 data class AppItem(
     val id: String,
     val name: String,
@@ -64,8 +192,15 @@ data class AppItem(
     val sourceCodeUrl: String? = null,
     val supportedAbis: String = "Universal (All Architectures)",
     val packageName: String? = null,
-    val version: String = "1.0.0"
-)
+    val version: String = "1.0.0",
+    val categoryKey: String = "apps"
+) {
+    val displayCategoryTitle: String
+        get() = StoreCategories.getTitleAr(categoryKey.ifBlank { category.name.lowercase() })
+
+    val displayVersionBadge: String
+        get() = if (version.isNotBlank()) "v$version" else "v1.0.0"
+}
 
 enum class DownloadStatus {
     DOWNLOADING,

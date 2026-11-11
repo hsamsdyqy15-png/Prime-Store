@@ -16,8 +16,9 @@ android {
     applicationId = "com.aistudio.primestore.gktvwy"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+    versionCode = runNumber
+    versionName = "1.0.$runNumber"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
