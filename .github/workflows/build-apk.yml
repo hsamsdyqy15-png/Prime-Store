@@ -36,7 +36,18 @@ jobs:
         with:
           gradle-version: ${{ steps.gv.outputs.version }}
 
-      - name: Create debug keystore
+      - name: Restore fixed signing keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
+            echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > debug.keystore
+            echo "Restored fixed keystore from secret."
+          else
+            echo "WARNING: secret DEBUG_KEYSTORE_BASE64 is not set. A random key will be used and updates will NOT install over the previous version."
+          fi
+
+      - name: Create debug keystore (fallback only)
         run: |
           if [ ! -f debug.keystore ]; then
             keytool -genkeypair -v -keystore debug.keystore \
@@ -57,6 +68,10 @@ jobs:
       - name: Rename APK
         run: |
           APK=$(find . -path "*build/outputs/apk/debug/*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK not found"
+            exit 1
+          fi
           echo "Found: $APK"
           cp "$APK" Prime.Store.apk
 
@@ -66,3 +81,5 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Prime Store build ${{ github.run_number }}
           files: Prime.Store.apk
+          make_latest: true
+          fail_on_unmatched_files: true
