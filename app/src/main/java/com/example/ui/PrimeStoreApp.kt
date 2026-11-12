@@ -46,17 +46,22 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.installer.ApkInstaller
+import com.example.ui.components.DowngradeOrSameVersionDialog
+import com.example.ui.components.LowStorageDialog
 import com.example.ui.components.NavigationDrawerContent
 import com.example.ui.components.PrimeBottomNavBar
+import com.example.ui.components.SignatureConflictDialog
 import com.example.ui.screens.AdminPanelScreen
 import com.example.ui.screens.AppDetailsScreen
 import com.example.ui.screens.CategoriesScreen
 import com.example.ui.screens.DownloadsScreen
 import com.example.ui.screens.FavoritesScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SplashScreen
+import com.example.ui.screens.UpdatesAndInstalledScreen
 import com.example.ui.theme.NeonBorderGlow
 import com.example.ui.theme.NeonPurplePrimary
 import com.example.ui.theme.PrimeBackground
@@ -86,6 +91,11 @@ fun PrimeStoreApp(
     val hasMoreApps by viewModel.hasMoreApps.collectAsState()
     val pagedError by viewModel.pagedError.collectAsState()
 
+    // Installed apps & Self-update states
+    val installedApps by viewModel.installedAppsState.collectAsState()
+    val isRefreshingInstalledApps by viewModel.isRefreshingInstalledApps.collectAsState()
+    val githubReleaseInfo by viewModel.githubReleaseInfo.collectAsState()
+
     val hasNewUpdateBadge by viewModel.hasNewUpdateBadge.collectAsState()
     val availableStoreUpdate by viewModel.availableStoreUpdate.collectAsState()
     val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
@@ -105,22 +115,35 @@ fun PrimeStoreApp(
         }
     }
 
-    val layoutDirection = if (uiState.currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+    val isRtl = uiState.currentLanguage in listOf("ar", "fa", "ur")
+    val layoutDirection = if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+
+    // Dynamic background based on theme mode
+    val appBackgroundColor = when (uiState.themeMode) {
+        "amoled" -> Color.Black
+        "light" -> Color(0xFFF8F5FC)
+        else -> PrimeBackground
+    }
 
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(PrimeBackground)
+                .background(appBackgroundColor)
         ) {
             if (uiState.showSplash) {
                 SplashScreen(
                     onDismiss = { viewModel.dismissSplash() }
                 )
+            } else if (uiState.showOnboarding) {
+                OnboardingScreen(
+                    onFinishOnboarding = { viewModel.completeOnboarding() },
+                    onRequestNotificationPermission = { /* handled in OnboardingScreen */ }
+                )
             } else {
                 ModalNavigationDrawer(
                     drawerState = drawerState,
-                    gesturesEnabled = !uiState.isSearching && uiState.selectedAppId == null,
+                    gesturesEnabled = !uiState.isSearching && uiState.selectedAppId == null && !uiState.showUpdatesScreen && !uiState.showInstalledAppsScreen,
                     drawerContent = {
                         ModalDrawerSheet(
                             drawerContainerColor = Color(0xFF120C1D),
@@ -149,14 +172,14 @@ fun PrimeStoreApp(
                 ) {
                     Scaffold(
                         bottomBar = {
-                            if (uiState.selectedAppId == null && !uiState.isSearching && !uiState.showAdminPanel) {
+                            if (uiState.selectedAppId == null && !uiState.isSearching && !uiState.showAdminPanel && !uiState.showUpdatesScreen && !uiState.showInstalledAppsScreen) {
                                 PrimeBottomNavBar(
                                     currentTab = uiState.currentTab,
                                     onTabSelected = { tab -> viewModel.selectTab(tab) }
                                 )
                             }
                         },
-                        containerColor = PrimeBackground
+                        containerColor = appBackgroundColor
                     ) { innerPadding ->
                         Box(
                             modifier = Modifier
@@ -194,6 +217,24 @@ fun PrimeStoreApp(
                                     onBackClick = { viewModel.closeAdminPanel() }
                                 )
                             }
+                            // Sub-screen 0.5: Updates & Installed Apps Screen
+                            else if (uiState.showUpdatesScreen || uiState.showInstalledAppsScreen) {
+                                UpdatesAndInstalledScreen(
+                                    initialTab = if (uiState.showUpdatesScreen) 0 else 1,
+                                    installedApps = installedApps,
+                                    isRefreshing = isRefreshingInstalledApps,
+                                    onRefresh = { viewModel.refreshInstalledApps() },
+                                    onAppClick = { appId -> viewModel.openAppDetails(appId) },
+                                    onUpdateApp = { appId -> viewModel.checkStorageAndStartDownload(appId, context) },
+                                    onUpdateAll = { viewModel.updateAllAppsSequentially() },
+                                    onUninstallApp = { pkg -> viewModel.uninstallPackage(pkg, context) },
+                                    onOpenApp = { pkg -> viewModel.openInstalledApp(pkg, context) },
+                                    onBackClick = {
+                                        if (uiState.showUpdatesScreen) viewModel.closeUpdatesScreen()
+                                        else viewModel.closeInstalledAppsScreen()
+                                    }
+                                )
+                            }
                             // Sub-screen 1: App Details Screen
                             else if (uiState.selectedAppId != null) {
                                 val selectedApp = apps.find { it.id == uiState.selectedAppId } ?: pagedApps.find { it.id == uiState.selectedAppId }
@@ -203,12 +244,19 @@ fun PrimeStoreApp(
                                         isFavorite = favorites.contains(selectedApp.id),
                                         downloadItem = downloads.find { it.appId == selectedApp.id },
                                         reviews = reviews[selectedApp.id] ?: emptyList(),
+                                        allApps = apps.ifEmpty { pagedApps },
                                         onBackClick = { viewModel.closeAppDetails() },
                                         onSearchClick = { viewModel.openSearch() },
                                         onToggleFavorite = { viewModel.toggleFavorite(selectedApp.id) },
-                                        onDownloadClick = { viewModel.startDownload(selectedApp.id) },
+                                        onDownloadClick = { viewModel.checkStorageAndStartDownload(selectedApp.id, context) },
                                         onCancelDownload = { viewModel.cancelDownload(selectedApp.id) },
                                         onInstallClick = { viewModel.installDownloadedApk(selectedApp.id, context) },
+                                        onUninstallClick = { pkg -> viewModel.uninstallPackage(pkg, context) },
+                                        onOpenAppClick = { pkg -> viewModel.openInstalledApp(pkg, context) },
+                                        onReportProblem = { reason, details ->
+                                            viewModel.submitProblemReport(selectedApp.id, selectedApp.nameAr, reason, details)
+                                        },
+                                        onAppClick = { appId -> viewModel.openAppDetails(appId) },
                                         onAddReview = { rating, comment ->
                                             viewModel.addReview(selectedApp.id, rating, comment)
                                         },
@@ -252,6 +300,14 @@ fun PrimeStoreApp(
                                                 hasMoreApps = hasMoreApps,
                                                 pagedError = pagedError,
                                                 downloads = downloads,
+                                                storeUpdateAvailable = hasNewUpdateBadge || availableStoreUpdate != null || githubReleaseInfo != null,
+                                                activeFilter = uiState.homeFilterType,
+                                                onStoreUpdateClick = {
+                                                    viewModel.selectTab(MainTab.SETTINGS)
+                                                },
+                                                onFilterChange = { filter ->
+                                                    viewModel.setHomeFilter(filter)
+                                                },
                                                 onAppClick = { appId -> viewModel.openAppDetails(appId) },
                                                 onCategoryClick = { category -> viewModel.openCategory(category) },
                                                 onCategorySelect = { key -> viewModel.selectHomeCategory(key) },
@@ -263,7 +319,7 @@ fun PrimeStoreApp(
                                                         else drawerState.close()
                                                     }
                                                 },
-                                                onDownloadClick = { appId -> viewModel.startDownload(appId) },
+                                                onDownloadClick = { appId -> viewModel.checkStorageAndStartDownload(appId, context) },
                                                 onInstallClick = { appId -> viewModel.installDownloadedApk(appId, context) },
                                                 onRefresh = { viewModel.refreshData() }
                                             )
@@ -284,7 +340,7 @@ fun PrimeStoreApp(
                                                 },
                                                 onSearchClick = { viewModel.openSearch() },
                                                 onAppClick = { appId -> viewModel.openAppDetails(appId) },
-                                                onDownloadClick = { appId -> viewModel.startDownload(appId) },
+                                                onDownloadClick = { appId -> viewModel.checkStorageAndStartDownload(appId, context) },
                                                 onSortChange = { order -> viewModel.setSortOrder(order) }
                                             )
                                         }
@@ -308,7 +364,10 @@ fun PrimeStoreApp(
                                                 onCancelDownload = { id -> viewModel.cancelDownload(id) },
                                                 onClearAll = { viewModel.clearDownloads() },
                                                 onAppClick = { appId -> viewModel.openAppDetails(appId) },
-                                                onInstall = { id -> viewModel.installDownloadedApk(id, context) }
+                                                onInstall = { id -> viewModel.installDownloadedApk(id, context) },
+                                                onUninstall = { pkg -> viewModel.uninstallPackage(pkg, context) },
+                                                onOpenApp = { pkg -> viewModel.openInstalledApp(pkg, context) },
+                                                onDeleteApkFile = { id -> viewModel.cancelDownload(id) }
                                             )
                                         }
 
@@ -328,6 +387,22 @@ fun PrimeStoreApp(
                                                 showLoginDialog = uiState.showLoginDialog,
                                                 isAuthLoading = uiState.isAuthLoading,
                                                 authErrorMessage = uiState.authErrorMessage,
+                                                onOpenInstalledApps = { viewModel.openInstalledAppsScreen() },
+                                                onOpenUpdates = { viewModel.openUpdatesScreen() },
+                                                updatesCount = installedApps.count { it.hasUpdate },
+                                                installedCount = installedApps.size,
+                                                themeMode = uiState.themeMode,
+                                                themeAccent = uiState.themeAccent,
+                                                onSetThemeMode = { mode -> viewModel.setThemeMode(mode) },
+                                                onSetThemeAccent = { color -> viewModel.setThemeAccent(color) },
+                                                autoTranslateEnabled = uiState.autoTranslateEnabled,
+                                                wifiOnlyTranslation = uiState.wifiOnlyTranslation,
+                                                onToggleAutoTranslate = { viewModel.toggleAutoTranslate() },
+                                                onToggleWifiOnlyTranslation = { viewModel.toggleWifiOnlyTranslation() },
+                                                githubReleaseInfo = githubReleaseInfo,
+                                                onDownloadGitHubRelease = { rel ->
+                                                    viewModel.downloadAndInstallGitHubStoreUpdate(context, rel)
+                                                },
                                                 onOpenLogin = { viewModel.openLoginDialog() },
                                                 onCloseLogin = { viewModel.closeLoginDialog() },
                                                 onSignIn = { email, pass -> viewModel.signIn(email, pass) },
@@ -407,6 +482,49 @@ fun PrimeStoreApp(
                 )
             }
 
+            // Signature Conflict Dialog
+            val conflictData = uiState.conflictDialogData
+            if (conflictData != null) {
+                SignatureConflictDialog(
+                    data = conflictData,
+                    onConfirmUninstallAndInstall = {
+                        viewModel.confirmConflictUninstall(context)
+                    },
+                    onDismiss = {
+                        viewModel.dismissConflictDialog()
+                    }
+                )
+            }
+
+            // Downgrade or Same Version Dialog
+            val downgradeData = uiState.downgradeDialogData
+            if (downgradeData != null) {
+                DowngradeOrSameVersionDialog(
+                    data = downgradeData,
+                    onProceedAnyway = {
+                        viewModel.proceedWithDowngradeInstall(context)
+                    },
+                    onDismiss = {
+                        viewModel.dismissDowngradeDialog()
+                    }
+                )
+            }
+
+            // Low Storage Space Dialog
+            val storageData = uiState.lowStorageDialogData
+            if (storageData != null) {
+                LowStorageDialog(
+                    neededSize = storageData.first,
+                    availableSize = storageData.second,
+                    onProceedAnyway = {
+                        viewModel.proceedWithLowStorageDownload()
+                    },
+                    onDismiss = {
+                        viewModel.dismissLowStorageDialog()
+                    }
+                )
+            }
+
             // Top Floating Toast Banner
             AnimatedVisibility(
                 visible = activeToast != null,
@@ -432,29 +550,22 @@ fun PrimeStoreApp(
         }
     }
 
-    // Auto resume install after permission is granted
+    // Auto resume install after permission is granted or after conflict app is uninstalled
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        viewModel.onPermissionGrantedResumeInstall(context)
+        viewModel.checkAndResumePendingInstallAfterResume(context)
+        viewModel.refreshInstalledApps()
     }
 
     // Comprehensive Back Button Handling
     BackHandler(enabled = true) {
-        if (uiState.showSplash) {
-            viewModel.dismissSplash()
-        } else if (uiState.showAdminPanel) {
-            viewModel.closeAdminPanel()
-        } else if (drawerState.isOpen) {
-            scope.launch { drawerState.close() }
-        } else if (uiState.selectedAppId != null) {
-            viewModel.closeAppDetails()
-        } else if (uiState.isSearching) {
-            viewModel.closeSearch()
-        } else if (uiState.selectedCategory != null) {
-            viewModel.clearSelectedCategory()
-        } else if (uiState.currentTab != MainTab.HOME) {
-            viewModel.selectTab(MainTab.HOME)
-        } else {
-            (context as? android.app.Activity)?.finish()
+        if (!viewModel.handleBack()) {
+            if (drawerState.isOpen) {
+                scope.launch { drawerState.close() }
+            } else if (uiState.showAdminPanel) {
+                viewModel.closeAdminPanel()
+            } else {
+                (context as? android.app.Activity)?.finish()
+            }
         }
     }
 }

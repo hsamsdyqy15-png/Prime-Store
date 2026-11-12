@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
@@ -30,11 +31,16 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Wifi
+import com.example.data.github.StoreReleaseInfo
+import com.example.ui.theme.AccentGold
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -95,6 +101,20 @@ fun SettingsScreen(
     showLoginDialog: Boolean = false,
     isAuthLoading: Boolean = false,
     authErrorMessage: String? = null,
+    onOpenInstalledApps: () -> Unit = {},
+    onOpenUpdates: () -> Unit = {},
+    updatesCount: Int = 0,
+    installedCount: Int = 0,
+    themeMode: String = "dark",
+    themeAccent: Long = 0xFFA855F7,
+    onSetThemeMode: (String) -> Unit = {},
+    onSetThemeAccent: (Long) -> Unit = {},
+    autoTranslateEnabled: Boolean = true,
+    wifiOnlyTranslation: Boolean = false,
+    onToggleAutoTranslate: () -> Unit = {},
+    onToggleWifiOnlyTranslation: () -> Unit = {},
+    githubReleaseInfo: StoreReleaseInfo? = null,
+    onDownloadGitHubRelease: (StoreReleaseInfo) -> Unit = {},
     onOpenLogin: () -> Unit = {},
     onCloseLogin: () -> Unit = {},
     onSignIn: (email: String, pass: String) -> Unit = { _, _ -> },
@@ -258,6 +278,141 @@ fun SettingsScreen(
                 }
             }
 
+            // Updates Row with Badge
+            item {
+                NeonCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable { onOpenUpdates() }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF281C38)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = null,
+                                    tint = NeonPurplePrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "تحديثات التطبيقات",
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (updatesCount > 0) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(AccentGold)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "$updatesCount",
+                                                color = Color.Black,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = if (updatesCount > 0) "يتوفر $updatesCount تحديث جديد لتطبيقاتك" else "جميع تطبيقاتك محدثة لآخر إصدار",
+                                    color = if (updatesCount > 0) AccentGold else PrimeTextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                            contentDescription = null,
+                            tint = PrimeTextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            // Installed Apps Row
+            item {
+                SettingsOptionItem(
+                    title = "تطبيقاتي المثبتة",
+                    subtitle = if (installedCount > 0) "$installedCount تطبيق مثبت من المتجر" else "عرض وإدارة التطبيقات المثبتة",
+                    icon = Icons.Filled.Apps,
+                    onClick = onOpenInstalledApps
+                )
+            }
+
+            // GitHub Self-Update Banner
+            if (githubReleaseInfo != null) {
+                item {
+                    NeonCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        hasGlow = true
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "تحديث المتجر متاح عبر GitHub 🐙",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = "الإصدار v${githubReleaseInfo.versionName} (${githubReleaseInfo.assetSizeFormatted})",
+                                        color = NeonPurplePrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(PrimeGradientBrush)
+                                        .clickable { onDownloadGitHubRelease(githubReleaseInfo) }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("تحديث الآن ⚡", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            if (githubReleaseInfo.bodyNotes.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = githubReleaseInfo.bodyNotes.take(150),
+                                    color = PrimeTextMuted,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // =================================================================
             // Store Version & Update Check Row (مع نقطة حمراء وزر فحص التحديث)
             // =================================================================
@@ -380,14 +535,195 @@ fun SettingsScreen(
                 )
             }
 
-            // 2. المظهر (Theme) 🌙
+            // 2. المظهر والألوان (Theme & Colors) 🌙🎨
             item {
-                SettingsOptionItem(
-                    title = "المظهر",
-                    subtitle = if (isDarkMode) "الوضع الداكن" else "الوضع الفاتح",
-                    icon = Icons.Filled.DarkMode,
-                    onClick = onToggleDarkMode
-                )
+                NeonCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DarkMode,
+                                contentDescription = null,
+                                tint = NeonPurplePrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "نمط المظهر",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val modes = listOf(
+                                "dark" to "داكن",
+                                "amoled" to "AMOLED",
+                                "light" to "فاتح"
+                            )
+                            modes.forEach { (modeKey, label) ->
+                                val isSelected = themeMode == modeKey
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (isSelected) NeonPurplePrimary else Color(0xFF1F152E)
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isSelected) Color.White else NeonBorder,
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { onSetThemeMode(modeKey) }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) Color.White else PrimeTextSecondary,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "لون التمييز (Accent Color)",
+                            color = PrimeTextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val colors = listOf(
+                            0xFFA855F7L to "بنفسجي",
+                            0xFF06B6D4L to "سماوي",
+                            0xFF10B981L to "زمردي",
+                            0xFFF43F5EL to "وردي",
+                            0xFFF59E0BL to "عنبر"
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            colors.forEach { (colorVal, _) ->
+                                val isChosen = themeAccent == colorVal
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(colorVal))
+                                        .border(
+                                            width = if (isChosen) 3.dp else 1.dp,
+                                            color = if (isChosen) Color.White else Color.Transparent,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { onSetThemeAccent(colorVal) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2.1 إعدادات الترجمة بالذكاء الاصطناعي (AI Translation) 🌐🤖
+            item {
+                NeonCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "الترجمة الفورية بالذكاء الاصطناعي",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "ترجمة تلقائية للوصف والميزات إلى لغة جهازك على الجهاز محلياً",
+                                    color = PrimeTextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Switch(
+                                checked = autoTranslateEnabled,
+                                onCheckedChange = { onToggleAutoTranslate() },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = NeonPurplePrimary,
+                                    uncheckedThumbColor = PrimeTextMuted,
+                                    uncheckedTrackColor = Color(0xFF281C38)
+                                )
+                            )
+                        }
+
+                        if (autoTranslateEnabled) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(NeonBorder.copy(alpha = 0.4f))
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "تنزيل نماذج الترجمة عبر Wi-Fi فقط",
+                                        color = Color.White,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = "لتوفير باقة بيانات الجوال",
+                                        color = PrimeTextMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Switch(
+                                    checked = wifiOnlyTranslation,
+                                    onCheckedChange = { onToggleWifiOnlyTranslation() },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = NeonPurplePrimary,
+                                        uncheckedThumbColor = PrimeTextMuted,
+                                        uncheckedTrackColor = Color(0xFF281C38)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // 3. الإشعارات (Notifications) 🔔

@@ -27,13 +27,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import com.example.ui.theme.AccentRed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -101,12 +105,17 @@ fun AppDetailsScreen(
     isFavorite: Boolean,
     downloadItem: DownloadItem?,
     reviews: List<ReviewItem>,
+    allApps: List<AppItem> = emptyList(),
     onBackClick: () -> Unit,
     onSearchClick: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDownloadClick: () -> Unit,
     onCancelDownload: () -> Unit,
     onInstallClick: () -> Unit = onDownloadClick,
+    onUninstallClick: (String) -> Unit = {},
+    onOpenAppClick: (String) -> Unit = {},
+    onReportProblem: (String, String) -> Unit = { _, _ -> },
+    onAppClick: (String) -> Unit = {},
     onAddReview: (Int, String) -> Unit,
     onScreenshotClick: (Int) -> Unit,
     onShareClick: () -> Unit,
@@ -123,6 +132,19 @@ fun AppDetailsScreen(
     var securityReport by remember { mutableStateOf<com.example.data.security.SecurityReport?>(null) }
     var showUninstallConflictDialog by remember { mutableStateOf(false) }
     var detectedInstalledPackage by remember { mutableStateOf<String?>(null) }
+    var showReportDialog by remember { mutableStateOf(false) }
+    var showOriginalText by remember { mutableStateOf(false) }
+    var showConfirmUninstallDialog by remember { mutableStateOf(false) }
+
+    val installedInfo = remember(app.packageName, app.name) {
+        val apkFile = com.example.data.installer.ApkInstaller.getApkFile(context, app.id)
+        val pkg = com.example.data.installer.ApkInstaller.findInstalledPackage(context, app.name, apkFile, app.packageName)
+        if (!pkg.isNullOrBlank()) com.example.data.installer.PackageHelper.getInstalledInfo(context, pkg) else null
+    }
+
+    val similarApps = remember(allApps, app) {
+        allApps.filter { it.id != app.id && (it.category == app.category || it.categoryKey == app.categoryKey) }.take(6)
+    }
 
     android.util.Log.d(
         "PrimeStore",
@@ -205,8 +227,11 @@ fun AppDetailsScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("إبلاغ عن محتوى ⚠️", color = Color.White) },
-                                    onClick = { showMenu = false }
+                                    text = { Text("إبلاغ عن مشكلة أو محتوى ⚠️", color = Color.White) },
+                                    onClick = {
+                                        showMenu = false
+                                        showReportDialog = true
+                                    }
                                 )
                             }
                         }
@@ -447,12 +472,69 @@ fun AppDetailsScreen(
                         }
                     } else if (downloadItem != null && (downloadItem.isCompleted || downloadItem.status == DownloadStatus.COMPLETED)) {
                         // Completed state -> Direct Install button
-                        NeonGradientButton(
-                            text = "تثبيت التطبيق 📦",
-                            icon = Icons.Filled.CheckCircle,
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            onClick = onInstallClick
-                        )
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            NeonGradientButton(
+                                text = "تثبيت التطبيق 📦",
+                                icon = Icons.Filled.CheckCircle,
+                                modifier = Modifier.weight(1f),
+                                onClick = onInstallClick
+                            )
+                            if (installedInfo != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = { showConfirmUninstallDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E1220)),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed.copy(alpha = 0.6f)),
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.height(48.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Filled.Delete, contentDescription = "حذف التطبيق", tint = AccentRed)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("حذف", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    } else if (installedInfo != null) {
+                        // Installed state
+                        val hasUpdate = app.versionCode > installedInfo.versionCode
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (hasUpdate) {
+                                NeonGradientButton(
+                                    text = "تحديث التطبيق 🚀 (${app.size})",
+                                    icon = Icons.Filled.Download,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onDownloadClick
+                                )
+                            } else {
+                                NeonGradientButton(
+                                    text = "فتح التطبيق ↗️",
+                                    icon = Icons.Filled.OpenInNew,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onOpenAppClick(installedInfo.packageName) }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Permanent Uninstall button
+                            Button(
+                                onClick = { showConfirmUninstallDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E1220)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.height(48.dp)
+                            ) {
+                                Icon(imageVector = Icons.Filled.Delete, contentDescription = "حذف التطبيق", tint = AccentRed)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("حذف", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
                     } else {
                         // Ready to download button
                         NeonGradientButton(
@@ -558,8 +640,90 @@ fun AppDetailsScreen(
                                 .fillMaxWidth()
                                 .padding(20.dp)
                         ) {
+                            // AI Translation header badge
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF221538))
+                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🌐 ", fontSize = 14.sp)
+                                    Text(
+                                        text = if (showOriginalText) "النص الأصلي (الإنجليزية)" else "مترجم تلقائياً بالذكاء الاصطناعي",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Text(
+                                    text = if (showOriginalText) "عرض الترجمة 🔄" else "عرض النص الأصلي 📄",
+                                    color = NeonPurplePrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable { showOriginalText = !showOriginalText }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Changelog Expandable Section
+                            val changelogNotes = app.changelog?.ifBlank { null }
+                                ?: "تحسينات عامة في الأداء، دعم معمارية المعالجات الحديثة ${app.supportedAbis}، وإصلاح مشاكل التثبيت."
+
+                            var isChangelogExpanded by remember { mutableStateOf(false) }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF191124))
+                                    .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                                    .clickable { isChangelogExpanded = !isChangelogExpanded }
+                                    .padding(12.dp)
+                            ) {
+                                Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("🚀 ", fontSize = 15.sp)
+                                            Text(
+                                                text = "ما الجديد في هذا الإصدار (v${app.version})",
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = if (isChangelogExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                            contentDescription = null,
+                                            tint = NeonPurplePrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    AnimatedVisibility(visible = isChangelogExpanded) {
+                                        Text(
+                                            text = changelogNotes,
+                                            color = Color(0xFFE2E8F0),
+                                            fontSize = 12.sp,
+                                            lineHeight = 18.sp,
+                                            modifier = Modifier.padding(top = 8.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
                             Text(
-                                text = app.descriptionAr,
+                                text = if (showOriginalText) app.descriptionEn.ifBlank { app.descriptionAr } else app.descriptionAr,
                                 color = PrimeTextSecondary,
                                 fontSize = 14.sp,
                                 lineHeight = 22.sp
@@ -919,6 +1083,64 @@ fun AppDetailsScreen(
                     }
                 }
             }
+
+            // Similar Apps Row
+            if (similarApps.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                    ) {
+                        Text(
+                            text = "تطبيقات مشابهة قد تهمك 💡",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(similarApps) { simApp ->
+                                NeonCard(
+                                    modifier = Modifier.width(130.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    hasGlow = false,
+                                    onClick = { onAppClick(simApp.id) }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        AppIconBadge(
+                                            emoji = simApp.iconEmoji,
+                                            accentColor = simApp.accentColor,
+                                            size = 48.dp,
+                                            imageUrl = simApp.iconUrl
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = simApp.nameAr.ifBlank { simApp.name },
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = simApp.size,
+                                            color = PrimeTextMuted,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Add Review Modal Dialog
@@ -929,6 +1151,51 @@ fun AppDetailsScreen(
                 onSubmit = { rating, comment ->
                     onAddReview(rating, comment)
                     showReviewModal = false
+                }
+            )
+        }
+
+        // Problem Report Dialog
+        if (showReportDialog) {
+            com.example.ui.components.ProblemReportDialog(
+                appName = app.nameAr.ifBlank { app.name },
+                onSubmit = { reason, details ->
+                    onReportProblem(reason, details)
+                },
+                onDismiss = { showReportDialog = false }
+            )
+        }
+
+        // Confirm Uninstall Dialog
+        if (showConfirmUninstallDialog && installedInfo != null) {
+            AlertDialog(
+                onDismissRequest = { showConfirmUninstallDialog = false },
+                containerColor = Color(0xFF1E142D),
+                title = {
+                    Text("حذف التطبيق 🗑️", color = Color.White, fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(
+                        "هل أنت متأكد من رغبتك في إلغاء تثبيت \"${app.nameAr.ifBlank { app.name }}\" من جهازك؟",
+                        color = Color.White,
+                        fontSize = 14.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showConfirmUninstallDialog = false
+                            onUninstallClick(installedInfo.packageName)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                    ) {
+                        Text("نعم، احذف التطبيق", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showConfirmUninstallDialog = false }) {
+                        Text("إلغاء", color = PrimeTextMuted)
+                    }
                 }
             )
         }

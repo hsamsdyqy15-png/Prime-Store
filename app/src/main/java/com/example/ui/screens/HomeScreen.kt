@@ -70,6 +70,7 @@ import com.example.data.model.CategoryItem
 import com.example.data.model.DownloadItem
 import com.example.data.model.DownloadStatus
 import com.example.data.model.StoreCategories
+import com.example.ui.HomeFilterType
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.theme.AccentGold
@@ -109,6 +110,10 @@ fun HomeScreen(
     hasMoreApps: Boolean = true,
     pagedError: String? = null,
     downloads: List<DownloadItem> = emptyList(),
+    storeUpdateAvailable: Boolean = false,
+    activeFilter: HomeFilterType = HomeFilterType.ALL,
+    onStoreUpdateClick: () -> Unit = {},
+    onFilterChange: (HomeFilterType) -> Unit = {},
     onAppClick: (String) -> Unit,
     onCategoryClick: (AppCategory) -> Unit,
     onCategorySelect: (String) -> Unit,
@@ -131,6 +136,19 @@ fun HomeScreen(
         }
     }
 
+    // Filtered paged apps
+    val filteredPagedApps = remember(pagedApps, activeFilter) {
+        when (activeFilter) {
+            HomeFilterType.ALL -> pagedApps
+            HomeFilterType.SMALL_SIZE -> pagedApps.filter {
+                val sizeClean = it.size.trim().lowercase()
+                sizeClean.contains("kb") || (sizeClean.contains("mb") && (sizeClean.filter { c -> c.isDigit() || c == '.' }.toDoubleOrNull() ?: 100.0) < 35.0)
+            }
+            HomeFilterType.TOP_RATED -> pagedApps.sortedByDescending { it.rating }
+            HomeFilterType.NEWEST -> pagedApps.sortedByDescending { it.versionCode }
+        }
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -146,6 +164,44 @@ fun HomeScreen(
                 onSearchClick = onSearchClick,
                 onRefresh = onRefresh
             )
+        }
+
+        // Store update top banner
+        if (storeUpdateAvailable) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(Color(0xFF3B0764), Color(0xFF6B21A8), Color(0xFFA855F7))
+                            )
+                        )
+                        .border(1.dp, AccentGold, RoundedCornerShape(14.dp))
+                        .clickable { onStoreUpdateClick() }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Text("🚀 ", fontSize = 20.sp)
+                        Column {
+                            Text("يتوفر تحديث لمتجر Prime Store!", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("اضغط هنا للتحميل والتثبيت المباشر", color = Color(0xFFF3E8FF), fontSize = 11.sp)
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(AccentGold)
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text("تحديث الآن", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+            }
         }
 
         // =====================================================================
@@ -258,6 +314,41 @@ fun HomeScreen(
                     }
                 }
 
+                // Filter & Sort chips row
+                val filterChips = remember {
+                    listOf(
+                        Pair(HomeFilterType.ALL, "الكل 🌐"),
+                        Pair(HomeFilterType.SMALL_SIZE, "حجم خفيف (<35MB) ⚡"),
+                        Pair(HomeFilterType.TOP_RATED, "الأعلى تقييماً ⭐"),
+                        Pair(HomeFilterType.NEWEST, "الأحدث إصداراً 🆕")
+                    )
+                }
+
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    items(filterChips) { (type, label) ->
+                        val isSelected = activeFilter == type
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) NeonPurplePrimary else Color(0xFF1E142D))
+                                .border(1.dp, if (isSelected) NeonBorderGlow else NeonBorder, RoundedCornerShape(12.dp))
+                                .clickable { onFilterChange(type) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (isSelected) Color.White else PrimeTextMuted,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
             }
         }
@@ -325,7 +416,7 @@ fun HomeScreen(
                 }
             }
         } else {
-            itemsIndexed(pagedApps, key = { _, app -> "paged_${app.id}" }) { index, app ->
+            itemsIndexed(filteredPagedApps, key = { _, app -> "paged_${app.id}" }) { index, app ->
                 // Infinite scroll trigger: when reaching last 3 items
                 if (index >= pagedApps.size - 3 && hasMoreApps && !isLoadingNextPage) {
                     LaunchedEffect(index) {

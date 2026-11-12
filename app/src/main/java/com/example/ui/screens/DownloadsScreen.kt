@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,29 +24,44 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.installer.ApkInstaller
+import com.example.data.installer.PackageHelper
 import com.example.data.model.DownloadItem
 import com.example.data.model.DownloadStatus
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.components.NeonGradientButton
 import com.example.ui.theme.AccentGreen
+import com.example.ui.theme.AccentRed
 import com.example.ui.theme.NeonBorder
 import com.example.ui.theme.NeonBorderGlow
 import com.example.ui.theme.NeonPurpleDeep
@@ -55,6 +71,7 @@ import com.example.ui.theme.PrimeCardBackground
 import com.example.ui.theme.PrimeGradientBrush
 import com.example.ui.theme.PrimeTextMuted
 import com.example.ui.theme.PrimeTextSecondary
+import java.io.File
 
 @Composable
 fun DownloadsScreen(
@@ -67,6 +84,9 @@ fun DownloadsScreen(
     onClearAll: () -> Unit,
     onAppClick: (String) -> Unit,
     onInstall: (String) -> Unit = {},
+    onUninstall: (String) -> Unit = {},
+    onOpenApp: (String) -> Unit = {},
+    onDeleteApkFile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val activeDownloads = remember(downloads) { downloads.filter { !it.isCompleted } }
@@ -188,11 +208,14 @@ fun DownloadsScreen(
                             onClick = { onAppClick(item.appId) }
                         )
                     } else {
-                        // Completed Item with Install button
+                        // Completed Item with Install, Open, Uninstall, and More Menu
                         CompletedDownloadCard(
                             item = item,
                             onClick = { onAppClick(item.appId) },
-                            onInstall = { onInstall(item.appId) }
+                            onInstall = { onInstall(item.appId) },
+                            onUninstall = onUninstall,
+                            onOpenApp = onOpenApp,
+                            onDeleteApk = { onDeleteApkFile(item.appId) }
                         )
                     }
                 }
@@ -361,8 +384,24 @@ fun ActiveDownloadCard(
 fun CompletedDownloadCard(
     item: DownloadItem,
     onClick: () -> Unit,
-    onInstall: () -> Unit = {}
+    onInstall: () -> Unit = {},
+    onUninstall: (String) -> Unit = {},
+    onOpenApp: (String) -> Unit = {},
+    onDeleteApk: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+    var showUninstallDialog by remember { mutableStateOf(false) }
+
+    // Check if installed
+    val apkFile = item.apkFilePath?.let { File(it) } ?: ApkInstaller.getApkFile(context, item.appId)
+    val resolvedPkg = remember(item.appId, item.appName) {
+        ApkInstaller.findInstalledPackage(context, item.appName, apkFile)
+    }
+    val isInstalled = remember(resolvedPkg) {
+        !resolvedPkg.isNullOrBlank() && PackageHelper.isInstalled(context, resolvedPkg)
+    }
+
     NeonCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -396,37 +435,159 @@ fun CompletedDownloadCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "مكتمل • ${item.totalSize}",
-                        color = PrimeTextSecondary,
-                        fontSize = 12.sp
+                        text = if (isInstalled) "مثبت على جهازك • ${item.totalSize}" else "مكتمل التحميل • ${item.totalSize}",
+                        color = if (isInstalled) AccentGreen else PrimeTextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = if (isInstalled) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }
 
-            // Direct "تثبيت" Install button with NeonGradient
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(PrimeGradientBrush)
-                    .clickable { onInstall() }
-                    .padding(horizontal = 14.dp, vertical = 7.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.CheckCircle,
-                        contentDescription = "تثبيت",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "تثبيت",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Main action: "فتح" if installed, or "تثبيت"
+                if (isInstalled && !resolvedPkg.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF2E1065))
+                            .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                            .clickable { onOpenApp(resolvedPkg) }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.OpenInNew,
+                                contentDescription = "فتح",
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "فتح",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(PrimeGradientBrush)
+                            .clickable { onInstall() }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = "تثبيت",
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "تثبيت",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+
+                // If installed, show a direct delete button
+                if (isInstalled && !resolvedPkg.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    IconButton(
+                        onClick = { showUninstallDialog = true },
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = "حذف التطبيق",
+                            tint = AccentRed.copy(alpha = 0.85f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // More Menu ⋮
+                Box {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = "خيارات",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        modifier = Modifier
+                            .background(Color(0xFF1E142D))
+                            .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                    ) {
+                        if (isInstalled && !resolvedPkg.isNullOrBlank()) {
+                            DropdownMenuItem(
+                                text = { Text("إعادة التثبيت 📦", color = Color.White) },
+                                onClick = {
+                                    showMenu = false
+                                    onInstall()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("حذف التطبيق من الجهاز 🗑️", color = AccentRed) },
+                                onClick = {
+                                    showMenu = false
+                                    showUninstallDialog = true
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("حذف ملف APK المحمّل 🗂️", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                onDeleteApk()
+                            }
+                        )
+                    }
                 }
             }
         }
+    }
+
+    if (showUninstallDialog && !resolvedPkg.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = { showUninstallDialog = false },
+            containerColor = Color(0xFF1E142D),
+            title = {
+                Text("حذف التطبيق 🗑️", color = Color.White, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("هل ترغب في إلغاء تثبيت \"${item.appName}\" من جهازك؟", color = Color.White, fontSize = 14.sp)
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUninstallDialog = false
+                        onUninstall(resolvedPkg)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                ) {
+                    Text("إلغاء التثبيت", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUninstallDialog = false }) {
+                    Text("إلغاء", color = PrimeTextMuted)
+                }
+            }
+        )
     }
 }

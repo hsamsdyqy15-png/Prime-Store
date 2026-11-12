@@ -193,7 +193,9 @@ data class AppItem(
     val supportedAbis: String = "Universal (All Architectures)",
     val packageName: String? = null,
     val version: String = "1.0.0",
-    val categoryKey: String = "apps"
+    val categoryKey: String = "apps",
+    val changelog: String? = null,
+    val versionCode: Long = 1L
 ) {
     val displayCategoryTitle: String
         get() = StoreCategories.getTitleAr(categoryKey.ifBlank { category.name.lowercase() })

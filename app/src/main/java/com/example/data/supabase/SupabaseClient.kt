@@ -330,6 +330,8 @@ object SupabaseClient {
         val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
         val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
         val version = obj.optString("version", "1.0.0")
+        val versionCode = obj.optLong("version_code", 1L)
+        val changelog = obj.optString("changelog", "").ifBlank { null }
         val packageName = obj.optString("package_name", "").ifBlank { null }
 
         val featuresList = mutableListOf<String>()
@@ -383,7 +385,9 @@ object SupabaseClient {
             supportedAbis = supportedAbis,
             packageName = packageName,
             version = version,
-            categoryKey = categoryStr
+            categoryKey = categoryStr,
+            changelog = changelog,
+            versionCode = versionCode
         )
     }
 
