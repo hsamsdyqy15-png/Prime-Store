@@ -40,19 +40,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.model.AppItem
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 
 val POPULAR_SEARCH_TAGS = listOf(
     "Minecraft",
@@ -77,6 +75,7 @@ fun SearchScreen(
     onCloseSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
     val focusManager = LocalFocusManager.current
 
     Column(
@@ -94,8 +93,8 @@ fun SearchScreen(
             IconButton(onClick = onCloseSearch) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "رجوع",
-                    tint = Color.White
+                    contentDescription = stringResource(id = R.string.close),
+                    tint = colors.textPrimary
                 )
             }
 
@@ -104,16 +103,16 @@ fun SearchScreen(
                 onValueChange = onQueryChange,
                 placeholder = {
                     Text(
-                        text = "ابحث عن تطبيق أو لعبة...",
-                        color = PrimeTextMuted,
+                        text = stringResource(id = R.string.search_hint),
+                        color = colors.textSecondary,
                         fontSize = 13.sp
                     )
                 },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Filled.Search,
-                        contentDescription = "بحث",
-                        tint = NeonPurplePrimary
+                        contentDescription = stringResource(id = R.string.search),
+                        tint = colors.accent
                     )
                 },
                 trailingIcon = {
@@ -121,8 +120,8 @@ fun SearchScreen(
                         IconButton(onClick = { onQueryChange("") }) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
-                                contentDescription = "مسح",
-                                tint = PrimeTextMuted
+                                contentDescription = stringResource(id = R.string.delete),
+                                tint = colors.textSecondary
                             )
                         }
                     }
@@ -132,12 +131,12 @@ fun SearchScreen(
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                 shape = RoundedCornerShape(16.dp),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF16101F),
-                    unfocusedContainerColor = Color(0xFF16101F),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedIndicatorColor = NeonBorderGlow,
-                    unfocusedIndicatorColor = NeonBorder
+                    focusedContainerColor = colors.card,
+                    unfocusedContainerColor = colors.card,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
+                    focusedIndicatorColor = colors.accent,
+                    unfocusedIndicatorColor = colors.border
                 ),
                 modifier = Modifier
                     .weight(1f)
@@ -156,7 +155,7 @@ fun SearchScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "عمليات البحث الشائعة",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -175,14 +174,14 @@ fun SearchScreen(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(Color(0xFF16101F))
-                                        .border(1.dp, NeonBorder, RoundedCornerShape(14.dp))
+                                        .background(colors.card)
+                                        .border(1.dp, colors.border, RoundedCornerShape(14.dp))
                                         .clickable { onSearchTagClick(tag) }
                                         .padding(horizontal = 16.dp, vertical = 10.dp)
                                 ) {
                                     Text(
                                         text = tag,
-                                        color = Color.White,
+                                        color = colors.textPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -205,13 +204,13 @@ fun SearchScreen(
                                     Icon(
                                         imageVector = Icons.Filled.History,
                                         contentDescription = null,
-                                        tint = NeonPurplePrimary,
+                                        tint = colors.accent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "عمليات البحث الأخيرة",
-                                        color = Color.White,
+                                        color = colors.textPrimary,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -219,7 +218,7 @@ fun SearchScreen(
 
                                 Text(
                                     text = "مسح الكل",
-                                    color = NeonPurplePrimary,
+                                    color = colors.accent,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.clickable { onClearHistory() }
@@ -242,7 +241,7 @@ fun SearchScreen(
                         ) {
                             Text(
                                 text = historyItem,
-                                color = PrimeTextSecondary,
+                                color = colors.textSecondary,
                                 fontSize = 14.sp
                             )
                             IconButton(
@@ -251,8 +250,8 @@ fun SearchScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = "حذف",
-                                    tint = PrimeTextMuted,
+                                    contentDescription = stringResource(id = R.string.delete),
+                                    tint = colors.textSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -260,7 +259,7 @@ fun SearchScreen(
                     }
                 }
             } else {
-                // Search Results Header ⊞
+                // Search Results Header
                 item {
                     Row(
                         modifier = Modifier
@@ -270,12 +269,12 @@ fun SearchScreen(
                     ) {
                         Text(
                             text = "نتائج البحث",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "(${searchResults.size})", color = NeonPurplePrimary, fontSize = 14.sp)
+                        Text(text = "(${searchResults.size})", color = colors.accent, fontSize = 14.sp)
                     }
                 }
 
@@ -292,7 +291,7 @@ fun SearchScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "لم يتم العثور على نتائج تطابق \"$query\"",
-                                    color = PrimeTextMuted,
+                                    color = colors.textSecondary,
                                     fontSize = 13.sp
                                 )
                             }
@@ -326,7 +325,7 @@ fun SearchScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = app.name,
-                                        color = Color.White,
+                                        color = colors.textPrimary,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -342,8 +341,8 @@ fun SearchScreen(
                                         )
                                         Spacer(modifier = Modifier.width(3.dp))
                                         Text(
-                                            text = "${app.rating} • ${app.tags.firstOrNull() ?: "ألعاب"}",
-                                            color = PrimeTextSecondary,
+                                            text = "${app.rating} • ${app.tags.firstOrNull() ?: ""}",
+                                            color = colors.textSecondary,
                                             fontSize = 12.sp
                                         )
                                     }

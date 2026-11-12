@@ -41,22 +41,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurpleGlow
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.NeonPurpleSecondary
-import com.example.ui.theme.PrimeCardBackground
-import com.example.ui.theme.PrimeCardGradient
-import com.example.ui.theme.PrimeGradientBrush
+import com.example.ui.theme.PrimeTheme
 
 @Composable
 fun NeonCard(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(18.dp),
-    backgroundColor: Color = PrimeCardBackground,
-    borderColor: Color = NeonBorder,
+    backgroundColor: Color = PrimeTheme.colors.card,
+    borderColor: Color = PrimeTheme.colors.border,
     borderWidth: Dp = 1.dp,
     hasGlow: Boolean = true,
     onClick: (() -> Unit)? = null,
@@ -65,19 +57,21 @@ fun NeonCard(
     val clickModifier = if (onClick != null) {
         Modifier.clickable(
             interactionSource = remember { MutableInteractionSource() },
-            indication = ripple(color = NeonPurplePrimary)
+            indication = ripple(color = PrimeTheme.colors.accent)
         ) { onClick() }
     } else Modifier
+
+    val elevation = if (hasGlow) (if (PrimeTheme.colors.isDark) 6.dp else 2.dp) else 0.dp
 
     Box(
         modifier = modifier
             .then(
                 if (hasGlow) {
                     Modifier.shadow(
-                        elevation = 6.dp,
+                        elevation = elevation,
                         shape = shape,
-                        ambientColor = NeonPurpleGlow,
-                        spotColor = NeonPurplePrimary
+                        ambientColor = PrimeTheme.colors.accentGlow,
+                        spotColor = PrimeTheme.colors.accent
                     )
                 } else Modifier
             )
@@ -101,18 +95,21 @@ fun NeonGradientButton(
     shape: Shape = RoundedCornerShape(16.dp),
     onClick: () -> Unit
 ) {
+    val buttonColors = PrimeTheme.colors
+    val elevation = if (buttonColors.isDark) 8.dp else 3.dp
+
     Box(
         modifier = modifier
             .testTag(testTag)
             .shadow(
-                elevation = 8.dp,
+                elevation = elevation,
                 shape = shape,
-                ambientColor = NeonPurpleDeep,
-                spotColor = NeonPurplePrimary
+                ambientColor = buttonColors.accentDark,
+                spotColor = buttonColors.accent
             )
             .clip(shape)
-            .background(PrimeGradientBrush)
-            .border(1.dp, NeonBorderGlow, shape)
+            .background(buttonColors.buttonGradient)
+            .border(1.dp, buttonColors.border, shape)
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
@@ -128,7 +125,7 @@ fun NeonGradientButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = buttonColors.textOnAccent,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -138,7 +135,7 @@ fun NeonGradientButton(
             }
             Text(
                 text = text,
-                color = Color.White,
+                color = buttonColors.textOnAccent,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center
@@ -156,6 +153,9 @@ fun AppIconBadge(
     shape: Shape = RoundedCornerShape(16.dp),
     imageUrl: String? = null
 ) {
+    val cardBg = PrimeTheme.colors.card
+    val tintColor = if (accentColor != 0L) Color(accentColor) else PrimeTheme.colors.accent
+
     Box(
         modifier = modifier
             .size(size)
@@ -163,12 +163,12 @@ fun AppIconBadge(
             .background(
                 Brush.linearGradient(
                     colors = listOf(
-                        Color(accentColor).copy(alpha = 0.35f),
-                        Color(0xFF16101F)
+                        tintColor.copy(alpha = 0.25f),
+                        cardBg
                     )
                 )
             )
-            .border(1.dp, Color(accentColor).copy(alpha = 0.5f), shape),
+            .border(1.dp, tintColor.copy(alpha = 0.45f), shape),
         contentAlignment = Alignment.Center
     ) {
         val targetUrl = if (!imageUrl.isNullOrBlank()) imageUrl else if (emoji.startsWith("http")) emoji else null
@@ -176,7 +176,9 @@ fun AppIconBadge(
             coil.compose.AsyncImage(
                 model = targetUrl,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize().clip(shape),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(shape),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
         } else {
@@ -184,7 +186,7 @@ fun AppIconBadge(
                 painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_app_default),
                 contentDescription = null,
                 modifier = Modifier.size(size * 0.55f),
-                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(accentColor))
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(tintColor)
             )
         }
     }
@@ -197,6 +199,7 @@ fun StarRatingBar(
     starSize: Dp = 16.dp,
     starColor: Color = AccentGold
 ) {
+    val unselectedColor = if (PrimeTheme.colors.isDark) Color(0xFF4B4656) else Color(0xFFD1C4E9)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
@@ -206,7 +209,7 @@ fun StarRatingBar(
             Icon(
                 imageVector = if (filled) Icons.Filled.Star else Icons.Outlined.Star,
                 contentDescription = null,
-                tint = if (filled) starColor else Color(0xFF4B4656),
+                tint = if (filled) starColor else unselectedColor,
                 modifier = Modifier.size(starSize)
             )
         }

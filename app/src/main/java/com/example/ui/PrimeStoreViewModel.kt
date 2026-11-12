@@ -206,6 +206,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val authPrefs = application.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)
+    private val settingsRepo = com.example.data.repository.SettingsRepository.getInstance(application)
 
     init {
         SupabaseClient.init(application.applicationContext)
@@ -213,19 +214,19 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         restoreSession()
 
         // Language setup
-        val savedLang = authPrefs.getString("ps_language", "auto") ?: "auto"
+        val savedLang = settingsRepo.languageTag.value
         val activeLang = if (savedLang == "auto") detectDeviceLanguage() else savedLang
 
         // Theme setup
-        val savedTheme = authPrefs.getString("ps_theme_mode", "dark") ?: "dark"
-        val savedAccent = authPrefs.getLong("ps_theme_accent", 0xFFA855F7)
+        val currentThemeMode = settingsRepo.themeMode.value
+        val currentAccent = settingsRepo.accentHex.value
         val isFirstRun = !authPrefs.getBoolean("has_completed_onboarding", false)
 
         _uiState.value = _uiState.value.copy(
             currentLanguage = activeLang,
-            themeMode = savedTheme,
-            themeAccent = savedAccent,
-            isDarkMode = savedTheme != "light",
+            themeMode = currentThemeMode.name.lowercase(),
+            themeAccent = currentAccent,
+            isDarkMode = currentThemeMode != com.example.ui.theme.ThemeMode.LIGHT,
             showOnboarding = isFirstRun
         )
 
@@ -283,20 +284,23 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun setThemeMode(mode: String) {
-        val cleanMode = when (mode.lowercase()) {
-            "amoled" -> "amoled"
-            "light" -> "light"
-            else -> "dark"
+        val targetMode = when (mode.lowercase()) {
+            "amoled" -> com.example.ui.theme.ThemeMode.AMOLED
+            "light" -> com.example.ui.theme.ThemeMode.LIGHT
+            "system" -> com.example.ui.theme.ThemeMode.SYSTEM
+            else -> com.example.ui.theme.ThemeMode.DARK
         }
-        authPrefs.edit().putString("ps_theme_mode", cleanMode).apply()
+        settingsRepo.setThemeMode(targetMode)
+        authPrefs.edit().putString("ps_theme_mode", targetMode.name.lowercase()).apply()
         _uiState.value = _uiState.value.copy(
-            themeMode = cleanMode,
-            isDarkMode = cleanMode != "light"
+            themeMode = targetMode.name.lowercase(),
+            isDarkMode = targetMode != com.example.ui.theme.ThemeMode.LIGHT
         )
-        emitToast("تم تغيير مظهر التطبيق إلى $cleanMode")
+        emitToast("تم تغيير مظهر التطبيق إلى ${targetMode.name.lowercase()}")
     }
 
     fun setThemeAccent(accentColor: Long) {
+        settingsRepo.setAccentHex(accentColor)
         authPrefs.edit().putLong("ps_theme_accent", accentColor).apply()
         _uiState.value = _uiState.value.copy(themeAccent = accentColor)
         emitToast("تم تحديث اللون المميز للمتجر ✨")
@@ -1011,6 +1015,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun setLanguage(lang: String) {
+        settingsRepo.setLanguage(lang)
         val effectiveLang = if (lang == "auto") detectDeviceLanguage() else lang
         _uiState.value = _uiState.value.copy(currentLanguage = effectiveLang)
         authPrefs.edit().putString("ps_language", lang).apply()

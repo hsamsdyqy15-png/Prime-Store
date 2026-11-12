@@ -35,7 +35,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,13 +45,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.installer.ApkInstaller
 import com.example.data.installer.PackageHelper
 import com.example.data.model.DownloadItem
@@ -62,15 +62,7 @@ import com.example.ui.components.NeonCard
 import com.example.ui.components.NeonGradientButton
 import com.example.ui.theme.AccentGreen
 import com.example.ui.theme.AccentRed
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.NeonPurpleSecondary
-import com.example.ui.theme.PrimeCardBackground
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 import java.io.File
 
 @Composable
@@ -89,6 +81,7 @@ fun DownloadsScreen(
     onDeleteApkFile: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
     val activeDownloads = remember(downloads) { downloads.filter { !it.isCompleted } }
     val completedDownloads = remember(downloads) { downloads.filter { it.isCompleted } }
 
@@ -107,8 +100,8 @@ fun DownloadsScreen(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "تحميلاتي",
-                color = Color.White,
+                text = stringResource(R.string.downloads),
+                color = colors.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -125,8 +118,8 @@ fun DownloadsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF16101F))
-                    .border(1.dp, NeonBorder, RoundedCornerShape(16.dp))
+                    .background(colors.card)
+                    .border(1.dp, colors.border, RoundedCornerShape(16.dp))
                     .padding(4.dp)
             ) {
                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -135,14 +128,14 @@ fun DownloadsScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (filterTab == 0) NeonPurplePrimary else Color.Transparent)
+                            .background(if (filterTab == 0) colors.accent else Color.Transparent)
                             .clickable { onFilterChange(0) }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "جاري التحميل (${activeDownloads.size})",
-                            color = if (filterTab == 0) Color.White else PrimeTextMuted,
+                            text = "${stringResource(R.string.downloading)} (${activeDownloads.size})",
+                            color = if (filterTab == 0) colors.textOnAccent else colors.textSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -153,14 +146,14 @@ fun DownloadsScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (filterTab == 1) NeonPurplePrimary else Color.Transparent)
+                            .background(if (filterTab == 1) colors.accent else Color.Transparent)
                             .clickable { onFilterChange(1) }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "تم التحميل (${completedDownloads.size})",
-                            color = if (filterTab == 1) Color.White else PrimeTextMuted,
+                            text = "${stringResource(R.string.downloaded)} (${completedDownloads.size})",
+                            color = if (filterTab == 1) colors.textOnAccent else colors.textSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -184,7 +177,7 @@ fun DownloadsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = if (filterTab == 0) "لا توجد تنزيلات قيد المعالجة" else "لم تقم بتنزيل أي تطبيقات بعد",
-                        color = PrimeTextMuted,
+                        color = colors.textMuted,
                         fontSize = 14.sp
                     )
                 }
@@ -229,7 +222,7 @@ fun DownloadsScreen(
                 .padding(horizontal = 20.dp, vertical = 14.dp)
         ) {
             NeonGradientButton(
-                text = "مسح الكل",
+                text = stringResource(R.string.clear_all),
                 icon = Icons.Filled.Delete,
                 testTag = "clear_all_downloads_button",
                 modifier = Modifier.fillMaxWidth(),
@@ -249,6 +242,8 @@ fun ActiveDownloadCard(
     onCancel: () -> Unit,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     NeonCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -280,7 +275,7 @@ fun ActiveDownloadCard(
                     ) {
                         Text(
                             text = item.appName,
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -290,13 +285,13 @@ fun ActiveDownloadCard(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(PrimeGradientBrush)
+                                        .background(colors.accentGradient)
                                         .clickable { onResume() }
                                         .padding(horizontal = 10.dp, vertical = 5.dp)
                                 ) {
                                     Text(
                                         text = "إعادة 🔄",
-                                        color = Color.White,
+                                        color = colors.textOnAccent,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -310,7 +305,7 @@ fun ActiveDownloadCard(
                                     Icon(
                                         imageVector = if (item.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                                         contentDescription = if (item.isPaused) "استئناف" else "إيقاف مؤقت",
-                                        tint = NeonPurplePrimary,
+                                        tint = colors.accent,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -322,7 +317,7 @@ fun ActiveDownloadCard(
                                 Icon(
                                     imageVector = Icons.Filled.Close,
                                     contentDescription = "إلغاء",
-                                    tint = PrimeTextMuted,
+                                    tint = colors.textMuted,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -334,7 +329,7 @@ fun ActiveDownloadCard(
                     if (item.status == DownloadStatus.FAILED) {
                         Text(
                             text = item.errorMessage ?: "فشل التحميل، اضغط إعادة للمحاولة",
-                            color = Color(0xFFFCA5A5),
+                            color = AccentRed,
                             fontSize = 11.sp
                         )
                     } else {
@@ -344,14 +339,14 @@ fun ActiveDownloadCard(
                                 .fillMaxWidth()
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp))
-                                .background(Color(0xFF281C38))
+                                .background(colors.border)
                         ) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth(item.progress.coerceIn(0.01f, 1.0f))
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(NeonPurplePrimary)
+                                    .background(colors.accent)
                             )
                         }
 
@@ -363,13 +358,13 @@ fun ActiveDownloadCard(
                         ) {
                             Text(
                                 text = "${(item.progress * 100).toInt()}%",
-                                color = NeonPurplePrimary,
+                                color = colors.accent,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = "${item.speed} • ${item.downloadedSize}",
-                                color = PrimeTextSecondary,
+                                color = colors.textSecondary,
                                 fontSize = 11.sp
                             )
                         }
@@ -389,6 +384,7 @@ fun CompletedDownloadCard(
     onOpenApp: (String) -> Unit = {},
     onDeleteApk: () -> Unit = {}
 ) {
+    val colors = PrimeTheme.colors
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
     var showUninstallDialog by remember { mutableStateOf(false) }
@@ -430,13 +426,13 @@ fun CompletedDownloadCard(
                 Column {
                     Text(
                         text = item.appName,
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = if (isInstalled) "مثبت على جهازك • ${item.totalSize}" else "مكتمل التحميل • ${item.totalSize}",
-                        color = if (isInstalled) AccentGreen else PrimeTextSecondary,
+                        color = if (isInstalled) AccentGreen else colors.textSecondary,
                         fontSize = 12.sp,
                         fontWeight = if (isInstalled) FontWeight.Bold else FontWeight.Normal
                     )
@@ -449,22 +445,22 @@ fun CompletedDownloadCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF2E1065))
-                            .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                            .background(colors.cardAlt)
+                            .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                             .clickable { onOpenApp(resolvedPkg) }
                             .padding(horizontal = 12.dp, vertical = 7.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.OpenInNew,
-                                contentDescription = "فتح",
-                                tint = Color.White,
+                                contentDescription = stringResource(R.string.open_app),
+                                tint = colors.textPrimary,
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "فتح",
-                                color = Color.White,
+                                text = stringResource(R.string.open_app),
+                                color = colors.textPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -474,21 +470,21 @@ fun CompletedDownloadCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(PrimeGradientBrush)
+                            .background(colors.accentGradient)
                             .clickable { onInstall() }
                             .padding(horizontal = 12.dp, vertical = 7.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = "تثبيت",
-                                tint = Color.White,
+                                contentDescription = stringResource(R.string.install_app),
+                                tint = colors.textOnAccent,
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "تثبيت",
-                                color = Color.White,
+                                text = stringResource(R.string.install_app),
+                                color = colors.textOnAccent,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -521,7 +517,7 @@ fun CompletedDownloadCard(
                         Icon(
                             imageVector = Icons.Filled.MoreVert,
                             contentDescription = "خيارات",
-                            tint = Color.White,
+                            tint = colors.textPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -530,12 +526,12 @@ fun CompletedDownloadCard(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                         modifier = Modifier
-                            .background(Color(0xFF1E142D))
-                            .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                            .background(colors.surface)
+                            .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                     ) {
                         if (isInstalled && !resolvedPkg.isNullOrBlank()) {
                             DropdownMenuItem(
-                                text = { Text("إعادة التثبيت 📦", color = Color.White) },
+                                text = { Text("إعادة التثبيت 📦", color = colors.textPrimary) },
                                 onClick = {
                                     showMenu = false
                                     onInstall()
@@ -550,7 +546,7 @@ fun CompletedDownloadCard(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("حذف ملف APK المحمّل 🗂️", color = Color.White) },
+                            text = { Text("حذف ملف APK المحمّل 🗂️", color = colors.textPrimary) },
                             onClick = {
                                 showMenu = false
                                 onDeleteApk()
@@ -565,12 +561,12 @@ fun CompletedDownloadCard(
     if (showUninstallDialog && !resolvedPkg.isNullOrBlank()) {
         AlertDialog(
             onDismissRequest = { showUninstallDialog = false },
-            containerColor = Color(0xFF1E142D),
+            containerColor = colors.card,
             title = {
-                Text("حذف التطبيق 🗑️", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("حذف التطبيق 🗑️", color = colors.textPrimary, fontWeight = FontWeight.Bold)
             },
             text = {
-                Text("هل ترغب في إلغاء تثبيت \"${item.appName}\" من جهازك؟", color = Color.White, fontSize = 14.sp)
+                Text("هل ترغب في إلغاء تثبيت \"${item.appName}\" من جهازك؟", color = colors.textSecondary, fontSize = 14.sp)
             },
             confirmButton = {
                 Button(
@@ -585,7 +581,7 @@ fun CompletedDownloadCard(
             },
             dismissButton = {
                 TextButton(onClick = { showUninstallDialog = false }) {
-                    Text("إلغاء", color = PrimeTextMuted)
+                    Text("إلغاء", color = colors.textMuted)
                 }
             }
         )

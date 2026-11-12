@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,6 +73,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
+import com.example.R
 import com.example.data.model.StoreUpdateInfo
 import com.example.ui.UserProfile
 import com.example.ui.components.NeonCard
@@ -84,6 +86,8 @@ import com.example.ui.theme.NeonPurplePrimary
 import com.example.ui.theme.PrimeGradientBrush
 import com.example.ui.theme.PrimeTextMuted
 import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
+import androidx.compose.ui.res.stringResource
 
 @Composable
 fun SettingsScreen(
@@ -159,6 +163,8 @@ fun SettingsScreen(
     var userPasswordInput by remember { mutableStateOf("") }
     var isSignUpMode by remember { mutableStateOf(false) }
 
+    val colors = PrimeTheme.colors
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -172,8 +178,8 @@ fun SettingsScreen(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "الإعدادات",
-                color = Color.White,
+                text = stringResource(R.string.settings_title),
+                color = colors.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -208,13 +214,13 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .size(50.dp)
                                 .clip(CircleShape)
-                                .background(NeonPurpleDeep),
+                                .background(colors.surface),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = if (isUserLoggedIn) (if (isAdmin) "👑" else userProfile?.name?.firstOrNull()?.toString() ?: "U") else "👤",
                                 fontSize = 22.sp,
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -224,13 +230,13 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = if (isUserLoggedIn) (if (isAdmin) "مدير النظام (Admin) 🛠️" else userProfile?.name.orEmpty()) else "غير مسجل الدخول",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = if (isUserLoggedIn) userProfile?.email.orEmpty() else "سجّل دخولك للمزامنة والميزات الكاملة",
-                                color = if (isAdmin) NeonPurplePrimary else PrimeTextSecondary,
+                                color = if (isAdmin) colors.accent else colors.textSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -240,15 +246,15 @@ fun SettingsScreen(
                                 Box(
                                     modifier = Modifier
                                         .background(
-                                            Color(0xFF281347),
+                                            colors.surface,
                                             RoundedCornerShape(8.dp)
                                         )
-                                        .border(1.dp, NeonPurplePrimary, RoundedCornerShape(8.dp))
+                                        .border(1.dp, colors.accent, RoundedCornerShape(8.dp))
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
                                         text = if (isAdmin) "أدمن" else "PRIME",
-                                        color = NeonPurplePrimary,
+                                        color = colors.accent,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Black
                                     )
@@ -257,7 +263,7 @@ fun SettingsScreen(
                         } else {
                             Text(
                                 text = "دخول ›",
-                                color = NeonPurplePrimary,
+                                color = colors.accent,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -553,13 +559,13 @@ fun SettingsScreen(
                             Icon(
                                 imageVector = Icons.Filled.DarkMode,
                                 contentDescription = null,
-                                tint = NeonPurplePrimary,
+                                tint = colors.accent,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "نمط المظهر",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -567,25 +573,26 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             val modes = listOf(
-                                "dark" to "داكن",
-                                "amoled" to "AMOLED",
-                                "light" to "فاتح"
+                                "system" to stringResource(R.string.theme_system),
+                                "dark" to stringResource(R.string.theme_dark),
+                                "amoled" to stringResource(R.string.theme_amoled),
+                                "light" to stringResource(R.string.theme_light)
                             )
                             modes.forEach { (modeKey, label) ->
-                                val isSelected = themeMode == modeKey
+                                val isSelected = themeMode.equals(modeKey, ignoreCase = true)
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(
-                                            if (isSelected) NeonPurplePrimary else Color(0xFF1F152E)
+                                            if (isSelected) colors.accent else colors.surface
                                         )
                                         .border(
                                             width = 1.dp,
-                                            color = if (isSelected) Color.White else NeonBorder,
+                                            color = if (isSelected) colors.accent else colors.border,
                                             shape = RoundedCornerShape(10.dp)
                                         )
                                         .clickable { onSetThemeMode(modeKey) }
@@ -594,8 +601,8 @@ fun SettingsScreen(
                                 ) {
                                     Text(
                                         text = label,
-                                        color = if (isSelected) Color.White else PrimeTextSecondary,
-                                        fontSize = 13.sp,
+                                        color = if (isSelected) colors.textOnAccent else colors.textSecondary,
+                                        fontSize = 12.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     )
                                 }
@@ -605,14 +612,14 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
                             text = "لون التمييز (Accent Color)",
-                            color = PrimeTextSecondary,
+                            color = colors.textSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        val colors = listOf(
+                        val accentColors = listOf(
                             0xFFA855F7L to "بنفسجي",
-                            0xFF06B6D4L to "سماوي",
+                            0xFF22D3EEL to "سماوي",
                             0xFF10B981L to "زمردي",
                             0xFFF43F5EL to "وردي",
                             0xFFF59E0BL to "عنبر"
@@ -622,7 +629,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            colors.forEach { (colorVal, _) ->
+                            accentColors.forEach { (colorVal, _) ->
                                 val isChosen = themeAccent == colorVal
                                 Box(
                                     modifier = Modifier
@@ -631,7 +638,7 @@ fun SettingsScreen(
                                         .background(Color(colorVal))
                                         .border(
                                             width = if (isChosen) 3.dp else 1.dp,
-                                            color = if (isChosen) Color.White else Color.Transparent,
+                                            color = if (isChosen) colors.textPrimary else Color.Transparent,
                                             shape = CircleShape
                                         )
                                         .clickable { onSetThemeAccent(colorVal) }
@@ -850,14 +857,14 @@ fun SettingsScreen(
             val update = pendingUpdateInfo!!
             AlertDialog(
                 onDismissRequest = { showUpdateFoundDialog = false },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "🚀", fontSize = 24.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "تحديث جديد لـ Prime Store!",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp
                         )
@@ -867,7 +874,7 @@ fun SettingsScreen(
                     Column {
                         Text(
                             text = "الإصدار الجديد: ${update.versionName} (كود ${update.versionCode})",
-                            color = NeonPurplePrimary,
+                            color = colors.accent,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         )
@@ -875,21 +882,21 @@ fun SettingsScreen(
                         if (update.notes.isNotBlank()) {
                             Text(
                                 text = "ملاحظات التحديث:",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = update.notes,
-                                color = PrimeTextSecondary,
+                                color = colors.textSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp
                             )
                         } else {
                             Text(
                                 text = "يتضمن هذا التحديث تحسينات في الأداء وإصلاحات لمشاكل التثبيت والتنزيل.",
-                                color = PrimeTextSecondary,
+                                color = colors.textSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -898,15 +905,15 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = "جاري تحميل التحديث... ${(storeUpdateDownloadProgress * 100).toInt()}%",
-                                color = NeonPurplePrimary,
+                                color = colors.accent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             LinearProgressIndicator(
                                 progress = { storeUpdateDownloadProgress },
-                                color = NeonPurplePrimary,
-                                trackColor = Color(0xFF281C38),
+                                color = colors.accent,
+                                trackColor = colors.border,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(6.dp)
@@ -922,23 +929,23 @@ fun SettingsScreen(
                             onDismissUpdateBadge()
                         },
                         enabled = !isDownloadingStoreUpdate,
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.CloudDownload,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = colors.textOnAccent,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("تحديث الآن", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("تحديث الآن", color = colors.textOnAccent, fontWeight = FontWeight.Bold)
                         }
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showUpdateFoundDialog = false }) {
-                        Text("لاحقاً", color = PrimeTextMuted)
+                        Text("لاحقاً", color = colors.textMuted)
                     }
                 }
             )
@@ -948,27 +955,27 @@ fun SettingsScreen(
         if (showUpToDateDialog) {
             AlertDialog(
                 onDismissRequest = { showUpToDateDialog = false },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = NeonPurplePrimary)
+                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = colors.accent)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "أنت على آخر إصدار", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(text = "أنت على آخر إصدار", color = colors.textPrimary, fontWeight = FontWeight.Bold)
                     }
                 },
                 text = {
                     Text(
                         text = "أنت تستخدم أحدث نسخة من متجر Prime Store (${BuildConfig.VERSION_NAME}). لا توجد تحديثات جديدة حالياً.",
-                        color = PrimeTextSecondary,
+                        color = colors.textSecondary,
                         fontSize = 13.sp
                     )
                 },
                 confirmButton = {
                     Button(
                         onClick = { showUpToDateDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("حسناً", color = Color.White)
+                        Text("حسناً", color = colors.textOnAccent)
                     }
                 }
             )
@@ -981,26 +988,26 @@ fun SettingsScreen(
                     showAboutDialog = false
                     versionTapCount = 0
                 },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "👑", fontSize = 24.sp)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Prime Store", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(text = "Prime Store", color = colors.textPrimary, fontWeight = FontWeight.Bold)
                     }
                 },
                 text = {
                     Column {
                         Text(
                             text = "متجر التطبيقات والألعاب الرائد",
-                            color = NeonPurplePrimary,
+                            color = colors.accent,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "تطبيق Prime Store يوفر لك الوصول السريع والآمن إلى أفضل وأشهر الألعاب والتطبيقات العالمية بواجهة نيون عصرية، وإدارة متطورة للتنزيلات والمفضلة.",
-                            color = PrimeTextSecondary,
+                            text = "تطبيق Prime Store يوفر لك الوصول السريع والآمن إلى أفضل وأشهر الألعاب والتطبيقات العالمية بواجهة عصرية، وإدارة متطورة للتنزيلات والمفضلة.",
+                            color = colors.textSecondary,
                             fontSize = 13.sp,
                             lineHeight = 20.sp
                         )
@@ -1011,7 +1018,7 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF1F1530))
+                                .background(colors.surface)
                                 .clickable {
                                     val now = System.currentTimeMillis()
                                     if (now - lastVersionTapTime > 2000) {
@@ -1032,7 +1039,7 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 text = "الإصدار: v${BuildConfig.VERSION_NAME} (كود ${BuildConfig.VERSION_CODE})\nجميع الحقوق محفوظة © Prime Store Team",
-                                color = PrimeTextMuted,
+                                color = colors.textMuted,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp
                             )
@@ -1045,9 +1052,9 @@ fun SettingsScreen(
                             showAboutDialog = false
                             versionTapCount = 0
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("حسناً", color = Color.White)
+                        Text("حسناً", color = colors.textOnAccent)
                     }
                 }
             )
@@ -1057,14 +1064,14 @@ fun SettingsScreen(
         if (showAdminLoginDialog) {
             AlertDialog(
                 onDismissRequest = { showAdminLoginDialog = false },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "🛠️", fontSize = 22.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "دخول الأدمن (Supabase Auth)",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
@@ -1074,7 +1081,7 @@ fun SettingsScreen(
                     Column {
                         Text(
                             text = "أدخل بيانات حساب الأدمن المصرح له لإدارة متجر التطبيقات:",
-                            color = PrimeTextSecondary,
+                            color = colors.textSecondary,
                             fontSize = 12.sp
                         )
                         Spacer(modifier = Modifier.height(12.dp))
@@ -1087,14 +1094,14 @@ fun SettingsScreen(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = NeonPurplePrimary,
-                                unfocusedBorderColor = NeonBorder,
-                                focusedLabelColor = NeonPurplePrimary,
-                                unfocusedLabelColor = PrimeTextMuted,
-                                focusedContainerColor = Color(0xFF140D24),
-                                unfocusedContainerColor = Color(0xFF140D24)
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary,
+                                focusedBorderColor = colors.accent,
+                                unfocusedBorderColor = colors.border,
+                                focusedLabelColor = colors.accent,
+                                unfocusedLabelColor = colors.textMuted,
+                                focusedContainerColor = colors.surface,
+                                unfocusedContainerColor = colors.surface
                             ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -1110,14 +1117,14 @@ fun SettingsScreen(
                             visualTransformation = PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = NeonPurplePrimary,
-                                unfocusedBorderColor = NeonBorder,
-                                focusedLabelColor = NeonPurplePrimary,
-                                unfocusedLabelColor = PrimeTextMuted,
-                                focusedContainerColor = Color(0xFF140D24),
-                                unfocusedContainerColor = Color(0xFF140D24)
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary,
+                                focusedBorderColor = colors.accent,
+                                unfocusedBorderColor = colors.border,
+                                focusedLabelColor = colors.accent,
+                                unfocusedLabelColor = colors.textMuted,
+                                focusedContainerColor = colors.surface,
+                                unfocusedContainerColor = colors.surface
                             ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -1134,14 +1141,14 @@ fun SettingsScreen(
                                 adminPasswordInput = ""
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("تسجيل دخول الأدمن", color = Color.White)
+                        Text("تسجيل دخول الأدمن", color = colors.textOnAccent)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showAdminLoginDialog = false }) {
-                        Text("إلغاء", color = PrimeTextMuted)
+                        Text("إلغاء", color = colors.textMuted)
                     }
                 }
             )
@@ -1151,14 +1158,14 @@ fun SettingsScreen(
         if (showLoginDialog) {
             AlertDialog(
                 onDismissRequest = { onCloseLogin() },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "👑", fontSize = 22.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (isSignUpMode) "إنشاء حساب جديد" else "تسجيل الدخول",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         )
@@ -1168,7 +1175,7 @@ fun SettingsScreen(
                     Column {
                         Text(
                             text = if (isSignUpMode) "أنشئ حسابك في Prime Store للوصول السحابي وحفظ مفضلاتك:" else "أدخل بريدك وكلمة المرور لتسجيل الدخول إلى حسابك:",
-                            color = PrimeTextSecondary,
+                            color = colors.textSecondary,
                             fontSize = 12.sp
                         )
                         Spacer(modifier = Modifier.height(14.dp))
@@ -1181,14 +1188,14 @@ fun SettingsScreen(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = NeonPurplePrimary,
-                                unfocusedBorderColor = NeonBorder,
-                                focusedLabelColor = NeonPurplePrimary,
-                                unfocusedLabelColor = PrimeTextMuted,
-                                focusedContainerColor = Color(0xFF140D24),
-                                unfocusedContainerColor = Color(0xFF140D24)
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary,
+                                focusedBorderColor = colors.accent,
+                                unfocusedBorderColor = colors.border,
+                                focusedLabelColor = colors.accent,
+                                unfocusedLabelColor = colors.textMuted,
+                                focusedContainerColor = colors.surface,
+                                unfocusedContainerColor = colors.surface
                             ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -1204,14 +1211,14 @@ fun SettingsScreen(
                             visualTransformation = PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = NeonPurplePrimary,
-                                unfocusedBorderColor = NeonBorder,
-                                focusedLabelColor = NeonPurplePrimary,
-                                unfocusedLabelColor = PrimeTextMuted,
-                                focusedContainerColor = Color(0xFF140D24),
-                                unfocusedContainerColor = Color(0xFF140D24)
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary,
+                                focusedBorderColor = colors.accent,
+                                unfocusedBorderColor = colors.border,
+                                focusedLabelColor = colors.accent,
+                                unfocusedLabelColor = colors.textMuted,
+                                focusedContainerColor = colors.surface,
+                                unfocusedContainerColor = colors.surface
                             ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -1221,7 +1228,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = authErrorMessage,
-                                color = Color(0xFFEF4444),
+                                color = AccentRed,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1230,7 +1237,7 @@ fun SettingsScreen(
                         if (isAuthLoading) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = NeonPurplePrimary, modifier = Modifier.size(24.dp))
+                                CircularProgressIndicator(color = colors.accent, modifier = Modifier.size(24.dp))
                             }
                         }
 
@@ -1242,7 +1249,7 @@ fun SettingsScreen(
                             TextButton(onClick = { isSignUpMode = !isSignUpMode }) {
                                 Text(
                                     text = if (isSignUpMode) "لديك حساب بالفعل؟ تسجيل الدخول" else "ليس لديك حساب؟ إنشاء حساب جديد",
-                                    color = NeonPurplePrimary,
+                                    color = colors.accent,
                                     fontSize = 12.sp
                                 )
                             }
@@ -1259,14 +1266,14 @@ fun SettingsScreen(
                             }
                         },
                         enabled = !isAuthLoading,
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text(if (isSignUpMode) "إنشاء الحساب" else "تسجيل الدخول", color = Color.White)
+                        Text(if (isSignUpMode) "إنشاء الحساب" else "تسجيل الدخول", color = colors.textOnAccent)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { onCloseLogin() }) {
-                        Text("إلغاء", color = PrimeTextMuted)
+                        Text("إلغاء", color = colors.textMuted)
                     }
                 }
             )
@@ -1276,14 +1283,14 @@ fun SettingsScreen(
         if (showCacheDialog) {
             AlertDialog(
                 onDismissRequest = { showCacheDialog = false },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
-                    Text(text = "مسح ذاكرة التخزين المؤقت", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(text = "مسح ذاكرة التخزين المؤقت", color = colors.textPrimary, fontWeight = FontWeight.Bold)
                 },
                 text = {
                     Text(
                         text = "المساحة الحالية المستخدمة هي $cacheSize. هل تريد تحرير هذه المساحة ومسح الملفات المؤقتة؟",
-                        color = PrimeTextSecondary,
+                        color = colors.textSecondary,
                         fontSize = 13.sp
                     )
                 },
@@ -1293,14 +1300,14 @@ fun SettingsScreen(
                             onClearCache()
                             showCacheDialog = false
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("مسح الآن", color = Color.White)
+                        Text("مسح الآن", color = colors.textOnAccent)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showCacheDialog = false }) {
-                        Text("إلغاء", color = PrimeTextMuted)
+                        Text("إلغاء", color = colors.textMuted)
                     }
                 }
             )
@@ -1310,38 +1317,62 @@ fun SettingsScreen(
     if (showLanguageDialog) {
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
-            containerColor = Color(0xFF16101F),
+            containerColor = colors.card,
             title = {
-                Text(text = "اختر لغة التطبيق 🌐", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(text = "اختر لغة التطبيق 🌐", color = colors.textPrimary, fontWeight = FontWeight.Bold)
             },
             text = {
-                Column {
-                    val langs = listOf(
-                        "auto" to "🌐 لغة الجهاز الافتراضية (تلقائي)",
-                        "ar" to "🇸🇦 العربية (Arabic)",
-                        "en" to "🇬🇧 English",
-                        "fr" to "🇫🇷 Français (French)",
-                        "es" to "🇪🇸 Español (Spanish)",
-                        "de" to "🇩🇪 Deutsch (German)",
-                        "tr" to "🇹🇷 Türkçe (Turkish)",
-                        "ru" to "🇷🇺 Русский (Russian)"
-                    )
-                    for ((code, label) in langs) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    onSetLanguage(code)
-                                    showLanguageDialog = false
+                Box(
+                    modifier = Modifier
+                        .heightIn(max = 400.dp)
+                        .fillMaxWidth()
+                ) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val langs = listOf(
+                            "auto" to "🌐 لغة الجهاز الافتراضية (تلقائي)",
+                            "ar" to "🇸🇦 العربية (Arabic)",
+                            "en" to "🇬🇧 English",
+                            "tr" to "🇹🇷 Türkçe (Turkish)",
+                            "fr" to "🇫🇷 Français (French)",
+                            "es" to "🇪🇸 Español (Spanish)",
+                            "de" to "🇩🇪 Deutsch (German)",
+                            "ru" to "🇷🇺 Русский (Russian)",
+                            "fa" to "🇮🇷 فارسی (Persian)",
+                            "ur" to "🇵🇰 اردو (Urdu)",
+                            "hi" to "🇮🇳 हिन्दी (Hindi)",
+                            "id" to "🇮🇩 Bahasa Indonesia",
+                            "pt" to "🇵🇹 Português (Portuguese)"
+                        )
+                        items(langs.size) { index ->
+                            val (code, label) = langs[index]
+                            val isCurrent = currentLanguage.equals(code, ignoreCase = true)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isCurrent) colors.surface else Color.Transparent)
+                                    .clickable {
+                                        onSetLanguage(code)
+                                        showLanguageDialog = false
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isCurrent) colors.accent else colors.textPrimary,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                )
+                                if (isCurrent) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = colors.accent
+                                    )
                                 }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(text = label, color = if (currentLanguage == code) NeonPurplePrimary else Color.White, fontWeight = if (currentLanguage == code) FontWeight.Bold else FontWeight.Normal)
-                            if (currentLanguage == code) {
-                                Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = NeonPurplePrimary)
                             }
                         }
                     }
@@ -1350,9 +1381,9 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = { showLanguageDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                 ) {
-                    Text("إغلاق", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("إغلاق", color = colors.textOnAccent, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -1366,6 +1397,7 @@ private fun SettingsOptionItem(
     icon: ImageVector,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
     NeonCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -1382,13 +1414,13 @@ private fun SettingsOptionItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = Color.White,
+                    color = colors.textPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = subtitle,
-                    color = PrimeTextSecondary,
+                    color = colors.textSecondary,
                     fontSize = 12.sp
                 )
             }
@@ -1397,14 +1429,14 @@ private fun SettingsOptionItem(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = NeonPurplePrimary,
+                    tint = colors.accent,
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                     contentDescription = null,
-                    tint = PrimeTextMuted,
+                    tint = colors.textMuted,
                     modifier = Modifier.size(14.dp)
                 )
             }

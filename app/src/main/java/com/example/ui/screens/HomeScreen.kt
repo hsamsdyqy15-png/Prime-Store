@@ -57,6 +57,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,13 +76,7 @@ import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.AccentGreen
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 
 data class CategoryQuickItem(
     val category: AppCategory,
@@ -125,9 +120,9 @@ fun HomeScreen(
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
     val context = LocalContext.current
 
-    // "أضيف حديثاً" top 6 newest apps
     val newlyAddedApps = remember(allApps) {
         if (allApps.isNotEmpty()) {
             allApps.take(6)
@@ -136,7 +131,6 @@ fun HomeScreen(
         }
     }
 
-    // Filtered paged apps
     val filteredPagedApps = remember(pagedApps, activeFilter) {
         when (activeFilter) {
             HomeFilterType.ALL -> pagedApps
@@ -145,7 +139,7 @@ fun HomeScreen(
                 sizeClean.contains("kb") || (sizeClean.contains("mb") && (sizeClean.filter { c -> c.isDigit() || c == '.' }.toDoubleOrNull() ?: 100.0) < 35.0)
             }
             HomeFilterType.TOP_RATED -> pagedApps.sortedByDescending { it.rating }
-            HomeFilterType.NEWEST -> pagedApps.sortedByDescending { it.versionCode }
+            HomeFilterType.NEWEST -> pagedApps.sortedByDescending { it.isNew }
         }
     }
 
@@ -155,9 +149,7 @@ fun HomeScreen(
             .testTag("home_screen"),
         contentPadding = PaddingValues(bottom = 90.dp)
     ) {
-        // =====================================================================
         // 1. Top Bar
-        // =====================================================================
         item {
             HomeTopBar(
                 onMenuClick = onMenuClick,
@@ -174,11 +166,7 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(Color(0xFF3B0764), Color(0xFF6B21A8), Color(0xFFA855F7))
-                            )
-                        )
+                        .background(colors.buttonGradient)
                         .border(1.dp, AccentGold, RoundedCornerShape(14.dp))
                         .clickable { onStoreUpdateClick() }
                         .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -188,8 +176,8 @@ fun HomeScreen(
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Text("🚀 ", fontSize = 20.sp)
                         Column {
-                            Text("يتوفر تحديث لمتجر Prime Store!", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("اضغط هنا للتحميل والتثبيت المباشر", color = Color(0xFFF3E8FF), fontSize = 11.sp)
+                            Text(stringResource(id = R.string.update_available_title), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(stringResource(id = R.string.update_available_desc), color = Color.White.copy(alpha = 0.9f), fontSize = 11.sp)
                         }
                     }
                     Box(
@@ -198,15 +186,13 @@ fun HomeScreen(
                             .background(AccentGold)
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
-                        Text("تحديث الآن", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text(stringResource(id = R.string.update), color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
             }
         }
 
-        // =====================================================================
-        // 2. (A) Banner & Quick Categories Grid
-        // =====================================================================
+        // 2. Banner & Quick Categories Grid
         item {
             StoreHeroBanner(
                 featuredApp = allApps.firstOrNull { it.isFeatured } ?: allApps.firstOrNull() ?: pagedApps.firstOrNull(),
@@ -221,9 +207,7 @@ fun HomeScreen(
             )
         }
 
-        // =====================================================================
-        // 3. (B) قسم "أضيف حديثاً" فوق: عنوان بأيقونة، وتحته أحدث 6 تطبيقات كبطاقات عمودية
-        // =====================================================================
+        // 3. "أضيف حديثاً" Newly Added
         if (newlyAddedApps.isNotEmpty()) {
             item {
                 Row(
@@ -234,8 +218,8 @@ fun HomeScreen(
                 ) {
                     Text(text = "✨ ", fontSize = 18.sp)
                     Text(
-                        text = "أضيف حديثاً",
-                        color = Color.White,
+                        text = stringResource(id = R.string.newly_added),
+                        color = colors.textPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -255,10 +239,7 @@ fun HomeScreen(
             }
         }
 
-        // =====================================================================
-        // 4. (C) قسم "كل التطبيقات" تحته:
-        // صف شرائح (chips) أفقي للأصناف يبدأ بشريحة "الكل"
-        // =====================================================================
+        // 4. "كل التطبيقات" All Apps
         item {
             Column(
                 modifier = Modifier
@@ -273,14 +254,13 @@ fun HomeScreen(
                 ) {
                     Text(text = "📱 ", fontSize = 18.sp)
                     Text(
-                        text = "كل التطبيقات",
-                        color = Color.White,
+                        text = stringResource(id = R.string.all_apps),
+                        color = colors.textPrimary,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Category chips row
                 val categoryFilterItems = remember {
                     listOf(
                         CategoryItem("all", "الكل", "All", "🌐", "عام"),
@@ -314,7 +294,6 @@ fun HomeScreen(
                     }
                 }
 
-                // Filter & Sort chips row
                 val filterChips = remember {
                     listOf(
                         Pair(HomeFilterType.ALL, "الكل 🌐"),
@@ -327,21 +306,23 @@ fun HomeScreen(
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
                 ) {
                     items(filterChips) { (type, label) ->
                         val isSelected = activeFilter == type
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) NeonPurplePrimary else Color(0xFF1E142D))
-                                .border(1.dp, if (isSelected) NeonBorderGlow else NeonBorder, RoundedCornerShape(12.dp))
+                                .background(if (isSelected) colors.accent else colors.cardAlt)
+                                .border(1.dp, if (isSelected) colors.accent else colors.border, RoundedCornerShape(12.dp))
                                 .clickable { onFilterChange(type) }
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 text = label,
-                                color = if (isSelected) Color.White else PrimeTextMuted,
+                                color = if (isSelected) colors.textOnAccent else colors.textSecondary,
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                             )
@@ -353,9 +334,7 @@ fun HomeScreen(
             }
         }
 
-        // =====================================================================
-        // 5. Vertical List of Appteka Cards with Infinite Scrolling
-        // =====================================================================
+        // 5. Vertical List
         if (isInitialLoading) {
             item {
                 Column(
@@ -365,13 +344,13 @@ fun HomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     CircularProgressIndicator(
-                        color = NeonPurplePrimary,
+                        color = colors.accent,
                         modifier = Modifier.size(36.dp)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "جاري تحميل التطبيقات...",
-                        color = PrimeTextSecondary,
+                        text = stringResource(id = R.string.loading),
+                        color = colors.textSecondary,
                         fontSize = 13.sp
                     )
                 }
@@ -389,35 +368,15 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
                             text = if (pagedError != null) "تعذر جلب التطبيقات" else "لا توجد تطبيقات في هذا القسم حالياً",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = pagedError ?: "اختر قسماً آخر أو حدّث البيانات",
-                            color = PrimeTextMuted,
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        if (pagedError != null) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(PrimeGradientBrush)
-                                    .clickable { onRefresh() }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text("إعادة المحاولة 🔄", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        }
                     }
                 }
             }
         } else {
             itemsIndexed(filteredPagedApps, key = { _, app -> "paged_${app.id}" }) { index, app ->
-                // Infinite scroll trigger: when reaching last 3 items
                 if (index >= pagedApps.size - 3 && hasMoreApps && !isLoadingNextPage) {
                     LaunchedEffect(index) {
                         onLoadNextPage()
@@ -435,7 +394,6 @@ fun HomeScreen(
                 )
             }
 
-            // Bottom loading indicator or "لا يوجد المزيد"
             item {
                 if (isLoadingNextPage) {
                     Row(
@@ -446,27 +404,14 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(
-                            color = NeonPurplePrimary,
+                            color = colors.accent,
                             modifier = Modifier.size(22.dp),
                             strokeWidth = 2.dp
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "جاري جلب المزيد...",
-                            color = PrimeTextSecondary,
-                            fontSize = 12.sp
-                        )
-                    }
-                } else if (!hasMoreApps && pagedApps.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 20.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "لا يوجد المزيد من التطبيقات",
-                            color = PrimeTextMuted,
+                            text = stringResource(id = R.string.loading),
+                            color = colors.textSecondary,
                             fontSize = 12.sp
                         )
                     }
@@ -476,9 +421,6 @@ fun HomeScreen(
     }
 }
 
-// =============================================================================
-// Appteka Style Card Component
-// =============================================================================
 @Composable
 fun ApptekaCard(
     app: AppItem,
@@ -488,15 +430,9 @@ fun ApptekaCard(
     onInstallClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
     val context = LocalContext.current
 
-    // Check if app is installed on phone
-    val isInstalled = remember(app.packageName, app.name) {
-        val candidatePkg = app.packageName ?: "com.primestore.${app.name.lowercase().replace(Regex("[^a-z0-9]"), "")}"
-        ApkInstaller.isAppInstalled(context, candidatePkg)
-    }
-
-    // Check if APK was downloaded and ready to install
     val isDownloadedReady = remember(downloadItem, app.id) {
         if (downloadItem?.isCompleted == true) return@remember true
         val localApk = ApkInstaller.getApkFile(context, app.id)
@@ -520,7 +456,6 @@ fun ApptekaCard(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Square App Icon on Right (RTL layout)
             AppIconBadge(
                 emoji = app.iconEmoji,
                 accentColor = app.accentColor,
@@ -531,14 +466,13 @@ fun ApptekaCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Center Column: Title, Arabic Category, Subtitle (v{version} • {size} • ⭐ {rating})
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = app.nameAr.ifBlank { app.name },
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -550,11 +484,11 @@ fun ApptekaCard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF1E3A8A))
-                                .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(4.dp))
+                                .background(colors.accent.copy(alpha = 0.2f))
+                                .border(1.dp, colors.accent, RoundedCornerShape(4.dp))
                                 .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
-                            Text("FOSS", color = Color(0xFF93C5FD), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("FOSS", color = colors.accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -563,7 +497,7 @@ fun ApptekaCard(
 
                 Text(
                     text = app.displayCategoryTitle,
-                    color = NeonPurplePrimary,
+                    color = colors.accent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -572,17 +506,16 @@ fun ApptekaCard(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Subtitle line: v{version} • {size} • ⭐ {rating}
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = app.displayVersionBadge,
-                        color = Color(0xFFD8B4FE),
+                        color = colors.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = " • ${app.size} • ",
-                        color = PrimeTextMuted,
+                        color = colors.textSecondary,
                         fontSize = 10.sp
                     )
                     Icon(
@@ -594,7 +527,7 @@ fun ApptekaCard(
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
                         text = String.format(java.util.Locale.US, "%.1f", app.rating),
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -603,111 +536,78 @@ fun ApptekaCard(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Action Button on Left (RTL layout)
-            // Deals with download/install/open inline without opening details
-            val buttonBgModifier = when {
-                isInstalled -> Modifier.background(Color(0xFF14532D))
-                isDownloadedReady -> Modifier.background(Color(0xFF2E1065))
-                isDownloading -> Modifier.background(Color(0xFF1F1430))
-                else -> Modifier.background(PrimeGradientBrush)
-            }
-
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .then(buttonBgModifier)
-                    .border(
-                        1.dp,
-                        when {
-                            isInstalled -> AccentGreen
-                            isDownloadedReady -> NeonBorderGlow
-                            else -> NeonBorderGlow
-                        },
-                        RoundedCornerShape(12.dp)
-                    )
-                    .clickable {
-                        when {
-                            isInstalled -> {
-                                val candidatePkg = app.packageName ?: "com.primestore.${app.name.lowercase().replace(Regex("[^a-z0-9]"), "")}"
-                                val launchIntent = context.packageManager.getLaunchIntentForPackage(candidatePkg)
-                                if (launchIntent != null) {
-                                    context.startActivity(launchIntent)
-                                } else {
-                                    onAppClick()
-                                }
-                            }
-                            isDownloadedReady -> onInstallClick()
-                            isDownloading -> { /* Click while downloading */ }
-                            else -> onDownloadClick()
-                        }
+            // Action Button
+            when {
+                isDownloading -> {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(colors.cardAlt)
+                            .border(1.dp, colors.border, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            progress = { progress },
+                            color = colors.accent,
+                            modifier = Modifier.size(32.dp),
+                            strokeWidth = 2.5.dp
+                        )
+                        Text(
+                            text = "${(progress * 100).toInt()}%",
+                            color = colors.accent,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                when {
-                    isInstalled -> {
+                }
+
+                isDownloadedReady -> {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AccentGreen)
+                            .clickable { onInstallClick() }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.OpenInNew,
                                 contentDescription = null,
-                                tint = AccentGreen,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "فتح",
-                                color = AccentGreen,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    isDownloadedReady -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.Download,
-                                contentDescription = null,
-                                tint = NeonPurplePrimary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "تثبيت",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    isDownloading -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                progress = { progress },
-                                color = NeonPurplePrimary,
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "${(progress * 100).toInt()}%",
-                                color = NeonPurplePrimary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    else -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.Download,
-                                contentDescription = null,
                                 tint = Color.White,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = stringResource(id = R.string.install),
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(colors.buttonGradient)
+                            .border(1.dp, colors.border, RoundedCornerShape(12.dp))
+                            .clickable { onDownloadClick() }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Download,
+                                contentDescription = null,
+                                tint = colors.textOnAccent,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "تحميل",
-                                color = Color.White,
+                                text = stringResource(id = R.string.download),
+                                color = colors.textOnAccent,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -719,9 +619,6 @@ fun ApptekaCard(
     }
 }
 
-// =============================================================================
-// Top Bar & Hero Banner
-// =============================================================================
 @Composable
 fun HomeTopBar(
     onMenuClick: () -> Unit,
@@ -729,6 +626,8 @@ fun HomeTopBar(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -743,8 +642,8 @@ fun HomeTopBar(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Menu,
-                    contentDescription = "القائمة الجانبية",
-                    tint = Color.White,
+                    contentDescription = null,
+                    tint = colors.textPrimary,
                     modifier = Modifier.size(26.dp)
                 )
             }
@@ -754,8 +653,8 @@ fun HomeTopBar(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Refresh,
-                    contentDescription = "تحديث البيانات",
-                    tint = NeonPurplePrimary,
+                    contentDescription = stringResource(id = R.string.refresh),
+                    tint = colors.accent,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -764,7 +663,7 @@ fun HomeTopBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painter = painterResource(id = R.drawable.prime_store_icon),
-                contentDescription = "Prime Store",
+                contentDescription = stringResource(id = R.string.app_name),
                 modifier = Modifier
                     .size(26.dp)
                     .clip(RoundedCornerShape(6.dp))
@@ -776,13 +675,13 @@ fun HomeTopBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "Prime ",
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "Store",
-                        color = NeonPurplePrimary,
+                        color = colors.accent,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -796,8 +695,8 @@ fun HomeTopBar(
         ) {
             Icon(
                 imageVector = Icons.Filled.Search,
-                contentDescription = "بحث",
-                tint = Color.White,
+                contentDescription = stringResource(id = R.string.search),
+                tint = colors.textPrimary,
                 modifier = Modifier.size(26.dp)
             )
         }
@@ -811,6 +710,8 @@ fun StoreHeroBanner(
     onDetailsClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -830,31 +731,8 @@ fun StoreHeroBanner(
                 modifier = Modifier
                     .fillMaxWidth()
                     .wrapContentHeight()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF2E1065), Color(0xFF180A2D), Color(0xFF0F071D))
-                        )
-                    )
+                    .background(colors.card)
             ) {
-                if (featuredApp != null && !featuredApp.screenshotUrls.firstOrNull().isNullOrBlank()) {
-                    coil.compose.AsyncImage(
-                        model = featuredApp.screenshotUrls.first(),
-                        contentDescription = null,
-                        modifier = Modifier.matchParentSize(),
-                        contentScale = ContentScale.Crop,
-                        alpha = 0.22f
-                    )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xEE120824), Color(0xF80E061A))
-                                )
-                            )
-                    )
-                }
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -868,12 +746,12 @@ fun StoreHeroBanner(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(PrimeGradientBrush)
+                                .background(colors.buttonGradient)
                                 .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = if (featuredApp?.isOpenSource == true) "🔓 مفتوح المصدر (FOSS)" else "👑 مميز في المتجر",
-                                color = Color.White,
+                                text = if (featuredApp?.isOpenSource == true) "🔓 FOSS" else "👑 " + stringResource(id = R.string.featured_app),
+                                color = colors.textOnAccent,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -882,8 +760,8 @@ fun StoreHeroBanner(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         Text(
-                            text = featuredApp?.nameAr ?: "متجر Prime Store",
-                            color = Color.White,
+                            text = featuredApp?.nameAr ?: stringResource(id = R.string.app_name),
+                            color = colors.textPrimary,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -893,8 +771,8 @@ fun StoreHeroBanner(
                         Spacer(modifier = Modifier.height(2.dp))
 
                         Text(
-                            text = featuredApp?.descriptionAr?.take(70) ?: "تصفح وحمل التطبيقات بروابط مباشرة وتثبيت سلس داخل التطبيق",
-                            color = PrimeTextSecondary,
+                            text = featuredApp?.descriptionAr?.take(70) ?: stringResource(id = R.string.app_subtitle),
+                            color = colors.textSecondary,
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
                             maxLines = 2,
@@ -906,10 +784,10 @@ fun StoreHeroBanner(
                         if (featuredApp != null) {
                             Box(
                                 modifier = Modifier
-                                    .shadow(6.dp, RoundedCornerShape(14.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
+                                    .shadow(if (colors.isDark) 6.dp else 2.dp, RoundedCornerShape(14.dp), ambientColor = colors.accentDark, spotColor = colors.accent)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(PrimeGradientBrush)
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(14.dp))
+                                    .background(colors.buttonGradient)
+                                    .border(1.dp, colors.border, RoundedCornerShape(14.dp))
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = ripple(color = Color.White)
@@ -920,13 +798,13 @@ fun StoreHeroBanner(
                                     Icon(
                                         imageVector = Icons.Filled.Download,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = colors.textOnAccent,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "تحميل (${featuredApp.size})",
-                                        color = Color.White,
+                                        text = "${stringResource(id = R.string.download)} (${featuredApp.size})",
+                                        color = colors.textOnAccent,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
                                     )
@@ -956,6 +834,8 @@ fun StoreCategoriesSection(
     onCategoryClick: (AppCategory) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -970,13 +850,13 @@ fun StoreCategoriesSection(
             Icon(
                 imageVector = Icons.Filled.Widgets,
                 contentDescription = null,
-                tint = NeonPurplePrimary,
+                tint = colors.accent,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "أقسام المتجر",
-                color = Color.White,
+                text = stringResource(id = R.string.store_sections),
+                color = colors.textPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -1012,40 +892,42 @@ fun CategoryGridItem(
     item: CategoryQuickItem,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(76.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(bounded = false, color = NeonPurplePrimary)
+                indication = ripple(bounded = false, color = colors.accent)
             ) { onClick() }
     ) {
         Box(
             modifier = Modifier
                 .size(64.dp)
                 .shadow(
-                    elevation = 8.dp,
+                    elevation = if (colors.isDark) 8.dp else 2.dp,
                     shape = RoundedCornerShape(18.dp),
-                    ambientColor = Color(item.glowColor).copy(alpha = 0.3f),
-                    spotColor = Color(item.glowColor)
+                    ambientColor = colors.accentDark,
+                    spotColor = colors.accent
                 )
                 .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xFF16101F))
-                .border(1.dp, NeonBorder, RoundedCornerShape(18.dp)),
+                .background(colors.card)
+                .border(1.dp, colors.border, RoundedCornerShape(18.dp)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 painter = painterResource(id = item.category.iconResId),
                 contentDescription = item.title,
-                tint = Color(item.glowColor),
+                tint = colors.accent,
                 modifier = Modifier.size(28.dp)
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = item.title,
-            color = Color.White,
+            color = colors.textPrimary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
@@ -1061,11 +943,13 @@ fun HomeCategoryChip(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) NeonPurplePrimary else Color(0xFF1E142D))
-            .border(1.dp, if (selected) NeonBorderGlow else NeonBorder, RoundedCornerShape(14.dp))
+            .background(if (selected) colors.accent else colors.cardAlt)
+            .border(1.dp, if (selected) colors.accent else colors.border, RoundedCornerShape(14.dp))
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
@@ -1075,7 +959,7 @@ fun HomeCategoryChip(
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = item.titleAr,
-                color = if (selected) Color.White else PrimeTextSecondary,
+                color = if (selected) colors.textOnAccent else colors.textSecondary,
                 fontSize = 12.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
             )

@@ -25,18 +25,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.model.AppItem
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 
 @Composable
 fun FavoritesScreen(
@@ -46,6 +45,7 @@ fun FavoritesScreen(
     onRemoveFavorite: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
     val favoriteApps = remember(favoriteIds, allApps) {
         allApps.filter { favoriteIds.contains(it.id) }
     }
@@ -63,8 +63,8 @@ fun FavoritesScreen(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "المفضلة",
-                color = Color.White,
+                text = stringResource(id = R.string.tab_favorites),
+                color = colors.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -81,15 +81,15 @@ fun FavoritesScreen(
                     Text(text = "💔", fontSize = 48.sp)
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "لا توجد عناصر في المفضلة",
-                        color = Color.White,
+                        text = stringResource(id = R.string.tab_favorites),
+                        color = colors.textPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "اضغط على أيقونة القلب في أي تطبيق لإضافته إلى قائمة المفضلة الخاصة بك.",
-                        color = PrimeTextMuted,
+                        color = colors.textSecondary,
                         fontSize = 13.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
@@ -122,6 +122,8 @@ fun FavoriteCardItem(
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     NeonCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -151,7 +153,7 @@ fun FavoriteCardItem(
                 Column {
                     Text(
                         text = app.name,
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -166,28 +168,27 @@ fun FavoriteCardItem(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = String.format("%.1f", app.rating),
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
                             text = " • ${app.size}",
-                            color = PrimeTextSecondary,
+                            color = colors.textSecondary,
                             fontSize = 12.sp
                         )
                     }
                 }
             }
 
-            // Purple Trash Icon matching Screenshot 6
             IconButton(
                 onClick = onRemove,
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.Filled.Delete,
-                    contentDescription = "حذف من المفضلة",
-                    tint = NeonPurplePrimary,
+                    contentDescription = stringResource(id = R.string.delete),
+                    tint = colors.accent,
                     modifier = Modifier.size(22.dp)
                 )
             }

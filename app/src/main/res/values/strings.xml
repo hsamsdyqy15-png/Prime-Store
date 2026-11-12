@@ -1,3 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Prime Store</string>
+    <string name="app_subtitle">The ultimate app and game store</string>
+    <string name="loading">Loading…</string>
+    <string name="close">Close</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="confirm">Confirm</string>
+    <string name="search">Search</string>
+    <string name="search_hint">Search apps, games, tools…</string>
+    <string name="refresh">Refresh</string>
+    <string name="download">Download</string>
+    <string name="install">Install</string>
+    <string name="update">Update</string>
+    <string name="open">Open</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="share">Share</string>
+    <string name="rate">Rate</string>
+    <string name="version">Version</string>
+    <string name="size">Size</string>
+    <string name="rating">Rating</string>
+    <string name="reviews">Reviews</string>
+    <string name="details">Details</string>
+    <string name="about_app">About this app</string>
+    <string name="features">Features</string>
+    <string name="screenshots">Screenshots</string>
+    <string name="whats_new">What’s New</string>
+    <string name="similar_apps">Similar Apps You May Like</string>
+    <string name="security_analysis">AI Security Scanner</string>
+    <string name="report_problem">Report a Problem</string>
+    <string name="package_name">Package Name</string>
+    <string name="architecture">Architecture</string>
+
+    <!-- Bottom Navigation Tabs -->
+    <string name="tab_home">Home</string>
+    <string name="tab_categories">Categories</string>
+    <string name="tab_favorites">Favorites</string>
+    <string name="tab_downloads">Downloads</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Home Sections & Filters -->
+    <string name="store_sections">Store Sections</string>
+    <string name="newly_added">Newly Added</string>
+    <string name="all_apps">All Apps</string>
+    <string name="filter_all">All</string>
+    <string name="filter_lightweight">Lightweight (&lt;35MB)</string>
+    <string name="filter_top_rated">Top Rated ⭐</string>
+    <string name="filter_newest">Newest 🆕</string>
+    <string name="featured_app">Featured</string>
+    <string name="explore_categories">Explore all categories</string>
+
+    <!-- Settings Items -->
+    <string name="settings_title">Settings</string>
+    <string name="account_profile">Account &amp; Profile</string>
+    <string name="not_logged_in">Not logged in</string>
+    <string name="login_sync_hint">Log in to sync favorites and cloud features</string>
+    <string name="admin_badge">Admin</string>
+    <string name="admin_panel_title">Admin Control Panel</string>
+    <string name="admin_panel_desc">Manage store apps, uploads and releases</string>
+    <string name="app_updates_title">App Updates</string>
+    <string name="app_updates_all_up_to_date">All your apps are up to date</string>
+    <string name="app_updates_available">%1$d updates available for your apps</string>
+    <string name="installed_apps_title">Installed Apps</string>
+    <string name="installed_apps_subtitle">%1$d apps installed from store</string>
+    <string name="store_version_title">Prime Store Version</string>
+    <string name="check_for_updates">Check for Updates</string>
+    <string name="store_language">Language</string>
+    <string name="refresh_apps_data">Refresh Catalog</string>
+    <string name="refresh_apps_desc">Re-sync all store apps from cloud</string>
+    <string name="theme_mode_title">Appearance Mode</string>
+    <string name="theme_mode_system">System</string>
+    <string name="theme_mode_dark">Dark</string>
+    <string name="theme_mode_amoled">AMOLED</string>
+    <string name="theme_mode_light">Light</string>
+    <string name="accent_color_title">Accent Color</string>
+    <string name="ai_translation_title">AI Instant Translation</string>
+    <string name="ai_translation_desc">Translate description and features on-device locally</string>
+    <string name="translation_wifi_only">Download translation models over Wi-Fi only</string>
+    <string name="translation_wifi_desc">To conserve mobile cellular data</string>
+    <string name="notifications">Notifications</string>
+    <string name="notifications_enabled">Enabled</string>
+    <string name="notifications_disabled">Disabled</string>
+    <string name="storage_mgmt">Storage Management</string>
+    <string name="clear_cache">Clear Cache</string>
+    <string name="clear_cache_desc">Free up temporary images and APK files</string>
+    <string name="clear_cache_confirm">Do you want to free up %1$s of temporary files?</string>
+    <string name="about_store">About Prime Store</string>
+    <string name="share_app">Share Prime Store</string>
+    <string name="rate_app">Rate Prime Store</string>
+    <string name="logout">Log Out</string>
+    <string name="login">Log In</string>
+    <string name="sign_up">Sign Up</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+
+    <!-- Language Dialog -->
+    <string name="choose_language">Choose App Language</string>
+    <string name="lang_auto">System Default (Auto)</string>
+    <string name="lang_ar">العربية (Arabic)</string>
+    <string name="lang_en">English</string>
+    <string name="lang_tr">Türkçe (Turkish)</string>
+    <string name="lang_fr">Français (French)</string>
+    <string name="lang_es">Español (Spanish)</string>
+    <string name="lang_de">Deutsch (German)</string>
+    <string name="lang_ru">Русский (Russian)</string>
+    <string name="lang_fa">فارسی (Persian)</string>
+    <string name="lang_ur">اردو (Urdu)</string>
+    <string name="lang_hi">हिन्दी (Hindi)</string>
+    <string name="lang_id">Bahasa Indonesia</string>
+    <string name="lang_pt">Português (Portuguese)</string>
+
+    <!-- Downloads Screen -->
+    <string name="downloads_title">My Downloads</string>
+    <string name="tab_downloading">Downloading</string>
+    <string name="tab_completed">Completed</string>
+    <string name="no_active_downloads">No active downloads</string>
+    <string name="no_completed_downloads">No completed downloads</string>
+    <string name="delete_apk_file">Delete APK file</string>
+
+    <!-- Dialogs & Warnings -->
+    <string name="signature_conflict_title">Package Signature Conflict ⚠️</string>
+    <string name="signature_conflict_msg">This version is signed with a different key than the installed app (v%1$s ➔ v%2$s). Android prevents updating over mismatched signatures. Please uninstall the old version first (data may be lost), then proceed with install.</string>
+    <string name="uninstall_and_install">Uninstall Old &amp; Install New</string>
+    <string name="downgrade_title">Same or Older Version ℹ️</string>
+    <string name="downgrade_msg">You currently have version v%1$s and the downloaded version is v%2$s. Do you want to proceed with installing?</string>
+    <string name="proceed_anyway">Proceed Anyway</string>
+    <string name="low_storage_title">Low Storage Space 💾</string>
+    <string name="low_storage_msg">App size (%1$s) exceeds or is close to available free space (%2$s). Download may fail if storage becomes full.</string>
+    <string name="continue_download">Continue Download</string>
+    <string name="confirm_uninstall_title">Confirm Uninstall</string>
+    <string name="confirm_uninstall_msg">Are you sure you want to uninstall %1$s from your device?</string>
+
+    <!-- Store Self Update -->
+    <string name="update_available_title">New Prime Store Update Available 🚀</string>
+    <string name="update_available_desc">A new version of Prime Store is ready to download.</string>
+    <string name="download_update">Download &amp; Install Update</string>
+    <string name="latest_version_toast">You are already using the latest version of Prime Store!</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Get Started 🚀</string>
+    <string name="onboarding_title_1">Welcome to Prime Store</string>
+    <string name="onboarding_desc_1">Discover top Android apps, games, open-source projects, and advanced tools in one dark neon store.</string>
+    <string name="onboarding_title_2">Smart Signature Management</string>
+    <string name="onboarding_desc_2">Automatic package signature verification, smooth conflict handling, and one-tap clean installation.</string>
+    <string name="onboarding_title_3">Instant AI Translation &amp; Updates</string>
+    <string name="onboarding_desc_3">On-device smart translation to your language, fast updates, and secure background downloads.</string>
+
+    <!-- Categories -->
+    <string name="cat_games">Games</string>
+    <string name="cat_apps">Apps</string>
+    <string name="cat_popular">Popular</string>
+    <string name="cat_new_games">New Games</string>
+    <string name="cat_entertainment">Entertainment</string>
+    <string name="cat_sports">Sports</string>
+    <string name="cat_business">Business</string>
+    <string name="cat_education">Education</string>
+    <string name="cat_music">Music &amp; Audio</string>
+    <string name="cat_tools">Tools</string>
+    <string name="cat_productivity">Productivity</string>
+    <string name="cat_personalization">Personalization</string>
+    <string name="cat_media">Media &amp; Video</string>
+    <string name="cat_social">Social</string>
+    <string name="cat_action">Action</string>
+    <string name="cat_rpg">RPG</string>
+    <string name="cat_simulation">Simulation</string>
+    <string name="cat_emulators">Emulators</string>
+    <string name="cat_retro">Retro</string>
+    <string name="cat_root_tools">Root Tools</string>
+    <string name="cat_open_source">Open Source</string>
+    <string name="cat_more">More</string>
+    <string name="downloads">Downloads</string>
+    <string name="downloading">Downloading</string>
+    <string name="downloaded">Downloaded</string>
+    <string name="clear_all">Clear All</string>
+    <string name="install_app">Install</string>
+    <string name="open_app">Open</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_amoled">AMOLED</string>
+    <string name="theme_light">Light</string>
 </resources>

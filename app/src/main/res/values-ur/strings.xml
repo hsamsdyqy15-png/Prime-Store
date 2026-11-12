@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Prime Store</string>
+    <string name="app_subtitle">متجر التطبيقات والألعاب الأفضل والأسرع</string>
+    <string name="loading">جاري التحميل…</string>
+    <string name="close">إغلاق</string>
+    <string name="cancel">إلغاء</string>
+    <string name="ok">حسناً</string>
+    <string name="save">حفظ</string>
+    <string name="delete">حذف</string>
+    <string name="confirm">تأكيد</string>
+    <string name="search">بحث</string>
+    <string name="search_hint">ابحث عن تطبيقات، ألعاب، أدوات…</string>
+    <string name="refresh">تحديث</string>
+    <string name="download">تحميل</string>
+    <string name="install">تثبيت</string>
+    <string name="update">تحديث</string>
+    <string name="open">فتح</string>
+    <string name="uninstall">حذف</string>
+    <string name="share">مشاركة</string>
+    <string name="rate">تقييم</string>
+    <string name="version">الإصدار</string>
+    <string name="size">الحجم</string>
+    <string name="rating">التقييم</string>
+    <string name="reviews">المراجعات</string>
+    <string name="details">التفاصيل</string>
+    <string name="about_app">حول التطبيق</string>
+    <string name="features">الميزات</string>
+    <string name="screenshots">لقطات الشاشة</string>
+    <string name="whats_new">ما الجديد</string>
+    <string name="similar_apps">تطبيقات مشابهة قد تهمك 💡</string>
+    <string name="security_analysis">تحليل الذكاء الاصطناعي والأمان 🤖</string>
+    <string name="report_problem">إبلاغ عن مشكلة ⚠️</string>
+    <string name="package_name">اسم الحزمة</string>
+    <string name="architecture">المعمارية</string>
+
+    <!-- Bottom Navigation Tabs -->
+    <string name="tab_home">الرئيسية</string>
+    <string name="tab_categories">الأقسام</string>
+    <string name="tab_favorites">المفضلة</string>
+    <string name="tab_downloads">تحميلاتي</string>
+    <string name="tab_settings">الإعدادات</string>
+
+    <!-- Home Sections & Filters -->
+    <string name="store_sections">أقسام المتجر</string>
+    <string name="newly_added">أضيف حديثاً</string>
+    <string name="all_apps">كل التطبيقات</string>
+    <string name="filter_all">الكل</string>
+    <string name="filter_lightweight">حجم خفيف (&lt;35MB)</string>
+    <string name="filter_top_rated">الأعلى تقييماً ⭐</string>
+    <string name="filter_newest">الأحدث 🆕</string>
+    <string name="featured_app">مميز في المتجر</string>
+    <string name="explore_categories">استكشف كافة الأقسام</string>
+
+    <!-- Settings Items -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="account_profile">الحساب والملف الشخصي</string>
+    <string name="not_logged_in">غير مسجل الدخول</string>
+    <string name="login_sync_hint">سجّل دخولك للمزامنة والميزات الكاملة</string>
+    <string name="admin_badge">أدمن</string>
+    <string name="admin_panel_title">لوحة التحكم</string>
+    <string name="admin_panel_desc">إدارة التطبيقات والرفع إلى المتجر (المشرف)</string>
+    <string name="app_updates_title">تحديثات التطبيقات</string>
+    <string name="app_updates_all_up_to_date">جميع تطبيقاتك محدثة لآخر إصدار</string>
+    <string name="app_updates_available">يتوفر %1$d تحديث جديد لتطبيقاتك</string>
+    <string name="installed_apps_title">تطبيقاتي المثبتة</string>
+    <string name="installed_apps_subtitle">%1$d تطبيق مثبت من المتجر</string>
+    <string name="store_version_title">إصدار Prime Store</string>
+    <string name="check_for_updates">بحث عن تحديث</string>
+    <string name="store_language">اللغة</string>
+    <string name="refresh_apps_data">تحديث المنشورات والتطبيقات</string>
+    <string name="refresh_apps_desc">إعادة جلب وتحديث كافة التطبيقات من السحابة</string>
+    <string name="theme_mode_title">نمط المظهر</string>
+    <string name="theme_mode_system">تلقائي (حسب النظام)</string>
+    <string name="theme_mode_dark">داكن</string>
+    <string name="theme_mode_amoled">AMOLED</string>
+    <string name="theme_mode_light">فاتح</string>
+    <string name="accent_color_title">لون التمييز (Accent Color)</string>
+    <string name="ai_translation_title">الترجمة الفورية بالذكاء الاصطناعي</string>
+    <string name="ai_translation_desc">ترجمة تلقائية للوصف والميزات إلى لغة جهازك على الجهاز محلياً</string>
+    <string name="translation_wifi_only">تنزيل نماذج الترجمة عبر Wi-Fi فقط</string>
+    <string name="translation_wifi_desc">لتوفير باقة بيانات الجوال</string>
+    <string name="notifications">الإشعارات</string>
+    <string name="notifications_enabled">مفعلة</string>
+    <string name="notifications_disabled">معطلة</string>
+    <string name="storage_mgmt">إدارة التخزين</string>
+    <string name="clear_cache">مسح ذاكرة التخزين المؤقت</string>
+    <string name="clear_cache_desc">تحرير مساحة الصور والملفات المؤقتة</string>
+    <string name="clear_cache_confirm">المساحة الحالية المستخدمة هي %1$s. هل تريد تحرير هذه المساحة ومسح الملفات المؤقتة؟</string>
+    <string name="about_store">حول التطبيق</string>
+    <string name="share_app">مشاركة التطبيق</string>
+    <string name="rate_app">تقييم التطبيق</string>
+    <string name="logout">تسجيل الخروج</string>
+    <string name="login">تسجيل الدخول</string>
+    <string name="sign_up">إنشاء حساب</string>
+    <string name="email">البريد الإلكتروني</string>
+    <string name="password">كلمة المرور</string>
+
+    <!-- Language Dialog -->
+    <string name="choose_language">اختر لغة التطبيق 🌐</string>
+    <string name="lang_auto">لغة الجهاز الافتراضية (تلقائي)</string>
+    <string name="lang_ar">العربية (Arabic)</string>
+    <string name="lang_en">English</string>
+    <string name="lang_tr">Türkçe (Turkish)</string>
+    <string name="lang_fr">Français (French)</string>
+    <string name="lang_es">Español (Spanish)</string>
+    <string name="lang_de">Deutsch (German)</string>
+    <string name="lang_ru">Русский (Russian)</string>
+    <string name="lang_fa">فارسی (Persian)</string>
+    <string name="lang_ur">اردو (Urdu)</string>
+    <string name="lang_hi">हिन्दी (Hindi)</string>
+    <string name="lang_id">Bahasa Indonesia</string>
+    <string name="lang_pt">Português (Portuguese)</string>
+
+    <!-- Downloads Screen -->
+    <string name="downloads_title">تحميلاتي</string>
+    <string name="tab_downloading">جاري التحميل</string>
+    <string name="tab_completed">تم التحميل</string>
+    <string name="no_active_downloads">لا توجد عمليات تحميل جارية</string>
+    <string name="no_completed_downloads">لا توجد تحميلات سابقة</string>
+    <string name="delete_apk_file">حذف ملف APK</string>
+
+    <!-- Dialogs & Warnings -->
+    <string name="signature_conflict_title">تعارض في توقيع الحزمة ⚠️</string>
+    <string name="signature_conflict_msg">هذه النسخة موقّعة بتوقيع رقمي مختلف عن النسخة المثبتة حالياً على هاتفك (v%1$s ➔ v%2$s). نظام أندرويد يرفض التحديث فوق تطبيق بتوقيع مختلف. لحل المشكلة، يجب حذف النسخة القديمة أولاً ثم متابعة تثبيت هذه النسخة (ملاحظة: قد تفقد بيانات النسخة القديمة).</string>
+    <string name="uninstall_and_install">حذف النسخة السابقة ومتابعة التثبيت</string>
+    <string name="downgrade_title">نسخة مماثلة أو أقدم ℹ️</string>
+    <string name="downgrade_msg">لديك نسخة مثبتة بالفعل بإصدار (v%1$s) والنسخة المحملة هي (v%2$s). هل ترغب في المتابعة وتثبيتها على أي حال؟</string>
+    <string name="proceed_anyway">تثبيت على أي حال</string>
+    <string name="low_storage_title">مساحة التخزين منخفضة 💾</string>
+    <string name="low_storage_msg">حجم التطبيق المطلوب (%1$s) والمساحة الحرة المتبقية في هاتفك هي (%2$s). قد يفشل التحميل إذا امتلأت الذاكرة. هل ترغب في المتابعة على أي حال؟</string>
+    <string name="continue_download">متابعة التحميل</string>
+    <string name="confirm_uninstall_title">تأكيد حذف التطبيق 🗑️</string>
+    <string name="confirm_uninstall_msg">هل أنت متأكد من رغبتك في إلغاء تثبيت تطبيق %1$s نهائياً من هاتفك؟</string>
+
+    <!-- Store Self Update -->
+    <string name="update_available_title">يتوفر تحديث جديد لمتجر Prime Store 🚀</string>
+    <string name="update_available_desc">نسخة جديدة من المتجر متوفرة الآن مع تحسينات وسرعة مضاعفة.</string>
+    <string name="download_update">تحميل وتثبيت التحديث</string>
+    <string name="latest_version_toast">أنت تستخدم أحدث نسخة من متجر Prime Store حالياً!</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_skip">تخطي</string>
+    <string name="onboarding_next">التالي</string>
+    <string name="onboarding_start">ابدأ الاستخدام 🚀</string>
+    <string name="onboarding_title_1">أهلاً بك في متجر Prime Store</string>
+    <string name="onboarding_desc_1">استكشف وحمل أفضل التطبيقات والألعاب والبرامج مفتوحة المصدر وأدوات الروت بتصميم نيون عصري وسرعة فائقة.</string>
+    <string name="onboarding_title_2">إدارة ذكية لتواقيع الحزم</string>
+    <string name="onboarding_desc_2">فحص تلقائي لتوقيع التطبيقات لتفادي أخطاء تعارض الحزم، مع دعم التثبيت التلقائي وحذف النسخ القديمة بضغطة زر واحدة.</string>
+    <string name="onboarding_title_3">ترجمة ذكية وتحديثات فورية</string>
+    <string name="onboarding_desc_3">ترجمة آلية للمحتوى إلى لغتك المفضلة بالذكاء الاصطناعي، ومتابعة فورية لتحديثات تطبيقاتك وتحديث المتجر ذاتياً.</string>
+
+    <!-- Categories -->
+    <string name="cat_games">الألعاب</string>
+    <string name="cat_apps">التطبيقات</string>
+    <string name="cat_popular">الأكثر تحميلاً</string>
+    <string name="cat_new_games">الألعاب الجديدة</string>
+    <string name="cat_entertainment">الترفيه</string>
+    <string name="cat_sports">الرياضة</string>
+    <string name="cat_business">الإنتاجية والعمل</string>
+    <string name="cat_education">التعليم</string>
+    <string name="cat_music">موسيقى وصوتيات</string>
+    <string name="cat_tools">أدوات النظام</string>
+    <string name="cat_productivity">الإنتاجية</string>
+    <string name="cat_personalization">التخصيص</string>
+    <string name="cat_media">الوسائط</string>
+    <string name="cat_social">التواصل الاجتماعي</string>
+    <string name="cat_action">أكشن ومغامرات</string>
+    <string name="cat_rpg">تقمص الأدوار RPG</string>
+    <string name="cat_simulation">محاكاة</string>
+    <string name="cat_emulators">المحاكيات</string>
+    <string name="cat_retro">ريترو وكلاسيك</string>
+    <string name="cat_root_tools">أدوات الروت</string>
+    <string name="cat_open_source">مفتوح المصدر</string>
+    <string name="cat_more">المزيد</string>
+</resources>

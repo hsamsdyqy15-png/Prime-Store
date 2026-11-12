@@ -4,8 +4,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.res.painterResource
-import com.example.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +24,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.HorizontalDivider
@@ -38,23 +35,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
+import com.example.R
 import com.example.data.model.AppCategory
 import com.example.ui.MainTab
 import com.example.ui.UserProfile
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeBackground
-import com.example.ui.theme.PrimeCardBackground
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 
 @Composable
 fun NavigationDrawerContent(
@@ -66,12 +58,14 @@ fun NavigationDrawerContent(
     onLoginClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+
     Column(
         modifier = modifier
             .fillMaxHeight()
             .width(310.dp)
-            .background(Color(0xFF120C1D))
-            .border(1.dp, NeonBorder, RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.border, RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp))
             .padding(vertical = 24.dp, horizontal = 18.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -84,15 +78,15 @@ fun NavigationDrawerContent(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
                     painter = painterResource(id = R.drawable.prime_store_icon),
-                    contentDescription = "Prime Store",
+                    contentDescription = stringResource(id = R.string.app_name),
                     modifier = Modifier
-                        .size(26.dp)
+                        .size(28.dp)
                         .clip(RoundedCornerShape(6.dp))
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Prime Store",
-                    color = Color.White,
+                    text = stringResource(id = R.string.app_name),
+                    color = colors.textPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -100,8 +94,8 @@ fun NavigationDrawerContent(
             IconButton(onClick = onCloseDrawer) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "إغلاق",
-                    tint = Color.White
+                    contentDescription = stringResource(id = R.string.close),
+                    tint = colors.textPrimary
                 )
             }
         }
@@ -109,13 +103,14 @@ fun NavigationDrawerContent(
         Spacer(modifier = Modifier.height(18.dp))
 
         // User Profile Card
+        val profileElevation = if (colors.isDark) 8.dp else 2.dp
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(8.dp, RoundedCornerShape(18.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
+                .shadow(profileElevation, RoundedCornerShape(18.dp), ambientColor = colors.accentDark, spotColor = colors.accent)
                 .clip(RoundedCornerShape(18.dp))
-                .background(PrimeCardBackground)
-                .border(1.dp, NeonBorderGlow, RoundedCornerShape(18.dp))
+                .background(colors.card)
+                .border(1.dp, colors.border, RoundedCornerShape(18.dp))
                 .clickable {
                     if (userProfile == null) {
                         onCloseDrawer()
@@ -129,12 +124,12 @@ fun NavigationDrawerContent(
                     modifier = Modifier
                         .size(46.dp)
                         .clip(CircleShape)
-                        .background(PrimeGradientBrush),
+                        .background(colors.buttonGradient),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = if (userProfile != null) (userProfile.name.firstOrNull()?.toString() ?: "U") else "👤",
-                        color = Color.White,
+                        color = colors.textOnAccent,
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp
                     )
@@ -143,19 +138,19 @@ fun NavigationDrawerContent(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = userProfile?.name ?: "تسجيل الدخول",
-                            color = Color.White,
+                            text = userProfile?.name ?: stringResource(id = R.string.login),
+                            color = colors.textPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                         if (userProfile != null) {
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = "✓", color = NeonPurplePrimary, fontSize = 12.sp)
+                            Text(text = "✓", color = colors.accent, fontSize = 12.sp)
                         }
                     }
                     Text(
-                        text = userProfile?.email ?: "انقر لتسجيل الدخول أو إنشاء حساب",
-                        color = PrimeTextMuted,
+                        text = userProfile?.email ?: stringResource(id = R.string.login_sync_hint),
+                        color = colors.textSecondary,
                         fontSize = 11.sp
                     )
                 }
@@ -165,8 +160,8 @@ fun NavigationDrawerContent(
         Spacer(modifier = Modifier.height(20.dp))
 
         Text(
-            text = "التنقل السريع",
-            color = PrimeTextMuted,
+            text = stringResource(id = R.string.tab_home),
+            color = colors.textSecondary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -174,7 +169,7 @@ fun NavigationDrawerContent(
 
         // Main Navigation Links
         DrawerNavItem(
-            title = "الرئيسية",
+            title = stringResource(id = R.string.tab_home),
             icon = Icons.Filled.Home,
             selected = currentTab == MainTab.HOME,
             onClick = {
@@ -184,7 +179,7 @@ fun NavigationDrawerContent(
         )
 
         DrawerNavItem(
-            title = "الأقسام",
+            title = stringResource(id = R.string.tab_categories),
             icon = Icons.Filled.Widgets,
             selected = currentTab == MainTab.CATEGORIES,
             onClick = {
@@ -194,7 +189,7 @@ fun NavigationDrawerContent(
         )
 
         DrawerNavItem(
-            title = "المفضلة",
+            title = stringResource(id = R.string.tab_favorites),
             icon = Icons.Filled.Favorite,
             selected = currentTab == MainTab.FAVORITES,
             onClick = {
@@ -204,7 +199,7 @@ fun NavigationDrawerContent(
         )
 
         DrawerNavItem(
-            title = "تحميلاتي",
+            title = stringResource(id = R.string.tab_downloads),
             icon = Icons.Filled.Download,
             selected = currentTab == MainTab.DOWNLOADS,
             onClick = {
@@ -214,7 +209,7 @@ fun NavigationDrawerContent(
         )
 
         DrawerNavItem(
-            title = "الإعدادات",
+            title = stringResource(id = R.string.tab_settings),
             icon = Icons.Filled.Settings,
             selected = currentTab == MainTab.SETTINGS,
             onClick = {
@@ -224,12 +219,12 @@ fun NavigationDrawerContent(
         )
 
         Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider(color = NeonBorder)
+        HorizontalDivider(color = colors.border)
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "أبرز الأقسام",
-            color = PrimeTextMuted,
+            text = stringResource(id = R.string.store_sections),
+            color = colors.textSecondary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -256,7 +251,7 @@ fun NavigationDrawerContent(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = category.titleAr,
-                    color = Color.White,
+                    color = colors.textPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -267,8 +262,8 @@ fun NavigationDrawerContent(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Prime Store v2.4.0 • أحدث إصدار",
-            color = PrimeTextMuted,
+            text = "Prime Store v${BuildConfig.VERSION_NAME}",
+            color = colors.textSecondary,
             fontSize = 11.sp
         )
     }
@@ -281,14 +276,16 @@ fun DrawerNavItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) NeonPurplePrimary.copy(alpha = 0.2f) else Color.Transparent)
+            .background(if (selected) colors.accent.copy(alpha = 0.15f) else androidx.compose.ui.graphics.Color.Transparent)
             .border(
                 1.dp,
-                if (selected) NeonBorderGlow else Color.Transparent,
+                if (selected) colors.border else androidx.compose.ui.graphics.Color.Transparent,
                 RoundedCornerShape(14.dp)
             )
             .clickable { onClick() }
@@ -298,13 +295,13 @@ fun DrawerNavItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (selected) NeonPurplePrimary else Color.White,
+            tint = if (selected) colors.accent else colors.textPrimary,
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = title,
-            color = if (selected) NeonPurplePrimary else Color.White,
+            color = if (selected) colors.accent else colors.textPrimary,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             fontSize = 14.sp
         )

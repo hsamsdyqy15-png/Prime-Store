@@ -3,7 +3,6 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,16 +34,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.AccentRed
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 
 data class SignatureConflictData(
     val packageName: String,
@@ -66,9 +62,11 @@ fun SignatureConflictDialog(
     onConfirmUninstallAndInstall: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1F122B),
+        containerColor = colors.surface,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -79,8 +77,8 @@ fun SignatureConflictDialog(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "تعارض في توقيع الحزمة ⚠️",
-                    color = Color.White,
+                    text = stringResource(id = R.string.signature_conflict_title),
+                    color = colors.textPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp
                 )
@@ -89,23 +87,23 @@ fun SignatureConflictDialog(
         text = {
             Column {
                 Text(
-                    text = "هذه النسخة موقّعة بتوقيع رقمي مختلف عن النسخة المثبتة حالياً على هاتفك (v${data.installedVersionName} ➔ v${data.newVersionName}).",
-                    color = Color(0xFFE2E8F0),
+                    text = stringResource(id = R.string.signature_conflict_msg, data.installedVersionName, data.newVersionName),
+                    color = colors.textPrimary,
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF2E1528))
-                        .border(1.dp, AccentRed.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .background(colors.danger.copy(alpha = 0.15f))
+                        .border(1.dp, colors.danger.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                         .padding(10.dp)
                 ) {
                     Text(
-                        text = "نظام أندرويد يرفض التحديث فوق تطبيق بتوقيع مختلف. لحل المشكلة، يجب حذف النسخة القديمة أولاً ثم متابعة تثبيت هذه النسخة.\n(ملاحظة: قد تفقد بيانات النسخة القديمة)",
-                        color = Color(0xFFFFB4AB),
+                        text = "Android OS Security: Signature mismatch cannot be upgraded directly without clean uninstall.",
+                        color = colors.danger,
                         fontSize = 12.sp,
                         lineHeight = 18.sp
                     )
@@ -115,17 +113,17 @@ fun SignatureConflictDialog(
         confirmButton = {
             Button(
                 onClick = onConfirmUninstallAndInstall,
-                colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.danger),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(imageVector = Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("حذف القديمة ومتابعة التثبيت", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(stringResource(id = R.string.uninstall_and_install), color = Color.White, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("إلغاء", color = PrimeTextMuted)
+                Text(stringResource(id = R.string.cancel), color = colors.textSecondary)
             }
         }
     )
@@ -137,21 +135,23 @@ fun DowngradeOrSameVersionDialog(
     onProceedAnyway: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1E142D),
+        containerColor = colors.surface,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Filled.Info,
                     contentDescription = null,
-                    tint = NeonPurplePrimary,
+                    tint = colors.accent,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "النسخة مثبتة بالفعل ℹ️",
-                    color = Color.White,
+                    text = stringResource(id = R.string.downgrade_title),
+                    color = colors.textPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp
                 )
@@ -159,8 +159,8 @@ fun DowngradeOrSameVersionDialog(
         },
         text = {
             Text(
-                text = "لديك نسخة أحدث أو مماثلة مثبتة بالفعل على جهازك (المثبتة: v${data.installedVersionName}، ملف التثبيت: v${data.newVersionName}). هل ترغب في تثبيتها فوق النسخة الحالية على أي حال؟",
-                color = Color.White,
+                text = stringResource(id = R.string.downgrade_msg, data.installedVersionName, data.newVersionName),
+                color = colors.textPrimary,
                 fontSize = 14.sp,
                 lineHeight = 20.sp
             )
@@ -168,15 +168,15 @@ fun DowngradeOrSameVersionDialog(
         confirmButton = {
             Button(
                 onClick = onProceedAnyway,
-                colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("تثبيت على أي حال", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(stringResource(id = R.string.proceed_anyway), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("إلغاء", color = PrimeTextMuted)
+                Text(stringResource(id = R.string.cancel), color = colors.textSecondary)
             }
         }
     )
@@ -189,9 +189,11 @@ fun LowStorageDialog(
     onProceedAnyway: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF261220),
+        containerColor = colors.surface,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -202,31 +204,31 @@ fun LowStorageDialog(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "مساحة التخزين منخفضة 💾",
-                    color = Color.White,
+                    text = stringResource(id = R.string.low_storage_title),
+                    color = colors.textPrimary,
                     fontWeight = FontWeight.Bold
                 )
             }
         },
         text = {
             Text(
-                text = "حجم التطبيق المطلوب ($neededSize) والمساحة الحرة المتبقية في هاتفك هي ($availableSize). قد يفشل التحميل إذا امتلأت الذاكرة. هل ترغب في المتابعة على أي حال؟",
-                color = Color(0xFFF3E8FF),
+                text = stringResource(id = R.string.low_storage_msg, neededSize, availableSize),
+                color = colors.textPrimary,
                 fontSize = 14.sp
             )
         },
         confirmButton = {
             Button(
                 onClick = onProceedAnyway,
-                colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("متابعة التحميل", color = Color.White)
+                Text(stringResource(id = R.string.continue_download), color = colors.textOnAccent)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("إلغاء", color = PrimeTextMuted)
+                Text(stringResource(id = R.string.cancel), color = colors.textSecondary)
             }
         }
     )
@@ -238,6 +240,7 @@ fun ProblemReportDialog(
     onSubmit: (reason: String, details: String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
     var selectedReason by remember { mutableStateOf("توقف مفاجئ للتطبيق") }
     var detailsText by remember { mutableStateOf("") }
     val reasons = listOf(
@@ -250,11 +253,11 @@ fun ProblemReportDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1E142D),
+        containerColor = colors.surface,
         title = {
             Text(
-                text = "إبلاغ عن مشكلة في $appName ⚠️",
-                color = Color.White,
+                text = "$appName ⚠️",
+                color = colors.textPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
@@ -262,8 +265,8 @@ fun ProblemReportDialog(
         text = {
             Column {
                 Text(
-                    text = "حدد نوع المشكلة:",
-                    color = PrimeTextSecondary,
+                    text = stringResource(id = R.string.report_problem),
+                    color = colors.textSecondary,
                     fontSize = 13.sp
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -273,7 +276,8 @@ fun ProblemReportDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) Color(0xFF3B205C) else Color(0xFF140C20))
+                            .background(if (isSelected) colors.cardAlt else colors.surface)
+                            .border(1.dp, if (isSelected) colors.accent else colors.border, RoundedCornerShape(8.dp))
                             .clickable { selectedReason = reason }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -284,7 +288,7 @@ fun ProblemReportDialog(
                         )
                         Text(
                             text = reason,
-                            color = if (isSelected) Color.White else PrimeTextMuted,
+                            color = if (isSelected) colors.textPrimary else colors.textSecondary,
                             fontSize = 13.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
@@ -293,26 +297,20 @@ fun ProblemReportDialog(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = "تفاصيل إضافية (اختياري):",
-                    color = PrimeTextSecondary,
-                    fontSize = 13.sp
-                )
-                Spacer(modifier = Modifier.height(6.dp))
                 OutlinedTextField(
                     value = detailsText,
                     onValueChange = { detailsText = it },
-                    placeholder = { Text("اكتب وصفاً مختصراً للمشكلة...", color = PrimeTextMuted, fontSize = 12.sp) },
+                    placeholder = { Text("تفاصيل المشكلة...", color = colors.textSecondary, fontSize = 12.sp) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(85.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = NeonPurplePrimary,
-                        unfocusedBorderColor = NeonBorder,
-                        focusedContainerColor = Color(0xFF140D20),
-                        unfocusedContainerColor = Color(0xFF140D20)
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary,
+                        focusedBorderColor = colors.accent,
+                        unfocusedBorderColor = colors.border,
+                        focusedContainerColor = colors.card,
+                        unfocusedContainerColor = colors.card
                     ),
                     shape = RoundedCornerShape(10.dp)
                 )
@@ -324,15 +322,15 @@ fun ProblemReportDialog(
                     onSubmit(selectedReason, detailsText)
                     onDismiss()
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("إرسال البلاغ", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(stringResource(id = R.string.save), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("إلغاء", color = PrimeTextMuted)
+                Text(stringResource(id = R.string.cancel), color = colors.textSecondary)
             }
         }
     )

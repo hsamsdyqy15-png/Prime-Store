@@ -36,10 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,12 +52,7 @@ import com.example.ui.SortOrder
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 
 @Composable
 fun CategoriesScreen(
@@ -74,6 +68,8 @@ fun CategoriesScreen(
     onSortChange: (SortOrder) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -93,15 +89,15 @@ fun CategoriesScreen(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "رجوع",
-                    tint = Color.White,
+                    contentDescription = stringResource(id = R.string.close),
+                    tint = colors.textPrimary,
                     modifier = Modifier.size(24.dp)
                 )
             }
 
             Text(
-                text = selectedCategory?.titleAr ?: "الأقسام الموحدة",
-                color = Color.White,
+                text = selectedCategory?.titleAr ?: stringResource(id = R.string.tab_categories),
+                color = colors.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -112,23 +108,22 @@ fun CategoriesScreen(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Search,
-                    contentDescription = "بحث",
-                    tint = Color.White,
+                    contentDescription = stringResource(id = R.string.search),
+                    tint = colors.textPrimary,
                     modifier = Modifier.size(24.dp)
                 )
             }
         }
 
         if (selectedCategory == null) {
-            // Grouped Categories List: عام, تطبيقات, ألعاب
+            // Grouped Categories List
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Group 1: عام
                 item {
-                    CategoryGroupHeader(title = "🌐 أقسام عامة", count = StoreCategories.GENERAL.size - 1)
+                    CategoryGroupHeader(title = "🌐 " + stringResource(id = R.string.store_sections), count = StoreCategories.GENERAL.size - 1)
                 }
                 items(StoreCategories.GENERAL.filter { it.key != "all" }) { item ->
                     UnifiedCategoryCard(
@@ -149,10 +144,9 @@ fun CategoriesScreen(
                     )
                 }
 
-                // Group 2: تطبيقات
                 item {
                     Spacer(modifier = Modifier.height(10.dp))
-                    CategoryGroupHeader(title = "🤖 أقسام التطبيقات (${StoreCategories.APPS.size})", count = StoreCategories.APPS.size)
+                    CategoryGroupHeader(title = "🤖 " + stringResource(id = R.string.cat_apps) + " (${StoreCategories.APPS.size})", count = StoreCategories.APPS.size)
                 }
                 items(StoreCategories.APPS) { item ->
                     UnifiedCategoryCard(
@@ -179,10 +173,9 @@ fun CategoriesScreen(
                     )
                 }
 
-                // Group 3: ألعاب
                 item {
                     Spacer(modifier = Modifier.height(10.dp))
-                    CategoryGroupHeader(title = "🎮 أقسام الألعاب (${StoreCategories.GAMES.size})", count = StoreCategories.GAMES.size)
+                    CategoryGroupHeader(title = "🎮 " + stringResource(id = R.string.cat_games) + " (${StoreCategories.GAMES.size})", count = StoreCategories.GAMES.size)
                 }
                 items(StoreCategories.GAMES) { item ->
                     UnifiedCategoryCard(
@@ -208,7 +201,6 @@ fun CategoriesScreen(
                 }
             }
         } else {
-            // Filtered Category Screen with Apps & Sort Chips
             CategoryAppsList(
                 category = selectedCategory,
                 allApps = allApps,
@@ -223,6 +215,7 @@ fun CategoriesScreen(
 
 @Composable
 fun CategoryGroupHeader(title: String, count: Int) {
+    val colors = PrimeTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -231,7 +224,7 @@ fun CategoryGroupHeader(title: String, count: Int) {
     ) {
         Text(
             text = title,
-            color = NeonPurplePrimary,
+            color = colors.accent,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold
         )
@@ -245,6 +238,8 @@ fun UnifiedCategoryCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+
     NeonCard(
         modifier = modifier
             .fillMaxWidth()
@@ -264,8 +259,8 @@ fun UnifiedCategoryCard(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF221733))
-                    .border(1.dp, NeonBorder, RoundedCornerShape(14.dp)),
+                    .background(colors.cardAlt)
+                    .border(1.dp, colors.border, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = item.emoji, fontSize = 22.sp)
@@ -276,13 +271,13 @@ fun UnifiedCategoryCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.titleAr,
-                    color = Color.White,
+                    color = colors.textPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "${item.titleEn} • $appCount تطبيق متوفر",
-                    color = PrimeTextSecondary,
+                    text = "${item.titleEn} • $appCount",
+                    color = colors.textSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -293,7 +288,7 @@ fun UnifiedCategoryCard(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = null,
-                tint = NeonPurplePrimary,
+                tint = colors.accent,
                 modifier = Modifier.size(15.dp)
             )
         }
@@ -309,6 +304,7 @@ fun CategoryAppsList(
     onAppClick: (String) -> Unit,
     onDownloadClick: (String) -> Unit
 ) {
+    val colors = PrimeTheme.colors
     var openSourceOnly by remember { mutableStateOf(false) }
 
     val filteredApps = remember(category, allApps, sortOrder, openSourceOnly) {
@@ -335,7 +331,6 @@ fun CategoryAppsList(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Sort & Filter Chips
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -343,23 +338,23 @@ fun CategoryAppsList(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             SortChipItem(
-                label = "الأكثر شعبية",
+                label = stringResource(id = R.string.cat_popular),
                 selected = sortOrder == SortOrder.POPULAR,
                 onClick = { onSortChange(SortOrder.POPULAR) }
             )
             SortChipItem(
-                label = "الأعلى تقييماً",
+                label = stringResource(id = R.string.filter_top_rated),
                 selected = sortOrder == SortOrder.RATING,
                 onClick = { onSortChange(SortOrder.RATING) }
             )
             SortChipItem(
-                label = "الأحدث",
+                label = stringResource(id = R.string.filter_newest),
                 selected = sortOrder == SortOrder.NEWEST,
                 onClick = { onSortChange(SortOrder.NEWEST) }
             )
             if (category != AppCategory.OPEN_SOURCE) {
                 SortChipItem(
-                    label = "🔓 FOSS فقط",
+                    label = "🔓 FOSS",
                     selected = openSourceOnly,
                     onClick = { openSourceOnly = !openSourceOnly }
                 )
@@ -378,29 +373,23 @@ fun CategoryAppsList(
                         modifier = Modifier
                             .size(64.dp)
                             .clip(RoundedCornerShape(18.dp))
-                            .background(Color(0xFF221733))
-                            .border(1.dp, NeonBorder, RoundedCornerShape(18.dp)),
+                            .background(colors.cardAlt)
+                            .border(1.dp, colors.border, RoundedCornerShape(18.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             painter = painterResource(id = category.iconResId),
                             contentDescription = null,
-                            tint = Color(category.accentHex),
+                            tint = colors.accent,
                             modifier = Modifier.size(32.dp)
                         )
                     }
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "لا توجد تطبيقات منشورة في ${category.titleAr} بعد",
-                        color = Color.White,
+                        text = category.titleAr,
+                        color = colors.textPrimary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "تظهر هنا فقط التطبيقات التي ينشرها الأدمن مباشرة",
-                        color = PrimeTextMuted,
-                        fontSize = 12.sp
                     )
                 }
             }
@@ -434,7 +423,7 @@ fun CategoryAppsList(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = app.nameAr,
-                                        color = Color.White,
+                                        color = colors.textPrimary,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
@@ -446,13 +435,13 @@ fun CategoryAppsList(
                                         Box(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(4.dp))
-                                                .background(Color(0xFF1E3A8A))
-                                                .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(4.dp))
+                                                .background(colors.accent.copy(alpha = 0.2f))
+                                                .border(1.dp, colors.accent, RoundedCornerShape(4.dp))
                                                 .padding(horizontal = 5.dp, vertical = 1.dp)
                                         ) {
                                             Text(
                                                 text = "FOSS",
-                                                color = Color(0xFF93C5FD),
+                                                color = colors.accent,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -465,13 +454,13 @@ fun CategoryAppsList(
                                 ) {
                                     Text(
                                         text = app.displayVersionBadge,
-                                        color = Color(0xFFD8B4FE),
+                                        color = colors.accent,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = " • ${app.size} • ",
-                                        color = PrimeTextMuted,
+                                        color = colors.textSecondary,
                                         fontSize = 10.sp
                                     )
                                     Icon(
@@ -483,14 +472,14 @@ fun CategoryAppsList(
                                     Spacer(modifier = Modifier.width(2.dp))
                                     Text(
                                         text = String.format(java.util.Locale.US, "%.1f", app.rating),
-                                        color = Color.White,
+                                        color = colors.textPrimary,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 Text(
                                     text = app.displayCategoryTitle,
-                                    color = NeonPurplePrimary,
+                                    color = colors.accent,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -498,22 +487,22 @@ fun CategoryAppsList(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF281C38))
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable { onDownloadClick(app.id) }
                                     .padding(horizontal = 12.dp, vertical = 7.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         imageVector = Icons.Filled.Download,
-                                        contentDescription = "تثبيت",
-                                        tint = NeonPurplePrimary,
+                                        contentDescription = stringResource(id = R.string.download),
+                                        tint = colors.accent,
                                         modifier = Modifier.size(15.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "تحميل",
-                                        color = Color.White,
+                                        text = stringResource(id = R.string.download),
+                                        color = colors.textPrimary,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -536,19 +525,21 @@ fun SortChipItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
+
     Box(
         modifier = Modifier
             .defaultMinSize(minHeight = 36.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) NeonPurplePrimary else Color(0xFF1E162A))
-            .border(1.dp, if (selected) NeonBorderGlow else NeonBorder, RoundedCornerShape(12.dp))
+            .background(if (selected) colors.accent else colors.cardAlt)
+            .border(1.dp, if (selected) colors.accent else colors.border, RoundedCornerShape(12.dp))
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            color = if (selected) Color.White else PrimeTextSecondary,
+            color = if (selected) colors.textOnAccent else colors.textSecondary,
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
         )

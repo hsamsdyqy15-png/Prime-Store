@@ -35,34 +35,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.MainTab
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurpleGlow
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeTextMuted
+import com.example.ui.theme.PrimeTheme
 
 data class NavTabItem(
     val tab: MainTab,
-    val titleAr: String,
-    val titleEn: String,
+    val titleResId: Int,
     val filledIcon: ImageVector,
     val outlinedIcon: ImageVector,
     val testTag: String
 )
 
 val NAV_TABS = listOf(
-    NavTabItem(MainTab.HOME, "الرئيسية", "Home", Icons.Filled.Home, Icons.Outlined.Home, "tab_home"),
-    NavTabItem(MainTab.CATEGORIES, "الأقسام", "Categories", Icons.Filled.Widgets, Icons.Outlined.Widgets, "tab_categories"),
-    NavTabItem(MainTab.FAVORITES, "المفضلة", "Favorites", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder, "tab_favorites"),
-    NavTabItem(MainTab.DOWNLOADS, "تحميلاتي", "Downloads", Icons.Filled.Download, Icons.Outlined.Download, "tab_downloads"),
-    NavTabItem(MainTab.SETTINGS, "الإعدادات", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "tab_settings")
+    NavTabItem(MainTab.HOME, R.string.tab_home, Icons.Filled.Home, Icons.Outlined.Home, "tab_home"),
+    NavTabItem(MainTab.CATEGORIES, R.string.tab_categories, Icons.Filled.Widgets, Icons.Outlined.Widgets, "tab_categories"),
+    NavTabItem(MainTab.FAVORITES, R.string.tab_favorites, Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder, "tab_favorites"),
+    NavTabItem(MainTab.DOWNLOADS, R.string.tab_downloads, Icons.Filled.Download, Icons.Outlined.Download, "tab_downloads"),
+    NavTabItem(MainTab.SETTINGS, R.string.tab_settings, Icons.Filled.Settings, Icons.Outlined.Settings, "tab_settings")
 )
 
 @Composable
@@ -71,14 +67,21 @@ fun PrimeBottomNavBar(
     onTabSelected: (MainTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+    val navElevation = if (colors.isDark) 16.dp else 6.dp
+
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(elevation = 16.dp, ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
-            .background(Color(0xFF0F0A1A))
+            .shadow(
+                elevation = navElevation,
+                ambientColor = colors.accentDark,
+                spotColor = colors.accent
+            )
+            .background(colors.surface)
             .border(
                 width = 1.dp,
-                color = NeonBorder.copy(alpha = 0.5f),
+                color = colors.border,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             )
             .windowInsetsPadding(WindowInsets.navigationBars)
@@ -92,42 +95,46 @@ fun PrimeBottomNavBar(
         ) {
             NAV_TABS.forEach { item ->
                 val isSelected = currentTab == item.tab
-                val iconColor = if (isSelected) NeonPurplePrimary else PrimeTextMuted
-                val textColor = if (isSelected) NeonPurplePrimary else PrimeTextMuted
+                val tabColor = if (isSelected) colors.accent else colors.textSecondary
+                val title = stringResource(id = item.titleResId)
 
                 Column(
                     modifier = Modifier
                         .testTag(item.testTag)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = ripple(bounded = false, color = NeonPurplePrimary)
+                            indication = ripple(bounded = false, color = colors.accent)
                         ) { onTabSelected(item.tab) }
                         .padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     Box(
-                        modifier = Modifier
-                            .size(28.dp),
+                        modifier = Modifier.size(28.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (isSelected) {
+                        if (isSelected && colors.isDark) {
                             Box(
                                 modifier = Modifier
                                     .size(28.dp)
-                                    .shadow(elevation = 8.dp, shape = RoundedCornerShape(8.dp), ambientColor = NeonPurpleGlow, spotColor = NeonPurplePrimary)
+                                    .shadow(
+                                        elevation = 8.dp,
+                                        shape = RoundedCornerShape(8.dp),
+                                        ambientColor = colors.accentGlow,
+                                        spotColor = colors.accent
+                                    )
                             )
                         }
                         Icon(
                             imageVector = if (isSelected) item.filledIcon else item.outlinedIcon,
-                            contentDescription = item.titleAr,
-                            tint = iconColor,
+                            contentDescription = title,
+                            tint = tabColor,
                             modifier = Modifier.size(24.dp)
                         )
                     }
                     Text(
-                        text = item.titleAr,
-                        color = textColor,
+                        text = title,
+                        color = tabColor,
                         fontSize = 11.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                         modifier = Modifier.padding(top = 2.dp)

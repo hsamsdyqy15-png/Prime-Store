@@ -115,40 +115,31 @@ fun PrimeStoreApp(
         }
     }
 
-    val isRtl = uiState.currentLanguage in listOf("ar", "fa", "ur")
-    val layoutDirection = if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+    val colors = com.example.ui.theme.PrimeTheme.colors
 
-    // Dynamic background based on theme mode
-    val appBackgroundColor = when (uiState.themeMode) {
-        "amoled" -> Color.Black
-        "light" -> Color(0xFFF8F5FC)
-        else -> PrimeBackground
-    }
-
-    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(appBackgroundColor)
-        ) {
-            if (uiState.showSplash) {
-                SplashScreen(
-                    onDismiss = { viewModel.dismissSplash() }
-                )
-            } else if (uiState.showOnboarding) {
-                OnboardingScreen(
-                    onFinishOnboarding = { viewModel.completeOnboarding() },
-                    onRequestNotificationPermission = { /* handled in OnboardingScreen */ }
-                )
-            } else {
-                ModalNavigationDrawer(
-                    drawerState = drawerState,
-                    gesturesEnabled = !uiState.isSearching && uiState.selectedAppId == null && !uiState.showUpdatesScreen && !uiState.showInstalledAppsScreen,
-                    drawerContent = {
-                        ModalDrawerSheet(
-                            drawerContainerColor = Color(0xFF120C1D),
-                            drawerContentColor = Color.White
-                        ) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+    ) {
+        if (uiState.showSplash) {
+            SplashScreen(
+                onDismiss = { viewModel.dismissSplash() }
+            )
+        } else if (uiState.showOnboarding) {
+            OnboardingScreen(
+                onFinishOnboarding = { viewModel.completeOnboarding() },
+                onRequestNotificationPermission = { /* handled in OnboardingScreen */ }
+            )
+        } else {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                gesturesEnabled = !uiState.isSearching && uiState.selectedAppId == null && !uiState.showUpdatesScreen && !uiState.showInstalledAppsScreen,
+                drawerContent = {
+                    ModalDrawerSheet(
+                        drawerContainerColor = colors.surface,
+                        drawerContentColor = colors.textPrimary
+                    ) {
                             NavigationDrawerContent(
                                 userProfile = uiState.userProfile,
                                 currentTab = uiState.currentTab,
@@ -179,7 +170,7 @@ fun PrimeStoreApp(
                                 )
                             }
                         },
-                        containerColor = appBackgroundColor
+                        containerColor = colors.background
                     ) { innerPadding ->
                         Box(
                             modifier = Modifier
@@ -452,14 +443,14 @@ fun PrimeStoreApp(
             if (uiState.showInstallPermissionDialog) {
                 AlertDialog(
                     onDismissRequest = { viewModel.dismissInstallPermissionDialog() },
-                    containerColor = Color(0xFF1E142D),
+                    containerColor = colors.card,
                     title = {
-                        Text("تثبيت التطبيقات 📦", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("تثبيت التطبيقات 📦", color = colors.textPrimary, fontWeight = FontWeight.Bold)
                     },
                     text = {
                         Text(
                             "يرجى السماح لـ Prime Store بتثبيت التطبيقات لمتابعة التثبيت",
-                            color = Color.White,
+                            color = colors.textSecondary,
                             fontSize = 14.sp
                         )
                     },
@@ -469,14 +460,14 @@ fun PrimeStoreApp(
                                 viewModel.dismissInstallPermissionDialog()
                                 ApkInstaller.openUnknownAppSourcesSettings(context)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                         ) {
-                            Text("السماح", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("السماح", color = colors.textOnAccent, fontWeight = FontWeight.Bold)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { viewModel.dismissInstallPermissionDialog() }) {
-                            Text("إلغاء", color = PrimeTextMuted)
+                            Text("إلغاء", color = colors.textMuted)
                         }
                     }
                 )
@@ -536,19 +527,18 @@ fun PrimeStoreApp(
             ) {
                 Box(
                     modifier = Modifier
-                        .background(Color(0xFF221538), RoundedCornerShape(16.dp))
-                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(16.dp))
+                        .background(colors.card, RoundedCornerShape(16.dp))
+                        .border(1.dp, colors.border, RoundedCornerShape(16.dp))
                         .padding(horizontal = 20.dp, vertical = 12.dp)
                 ) {
                     Text(
                         text = activeToast.orEmpty(),
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 13.sp
                     )
                 }
             }
         }
-    }
 
     // Auto resume install after permission is granted or after conflict app is uninstalled
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
