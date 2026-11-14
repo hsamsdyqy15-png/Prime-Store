@@ -42,7 +42,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
@@ -61,9 +63,8 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -80,7 +81,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,49 +88,32 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.github.AdminPublishCoordinator
+import com.example.data.github.AdminPublishDraft
 import com.example.data.github.GitHubStorageHelper
-import com.example.data.github.GitHubUploadService
+import com.example.data.github.GitHubTokenProvider
 import com.example.data.installer.ApkAbiDetector
-import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
 import com.example.data.model.StoreCategories
+import com.example.data.supabase.SecureLogger
 import com.example.data.supabase.SupabaseClient
 import com.example.ui.components.NeonCard
 import com.example.ui.theme.PrimeTheme
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
-import java.util.UUID
 
 @Composable
 fun AdminPanelScreen(
     adminEmail: String,
     apps: List<AppItem>,
-    accessToken: String? = null,
-    onSaveApp: (
-        id: String?,
-        name: String,
-        category: AppCategory,
-        rating: Float,
-        size: String,
-        description: String,
-        features: List<String>,
-        iconUrl: String,
-        fileUrl: String,
-        screenshots: List<String>,
-        isOpenSource: Boolean,
-        sourceCodeUrl: String,
-        supportedAbis: String,
-        version: String,
-        categoryKey: String
-    ) -> Unit,
+    onCatalogChanged: () -> Unit,
     onDeleteApp: (String) -> Unit,
+    onSessionExpired: () -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -139,10 +122,9 @@ fun AdminPanelScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val resolvedToken = accessToken ?: remember(context) {
-        context.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)
-            .getString("ps_token", null)
-    }
+    val isOwner = remember(adminEmail) { SupabaseClient.isOwner(adminEmail) }
+    val tokenStatus by GitHubTokenProvider.status.collectAsState()
+    val publishState by AdminPublishCoordinator.state.collectAsState()
 
     var editingAppId by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
@@ -167,14 +149,7 @@ fun AdminPanelScreen(
     var pickedApkUri by remember { mutableStateOf<Uri?>(null) }
     var pickedApkFileName by remember { mutableStateOf("") }
     var pickedApkSizeBytes by remember { mutableLongStateOf(0L) }
-
-    var isUploading by remember { mutableStateOf(false) }
-    var isSaving by remember { mutableStateOf(false) }
-    var uploadStepLabel by remember { mutableStateOf("") }
-    var uploadCurrentStep by remember { mutableIntStateOf(0) }
-    var uploadTotalSteps by remember { mutableIntStateOf(0) }
-    var uploadProgress by remember { mutableFloatStateOf(0f) }
-    var uploadJob by remember { mutableStateOf<Job?>(null) }
+    var draftInitialized by remember { mutableStateOf(false) }
 
     var showCategoryModal by remember { mutableStateOf(false) }
     var categorySearchQuery by remember { mutableStateOf("") }
@@ -185,17 +160,122 @@ fun AdminPanelScreen(
     var storeUpdateApkUrl by remember { mutableStateOf("") }
     var isPublishingStoreUpdate by remember { mutableStateOf(false) }
 
-    var ghOwner by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_OWNER) }
-    var ghRepo by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_REPO) }
-    var ghToken by remember { mutableStateOf("") }
-    var isTestingGhConnection by remember { mutableStateOf(false) }
-    var isSavingGhSettings by remember { mutableStateOf(false) }
+    // Owner-only GitHub token input state (write-only; never populated with stored secret)
+    var ownerTokenInput by remember { mutableStateOf("") }
+    var isSavingGhKey by remember { mutableStateOf(false) }
+    var isTestingGhKey by remember { mutableStateOf(false) }
+    var isDeletingGhKey by remember { mutableStateOf(false) }
 
+    // 5-step Publish Readiness Check state
+    var isRunningReadinessCheck by remember { mutableStateOf(false) }
+    val readinessSteps = remember {
+        mutableStateListOf(
+            ReadinessStepResult(R.string.self_check_session),
+            ReadinessStepResult(R.string.self_check_admin_list),
+            ReadinessStepResult(R.string.self_check_central_key),
+            ReadinessStepResult(R.string.self_check_gh_repo),
+            ReadinessStepResult(R.string.self_check_apps_write)
+        )
+    }
+
+    var showOver2GbAlert by remember { mutableStateOf(false) }
+    var appToDelete by remember { mutableStateOf<AppItem?>(null) }
+    var fullscreenPreviewUrl by remember { mutableStateOf<Any?>(null) }
+    var verifiedSavedApp by remember { mutableStateOf<AppItem?>(null) }
+    var supabaseErrorResult by remember { mutableStateOf<SupabaseClient.SupabaseMutationResult?>(null) }
+
+    fun buildCurrentDraft(): AdminPublishDraft = AdminPublishDraft(
+        editingAppId = editingAppId,
+        name = name,
+        categoryKey = selectedCategoryItem.key,
+        versionStr = versionStr,
+        ratingStr = ratingStr,
+        sizeStr = sizeStr,
+        description = description,
+        featuresStr = featuresStr,
+        directFileUrl = directFileUrl,
+        storedIconUrl = storedIconUrl,
+        storedScreenshotUrls = storedScreenshotUrls.toList(),
+        isOpenSource = isOpenSource,
+        sourceCodeUrl = sourceCodeUrl,
+        detectedAbis = detectedAbis,
+        pickedIconUriStr = pickedIconUri?.toString(),
+        pickedShotUriStrs = pickedShotUris.map { it.toString() },
+        pickedApkUriStr = pickedApkUri?.toString(),
+        pickedApkFileName = pickedApkFileName,
+        pickedApkSizeBytes = pickedApkSizeBytes
+    )
+
+    fun clearForm(clearPersistedDraft: Boolean = true) {
+        editingAppId = null
+        name = ""
+        selectedCategoryItem = StoreCategories.find("apps")
+        versionStr = "1.0.0"
+        ratingStr = "4.5"
+        sizeStr = "120 MB"
+        description = ""
+        featuresStr = ""
+        storedIconUrl = ""
+        directFileUrl = ""
+        isOpenSource = false
+        sourceCodeUrl = ""
+        detectedAbis = context.getString(R.string.abi_universal_all)
+        storedScreenshotUrls.clear()
+
+        pickedIconUri = null
+        apkExtractedIconBytes = null
+        pickedShotUris.clear()
+        pickedApkUri = null
+        pickedApkFileName = ""
+        pickedApkSizeBytes = 0L
+        if (clearPersistedDraft) {
+            AdminPublishCoordinator.clearDraft(context)
+        }
+    }
+
+    LaunchedEffect(adminEmail) {
+        if (!SupabaseClient.isAdmin(adminEmail)) {
+            onBackClick()
+        }
+    }
+
+    // Proactive session refresh + metadata status + draft restoration on panel open
     LaunchedEffect(Unit) {
-        val cfg = GitHubStorageHelper.loadConfig(context)
-        ghOwner = cfg.owner
-        ghRepo = cfg.repo
-        ghToken = cfg.token
+        GitHubStorageHelper.purgeLegacyLocalToken(context)
+
+        val draft = AdminPublishCoordinator.loadDraft(context)
+        if (draft != null && !draftInitialized) {
+            editingAppId = draft.editingAppId
+            name = draft.name
+            selectedCategoryItem = StoreCategories.find(draft.categoryKey)
+            versionStr = draft.versionStr
+            ratingStr = draft.ratingStr
+            sizeStr = draft.sizeStr
+            description = draft.description
+            featuresStr = draft.featuresStr
+            directFileUrl = draft.directFileUrl
+            storedIconUrl = draft.storedIconUrl
+            storedScreenshotUrls.clear()
+            storedScreenshotUrls.addAll(draft.storedScreenshotUrls)
+            isOpenSource = draft.isOpenSource
+            sourceCodeUrl = draft.sourceCodeUrl
+            detectedAbis = draft.detectedAbis
+            pickedIconUri = draft.pickedIconUriStr?.let { runCatching { Uri.parse(it) }.getOrNull() }
+            pickedShotUris.clear()
+            pickedShotUris.addAll(draft.pickedShotUriStrs.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() })
+            pickedApkUri = draft.pickedApkUriStr?.let { runCatching { Uri.parse(it) }.getOrNull() }
+            pickedApkFileName = draft.pickedApkFileName
+            pickedApkSizeBytes = draft.pickedApkSizeBytes
+        }
+        draftInitialized = true
+
+        val validToken = SupabaseClient.getValidUserToken(forceRefresh = false)
+        if (validToken.isNullOrBlank()) {
+            onSessionExpired()
+            return@LaunchedEffect
+        }
+
+        GitHubTokenProvider.refreshStatusMetadata(context)
 
         val curUpdate = withContext(Dispatchers.IO) {
             SupabaseClient.fetchStoreUpdate()
@@ -208,19 +288,147 @@ fun AdminPanelScreen(
         }
     }
 
-    var uploadUploadedMbText by remember { mutableStateOf("0 MB") }
-    var uploadTotalMbText by remember { mutableStateOf("0 MB") }
-    var isUploadingToGitHub by remember { mutableStateOf(false) }
+    // Persist draft when form edits occur
+    LaunchedEffect(
+        draftInitialized,
+        editingAppId,
+        name,
+        selectedCategoryItem,
+        versionStr,
+        ratingStr,
+        sizeStr,
+        description,
+        featuresStr,
+        directFileUrl,
+        storedIconUrl,
+        storedScreenshotUrls.size,
+        isOpenSource,
+        sourceCodeUrl,
+        detectedAbis,
+        pickedIconUri,
+        pickedShotUris.size,
+        pickedApkUri,
+        pickedApkFileName,
+        pickedApkSizeBytes
+    ) {
+        if (!draftInitialized || publishState.isRunning) return@LaunchedEffect
+        val hasContent = name.isNotBlank() || description.isNotBlank() || directFileUrl.isNotBlank() ||
+            pickedApkUri != null || pickedIconUri != null || storedIconUrl.isNotBlank() ||
+            pickedShotUris.isNotEmpty() || storedScreenshotUrls.isNotEmpty()
+        if (hasContent) {
+            AdminPublishCoordinator.saveDraft(context, buildCurrentDraft())
+        }
+    }
 
-    var showOver2GbAlert by remember { mutableStateOf(false) }
-    var appToDelete by remember { mutableStateOf<AppItem?>(null) }
-    var fullscreenPreviewUrl by remember { mutableStateOf<Any?>(null) }
-    var verifiedSavedApp by remember { mutableStateOf<AppItem?>(null) }
-    var supabaseErrorResult by remember { mutableStateOf<SupabaseClient.SupabaseMutationResult?>(null) }
+    // Observe coordinator completion / session expiry signals
+    LaunchedEffect(publishState.completedSuccessMessage, publishState.sessionExpiredDuringPublish, publishState.supabaseError) {
+        if (publishState.sessionExpiredDuringPublish) {
+            onSessionExpired()
+            return@LaunchedEffect
+        }
+        val err = publishState.supabaseError
+        if (err != null) {
+            supabaseErrorResult = err
+            AdminPublishCoordinator.clearCompletionSignals()
+        }
+        val msg = publishState.completedSuccessMessage
+        if (msg != null) {
+            verifiedSavedApp = publishState.verifiedSavedApp
+            snackbarHostState.showSnackbar(msg)
+            clearForm(clearPersistedDraft = true)
+            AdminPublishCoordinator.clearCompletionSignals()
+        }
+    }
 
-    LaunchedEffect(adminEmail) {
-        if (!SupabaseClient.isAdmin(adminEmail)) {
-            onBackClick()
+    fun runReadinessDiagnostic() {
+        if (isRunningReadinessCheck) return
+        scope.launch {
+            isRunningReadinessCheck = true
+            for (i in readinessSteps.indices) {
+                readinessSteps[i] = readinessSteps[i].copy(state = CheckStepState.IDLE, detail = null)
+            }
+
+            // 1) Session validity
+            readinessSteps[0] = readinessSteps[0].copy(state = CheckStepState.RUNNING)
+            val sessionRes = SupabaseClient.checkAuthUserSession()
+            if (sessionRes.isSuccess) {
+                readinessSteps[0] = readinessSteps[0].copy(state = CheckStepState.PASSED, detail = sessionRes.getOrNull())
+            } else {
+                val msg = context.getString(R.string.err_session_expired_relogin)
+                readinessSteps[0] = readinessSteps[0].copy(state = CheckStepState.FAILED, detail = msg)
+                isRunningReadinessCheck = false
+                return@launch
+            }
+
+            // 2) Admin list check
+            readinessSteps[1] = readinessSteps[1].copy(state = CheckStepState.RUNNING)
+            if (SupabaseClient.isAdmin(adminEmail)) {
+                readinessSteps[1] = readinessSteps[1].copy(state = CheckStepState.PASSED, detail = adminEmail)
+            } else {
+                readinessSteps[1] = readinessSteps[1].copy(
+                    state = CheckStepState.FAILED,
+                    detail = context.getString(R.string.toast_admin_not_authorized)
+                )
+            }
+
+            // 3) Read central GitHub key
+            readinessSteps[2] = readinessSteps[2].copy(state = CheckStepState.RUNNING)
+            val keyRes = GitHubTokenProvider.getToken(context, adminEmail, forceRefresh = true)
+            var fetchedToken: String? = null
+            if (keyRes.isSuccess) {
+                fetchedToken = keyRes.getOrNull()
+                readinessSteps[2] = readinessSteps[2].copy(
+                    state = CheckStepState.PASSED,
+                    detail = context.getString(R.string.gh_status_enabled_short)
+                )
+            } else {
+                val msg = keyRes.exceptionOrNull()?.message
+                    ?: context.getString(R.string.err_gh_token_missing_admin)
+                readinessSteps[2] = readinessSteps[2].copy(state = CheckStepState.FAILED, detail = msg)
+            }
+
+            // 4) GitHub repository connection
+            readinessSteps[3] = readinessSteps[3].copy(state = CheckStepState.RUNNING)
+            if (!fetchedToken.isNullOrBlank()) {
+                val ghRes = GitHubStorageHelper.testConnection(
+                    token = fetchedToken,
+                    userEmail = adminEmail,
+                    context = context
+                )
+                if (ghRes.isSuccess) {
+                    readinessSteps[3] = readinessSteps[3].copy(
+                        state = CheckStepState.PASSED,
+                        detail = ghRes.getOrNull()
+                    )
+                } else {
+                    readinessSteps[3] = readinessSteps[3].copy(
+                        state = CheckStepState.FAILED,
+                        detail = ghRes.exceptionOrNull()?.message
+                    )
+                }
+            } else {
+                readinessSteps[3] = readinessSteps[3].copy(
+                    state = CheckStepState.FAILED,
+                    detail = if (isOwner) context.getString(R.string.err_gh_token_missing_owner)
+                    else context.getString(R.string.err_gh_token_missing_admin)
+                )
+            }
+
+            // 5) Write permission on apps table
+            readinessSteps[4] = readinessSteps[4].copy(state = CheckStepState.RUNNING)
+            val appsPermRes = SupabaseClient.checkAppsWritePermission()
+            if (appsPermRes.success) {
+                readinessSteps[4] = readinessSteps[4].copy(state = CheckStepState.PASSED)
+            } else {
+                val reason = if (SupabaseClient.isRlsPermissionError(appsPermRes.httpCode, appsPermRes.message)) {
+                    context.getString(R.string.err_rls_not_admin)
+                } else {
+                    SecureLogger.sanitize(appsPermRes.message)
+                }
+                readinessSteps[4] = readinessSteps[4].copy(state = CheckStepState.FAILED, detail = reason)
+            }
+
+            isRunningReadinessCheck = false
         }
     }
 
@@ -228,12 +436,14 @@ fun AdminPanelScreen(
         if (uri != null) {
             pickedIconUri = uri
             apkExtractedIconBytes = null
+            AdminPublishCoordinator.clearError()
         }
     }
 
     val shotsPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (!uris.isNullOrEmpty()) {
             pickedShotUris.addAll(uris)
+            AdminPublishCoordinator.clearError()
         }
     }
 
@@ -248,6 +458,7 @@ fun AdminPanelScreen(
                 pickedApkUri = uri
                 pickedApkFileName = fName
                 pickedApkSizeBytes = fSize
+                AdminPublishCoordinator.clearError()
 
                 val max2GbBytes = 2147483648L
                 if (fSize > max2GbBytes) {
@@ -307,34 +518,11 @@ fun AdminPanelScreen(
         pickedApkUri = null
         pickedApkFileName = ""
         pickedApkSizeBytes = 0L
-    }
-
-    fun clearForm() {
-        editingAppId = null
-        name = ""
-        selectedCategoryItem = StoreCategories.find("apps")
-        versionStr = "1.0.0"
-        ratingStr = "4.5"
-        sizeStr = "120 MB"
-        description = ""
-        featuresStr = ""
-        storedIconUrl = ""
-        directFileUrl = ""
-        isOpenSource = false
-        sourceCodeUrl = ""
-        detectedAbis = context.getString(R.string.abi_universal_all)
-        storedScreenshotUrls.clear()
-
-        pickedIconUri = null
-        apkExtractedIconBytes = null
-        pickedShotUris.clear()
-        pickedApkUri = null
-        pickedApkFileName = ""
-        pickedApkSizeBytes = 0L
+        AdminPublishCoordinator.clearError()
     }
 
     fun startSaveProcess() {
-        if (name.isBlank() || isSaving || isUploading) return
+        if (name.isBlank() || publishState.isRunning) return
 
         val hasIconSource = pickedIconUri != null || apkExtractedIconBytes != null || storedIconUrl.isNotBlank()
         if (!hasIconSource) {
@@ -359,280 +547,14 @@ fun AdminPanelScreen(
             return
         }
 
-        var total = 0
-        if (pickedIconUri != null || (apkExtractedIconBytes != null && storedIconUrl.isBlank())) total++
-        total += pickedShotUris.size
-        val hasApkToUpload = pickedApkUri != null
-        if (hasApkToUpload) total++
-
-        isSaving = true
-        isUploading = total > 0
-        uploadTotalSteps = total
-        uploadCurrentStep = 0
-        uploadProgress = 0f
-        uploadUploadedMbText = "0 MB"
-        uploadTotalMbText = formatSize(pickedApkSizeBytes)
-        isUploadingToGitHub = false
-
-        uploadJob = scope.launch {
-            try {
-                var finalIconUrl = storedIconUrl
-
-                val iconToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
-                if (pickedIconUri != null) {
-                    uploadCurrentStep++
-                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_icon)} ($uploadCurrentStep/$uploadTotalSteps)"
-                    val ext = getFileExtension(context, pickedIconUri!!, "png")
-                    val path = "icons/${UUID.randomUUID()}.$ext"
-                    val mime = context.contentResolver.getType(pickedIconUri!!) ?: "image/png"
-                    val uploadResult = SupabaseClient.uploadStorageFileDetailed(
-                        context = context,
-                        uri = pickedIconUri!!,
-                        path = path,
-                        mimeType = mime,
-                        accessToken = iconToken
-                    ) { written, tot ->
-                        if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
-                    }
-                    if (uploadResult.isSuccess) {
-                        finalIconUrl = uploadResult.getOrThrow()
-                    } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: context.getString(R.string.error_unexpected)
-                        throw Exception(errorText)
-                    }
-                } else if (apkExtractedIconBytes != null && finalIconUrl.isBlank()) {
-                    uploadCurrentStep++
-                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_icon)} ($uploadCurrentStep/$uploadTotalSteps)"
-                    val path = "icons/${UUID.randomUUID()}.png"
-                    val uploadResult = SupabaseClient.uploadStorageBytesDetailed(
-                        bytes = apkExtractedIconBytes!!,
-                        path = path,
-                        mimeType = "image/png",
-                        accessToken = iconToken
-                    )
-                    if (uploadResult.isSuccess) {
-                        finalIconUrl = uploadResult.getOrThrow()
-                    } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: context.getString(R.string.error_unexpected)
-                        throw Exception(errorText)
-                    }
-                }
-
-                val shotToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
-                val finalScreenshots = storedScreenshotUrls.toMutableList()
-                for ((idx, sUri) in pickedShotUris.withIndex()) {
-                    uploadCurrentStep++
-                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_screens)} (${idx + 1}/${pickedShotUris.size})"
-                    val ext = getFileExtension(context, sUri, "jpg")
-                    val path = "shots/${UUID.randomUUID()}.$ext"
-                    val mime = context.contentResolver.getType(sUri) ?: "image/jpeg"
-                    val uploadResult = SupabaseClient.uploadStorageFileDetailed(
-                        context = context,
-                        uri = sUri,
-                        path = path,
-                        mimeType = mime,
-                        accessToken = shotToken
-                    ) { written, tot ->
-                        if (tot > 0) uploadProgress = (written.toFloat() / tot).coerceIn(0f, 1f)
-                    }
-                    if (uploadResult.isSuccess) {
-                        finalScreenshots.add(uploadResult.getOrThrow())
-                    } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: context.getString(R.string.error_unexpected)
-                        throw Exception(errorText)
-                    }
-                }
-
-                var finalFileUrl = directFileUrl
-                var uploadedApkSizeStr = sizeStr
-
-                if (hasApkToUpload) {
-                    val apkUri = pickedApkUri!!
-                    val max2Gb = 2147483648L
-                    if (pickedApkSizeBytes > max2Gb) {
-                        throw Exception(context.getString(R.string.github_file_over_2gb))
-                    }
-
-                    val currentGhConfig = GitHubStorageHelper.loadConfig(context)
-                    if (currentGhConfig.token.isBlank()) {
-                        throw Exception(context.getString(R.string.github_token_missing))
-                    }
-
-                    uploadCurrentStep++
-                    isUploadingToGitHub = true
-                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_apk_gh)} ($uploadCurrentStep/$uploadTotalSteps)"
-                    uploadProgress = 0f
-
-                    GitHubUploadService.start(context, pickedApkFileName.ifBlank { name })
-
-                    try {
-                        val uploadResult = GitHubStorageHelper.uploadAppRelease(
-                            context = context,
-                            owner = currentGhConfig.owner,
-                            repo = currentGhConfig.repo,
-                            token = currentGhConfig.token,
-                            appId = editingAppId ?: "app_${System.currentTimeMillis()}",
-                            appName = name.ifBlank { "App" },
-                            uri = apkUri,
-                            originalFileName = pickedApkFileName.ifBlank { "app.apk" },
-                            fileSizeBytes = pickedApkSizeBytes
-                        ) { bytesWritten, totalBytes ->
-                            val progressFrac = if (totalBytes > 0) (bytesWritten.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
-                            uploadProgress = progressFrac
-                            val upMb = formatSize(bytesWritten)
-                            val totMb = formatSize(totalBytes)
-                            uploadUploadedMbText = upMb
-                            uploadTotalMbText = totMb
-                            val percent = (progressFrac * 100).toInt()
-                            GitHubUploadService.updateProgress(context, pickedApkFileName, percent, upMb, totMb)
-                        }
-
-                        if (uploadResult.isFailure) {
-                            throw uploadResult.exceptionOrNull()
-                                ?: Exception(context.getString(R.string.github_upload_asset_fail))
-                        }
-
-                        val ghAsset = uploadResult.getOrThrow()
-                        finalFileUrl = ghAsset.downloadUrl
-                        uploadedApkSizeStr = ghAsset.sizeMB
-                    } finally {
-                        GitHubUploadService.stop(context)
-                        isUploadingToGitHub = false
-                    }
-                }
-
-                if (finalIconUrl.isBlank()) throw Exception(context.getString(R.string.error_empty_file))
-                if (finalFileUrl.isBlank()) throw Exception(context.getString(R.string.error_empty_file))
-
-                uploadStepLabel = context.getString(R.string.admin_upload_step_saving)
-
-                val rating = ratingStr.toFloatOrNull() ?: 4.5f
-                val finalCalculatedSize = if (uploadedApkSizeStr.isNotBlank() && uploadedApkSizeStr != "120 MB") {
-                    uploadedApkSizeStr
-                } else if (sizeStr.isNotBlank() && sizeStr != "120 MB") {
-                    sizeStr
-                } else if (pickedApkSizeBytes > 0) {
-                    formatSize(pickedApkSizeBytes)
-                } else {
-                    sizeStr
-                }
-                val features = featuresStr.split("\n").map { it.trim() }.filter { it.isNotBlank() }
-                val categoryKey = selectedCategoryItem.key
-
-                val finalFreshToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
-
-                val mutationResult = if (editingAppId == null) {
-                    SupabaseClient.insertApp(
-                        accessToken = finalFreshToken,
-                        name = name,
-                        category = categoryKey,
-                        rating = rating,
-                        size = finalCalculatedSize,
-                        description = description,
-                        features = features,
-                        iconUrl = finalIconUrl,
-                        fileUrl = finalFileUrl,
-                        screenshots = finalScreenshots,
-                        architecture = detectedAbis,
-                        version = versionStr.ifBlank { "1.0.0" },
-                        packageName = "com.primestore.${name.lowercase().replace(Regex("[^a-z0-9]"), "")}",
-                        downloads = "0"
-                    )
-                } else {
-                    SupabaseClient.updateApp(
-                        accessToken = finalFreshToken,
-                        id = editingAppId!!,
-                        name = name,
-                        category = categoryKey,
-                        rating = rating,
-                        size = finalCalculatedSize,
-                        description = description,
-                        features = features,
-                        iconUrl = finalIconUrl,
-                        fileUrl = finalFileUrl,
-                        screenshots = finalScreenshots,
-                        architecture = detectedAbis,
-                        version = versionStr.ifBlank { "1.0.0" },
-                        packageName = "com.primestore.${name.lowercase().replace(Regex("[^a-z0-9]"), "")}",
-                        downloads = "0"
-                    )
-                }
-
-                if (!mutationResult.success) {
-                    if (SupabaseClient.isTokenExpiredError(mutationResult.httpCode, "${mutationResult.message} ${mutationResult.details}")) {
-                        snackbarHostState.showSnackbar(context.getString(R.string.toast_session_expired))
-                        onBackClick()
-                    } else {
-                        supabaseErrorResult = mutationResult
-                    }
-                    return@launch
-                }
-
-                val matchingEnum = when {
-                    categoryKey == "games" || categoryKey.startsWith("game_") -> AppCategory.GAMES
-                    categoryKey == "root_tools" -> AppCategory.ROOT_TOOLS
-                    categoryKey == "open_source" -> AppCategory.OPEN_SOURCE
-                    else -> AppCategory.APPS
-                }
-
-                onSaveApp(
-                    editingAppId,
-                    name,
-                    matchingEnum,
-                    rating,
-                    finalCalculatedSize,
-                    description,
-                    features,
-                    finalIconUrl,
-                    finalFileUrl,
-                    finalScreenshots,
-                    isOpenSource,
-                    sourceCodeUrl,
-                    detectedAbis,
-                    versionStr.ifBlank { "1.0.0" },
-                    categoryKey
-                )
-
-                var verifiedApp: AppItem? = null
-                withContext(Dispatchers.IO) {
-                    delay(800)
-                    val allApps = SupabaseClient.fetchApps()
-                    verifiedApp = allApps.find { it.name.trim().equals(name.trim(), ignoreCase = true) }
-                }
-
-                if (verifiedApp != null) {
-                    verifiedSavedApp = verifiedApp
-                    snackbarHostState.showSnackbar(
-                        if (editingAppId != null) {
-                            context.getString(R.string.toast_app_updated)
-                        } else {
-                            context.getString(R.string.toast_app_published)
-                        }
-                    )
-                } else {
-                    snackbarHostState.showSnackbar(
-                        if (editingAppId != null) {
-                            context.getString(R.string.toast_app_updated)
-                        } else {
-                            context.getString(R.string.toast_app_published)
-                        }
-                    )
-                }
-
-                clearForm()
-            } catch (e: Exception) {
-                val msg = e.message.orEmpty()
-                if (SupabaseClient.isTokenExpiredError(0, msg)) {
-                    snackbarHostState.showSnackbar(context.getString(R.string.toast_session_expired))
-                    onBackClick()
-                } else {
-                    snackbarHostState.showSnackbar(msg.ifBlank { context.getString(R.string.error_unexpected) })
-                }
-            } finally {
-                isUploading = false
-                isSaving = false
-            }
-        }
+        AdminPublishCoordinator.clearError()
+        AdminPublishCoordinator.startPublish(
+            context = context,
+            adminEmail = adminEmail,
+            draft = buildCurrentDraft(),
+            apkExtractedIconBytes = apkExtractedIconBytes,
+            onCatalogSaved = onCatalogChanged
+        )
     }
 
     Scaffold(
@@ -684,135 +606,95 @@ fun AdminPanelScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 40.dp)
             ) {
-                // 1) GITHUB SETTINGS CARD
+                // 1) CENTRALIZED GITHUB KEY SECTION (OWNER ONLY VS READ-ONLY ADMIN STATUS)
                 item {
-                    NeonCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        hasGlow = false
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(text = "🐙 ", fontSize = 16.sp)
-                                    Text(
-                                        text = stringResource(R.string.admin_github_storage_section),
-                                        color = colors.accent,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                    if (isOwner) {
+                        OwnerGitHubKeyCard(
+                            tokenStatus = tokenStatus,
+                            tokenInput = ownerTokenInput,
+                            onTokenInputChange = { ownerTokenInput = it },
+                            isSaving = isSavingGhKey,
+                            isTesting = isTestingGhKey,
+                            isDeleting = isDeletingGhKey,
+                            onSaveClick = {
+                                val raw = ownerTokenInput.trim()
+                                if (raw.isBlank()) return@OwnerGitHubKeyCard
+                                isSavingGhKey = true
+                                scope.launch {
+                                    val res = SupabaseClient.upsertGitHubTokenSecret(raw)
+                                    isSavingGhKey = false
+                                    if (res.success) {
+                                        ownerTokenInput = ""
+                                        GitHubTokenProvider.markSavedInMemory(context, raw)
+                                        GitHubTokenProvider.refreshStatusMetadata(context)
+                                        snackbarHostState.showSnackbar(context.getString(R.string.gh_key_saved_success))
+                                    } else if (SupabaseClient.isTokenExpiredError(res.httpCode, res.message)) {
+                                        onSessionExpired()
+                                    } else if (SupabaseClient.isRlsPermissionError(res.httpCode, res.message)) {
+                                        snackbarHostState.showSnackbar(context.getString(R.string.err_rls_not_admin))
+                                    } else {
+                                        snackbarHostState.showSnackbar(
+                                            SecureLogger.sanitize(res.message.ifBlank { context.getString(R.string.error_unexpected) })
+                                        )
+                                    }
+                                }
+                            },
+                            onTestClick = {
+                                isTestingGhKey = true
+                                scope.launch {
+                                    val candidateToken = ownerTokenInput.trim()
+                                    val tokenResult = if (candidateToken.isNotBlank()) {
+                                        Result.success(candidateToken)
+                                    } else {
+                                        GitHubTokenProvider.getToken(context, adminEmail, forceRefresh = true)
+                                    }
+                                    val msg = if (tokenResult.isSuccess) {
+                                        val testRes = GitHubStorageHelper.testConnection(
+                                            token = tokenResult.getOrThrow(),
+                                            userEmail = adminEmail,
+                                            context = context
+                                        )
+                                        testRes.getOrElse { it.message ?: context.getString(R.string.github_network_fail) }
+                                    } else {
+                                        tokenResult.exceptionOrNull()?.message
+                                            ?: context.getString(R.string.err_gh_token_missing_owner)
+                                    }
+                                    isTestingGhKey = false
+                                    snackbarHostState.showSnackbar(msg)
+                                }
+                            },
+                            onDeleteConfirm = {
+                                isDeletingGhKey = true
+                                scope.launch {
+                                    val res = SupabaseClient.deleteGitHubTokenSecret()
+                                    isDeletingGhKey = false
+                                    if (res.success) {
+                                        ownerTokenInput = ""
+                                        GitHubTokenProvider.markDeleted(context)
+                                        GitHubTokenProvider.refreshStatusMetadata(context)
+                                        snackbarHostState.showSnackbar(context.getString(R.string.gh_key_deleted_success))
+                                    } else if (SupabaseClient.isTokenExpiredError(res.httpCode, res.message)) {
+                                        onSessionExpired()
+                                    } else {
+                                        snackbarHostState.showSnackbar(
+                                            SecureLogger.sanitize(res.message.ifBlank { context.getString(R.string.error_unexpected) })
+                                        )
+                                    }
                                 }
                             }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                AdminTextField(
-                                    value = ghOwner,
-                                    onValueChange = { ghOwner = it },
-                                    label = stringResource(R.string.admin_gh_owner),
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                AdminTextField(
-                                    value = ghRepo,
-                                    onValueChange = { ghRepo = it },
-                                    label = stringResource(R.string.admin_gh_repo),
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            AdminTextField(
-                                value = ghToken,
-                                onValueChange = { ghToken = it },
-                                label = stringResource(R.string.admin_gh_token),
-                                keyboardType = KeyboardType.Password,
-                                visualTransformation = PasswordVisualTransformation()
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(colors.buttonGradient)
-                                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                                        .clickable(enabled = !isSavingGhSettings) {
-                                            isSavingGhSettings = true
-                                            GitHubStorageHelper.saveConfig(context, ghOwner, ghRepo, ghToken)
-                                            isSavingGhSettings = false
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar(context.getString(R.string.admin_gh_saved_toast))
-                                            }
-                                        }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.admin_gh_save_btn),
-                                        color = colors.textOnAccent,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(colors.cardAlt)
-                                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                                        .clickable(enabled = !isTestingGhConnection) {
-                                            isTestingGhConnection = true
-                                            scope.launch {
-                                                val testRes = GitHubStorageHelper.testConnection(
-                                                    owner = ghOwner,
-                                                    repo = ghRepo,
-                                                    token = ghToken,
-                                                    context = context
-                                                )
-                                                isTestingGhConnection = false
-                                                if (testRes.isSuccess) {
-                                                    snackbarHostState.showSnackbar(
-                                                        testRes.getOrNull() ?: context.getString(R.string.admin_gh_saved_toast)
-                                                    )
-                                                } else {
-                                                    snackbarHostState.showSnackbar(
-                                                        testRes.exceptionOrNull()?.message
-                                                            ?: context.getString(R.string.github_network_fail)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = if (isTestingGhConnection) {
-                                            stringResource(R.string.admin_gh_testing)
-                                        } else {
-                                            stringResource(R.string.admin_gh_test_btn)
-                                        },
-                                        color = if (isTestingGhConnection) colors.textMuted else colors.textPrimary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        }
+                        )
+                    } else {
+                        AdminGitHubStatusCard(tokenStatus = tokenStatus)
                     }
+                }
+
+                // 1.5) PUBLISH READINESS CHECK ("فحص جاهزية النشر")
+                item {
+                    PublishReadinessCard(
+                        isRunning = isRunningReadinessCheck,
+                        steps = readinessSteps,
+                        onRunCheck = { runReadinessDiagnostic() }
+                    )
                 }
 
                 // 2) STORE UPDATE SECTION
@@ -892,7 +774,7 @@ fun AdminPanelScreen(
                                         val code = storeUpdateVersionCode.toIntOrNull() ?: 1
                                         isPublishingStoreUpdate = true
                                         scope.launch {
-                                            val success = withContext(Dispatchers.IO) {
+                                            val res = withContext(Dispatchers.IO) {
                                                 SupabaseClient.updateStoreUpdate(
                                                     versionCode = code,
                                                     versionName = storeUpdateVersionName.ifBlank { "1.0.0" },
@@ -901,16 +783,20 @@ fun AdminPanelScreen(
                                                 )
                                             }
                                             isPublishingStoreUpdate = false
-                                            if (success.success) {
+                                            if (res.success) {
                                                 snackbarHostState.showSnackbar(
                                                     context.getString(R.string.admin_store_update_published)
                                                 )
+                                            } else if (SupabaseClient.isTokenExpiredError(res.httpCode, res.message)) {
+                                                onSessionExpired()
+                                            } else if (SupabaseClient.isRlsPermissionError(res.httpCode, res.message)) {
+                                                snackbarHostState.showSnackbar(context.getString(R.string.err_rls_not_admin))
                                             } else {
                                                 snackbarHostState.showSnackbar(
                                                     context.getString(
                                                         R.string.toast_supabase_error,
-                                                        success.code,
-                                                        success.message.ifBlank { context.getString(R.string.error_unexpected) }
+                                                        res.httpCode,
+                                                        res.message.ifBlank { context.getString(R.string.error_unexpected) }
                                                     )
                                                 )
                                             }
@@ -956,13 +842,16 @@ fun AdminPanelScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (editingAppId != null) {
+                                if (editingAppId != null || name.isNotBlank() || directFileUrl.isNotBlank() || pickedApkUri != null) {
                                     Text(
-                                        text = stringResource(R.string.admin_cancel_edit),
+                                        text = if (editingAppId != null) stringResource(R.string.admin_cancel_edit) else stringResource(R.string.clear_all),
                                         color = colors.danger,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.clickable { clearForm() }
+                                        modifier = Modifier.clickable(enabled = !publishState.isRunning) {
+                                            clearForm(clearPersistedDraft = true)
+                                            AdminPublishCoordinator.clearError()
+                                        }
                                     )
                                 }
                             }
@@ -1377,9 +1266,9 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // UPLOAD PROGRESS
+                            // UPLOAD PROGRESS (App-scoped Coordinator state)
                             AnimatedVisibility(
-                                visible = isUploading,
+                                visible = publishState.isRunning,
                                 enter = fadeIn(),
                                 exit = fadeOut()
                             ) {
@@ -1397,19 +1286,20 @@ fun AdminPanelScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = uploadStepLabel,
+                                            text = publishState.stepLabel,
                                             color = colors.textPrimary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.weight(1f),
-                                            maxLines = 1,
+                                            maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = if (isUploadingToGitHub && uploadTotalMbText.isNotBlank()) {
-                                                "$uploadUploadedMbText / $uploadTotalMbText (${(uploadProgress * 100).toInt()}%)"
+                                            text = if (publishState.isGitHubPhase && publishState.totalMbText.isNotBlank()) {
+                                                "${publishState.uploadedMbText} / ${publishState.totalMbText} (${(publishState.progress * 100).toInt()}%)"
                                             } else {
-                                                "${(uploadProgress * 100).toInt()}%"
+                                                "${(publishState.progress * 100).toInt()}%"
                                             },
                                             color = colors.accent,
                                             fontSize = 11.sp,
@@ -1418,7 +1308,7 @@ fun AdminPanelScreen(
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     LinearProgressIndicator(
-                                        progress = { uploadProgress },
+                                        progress = { publishState.progress },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(8.dp)
@@ -1430,8 +1320,81 @@ fun AdminPanelScreen(
                                 Spacer(modifier = Modifier.height(14.dp))
                             }
 
+                            // FAILURE + RETRY BANNER ("فشل الرفع" + "إعادة المحاولة")
+                            val activeError = publishState.errorMessage
+                            AnimatedVisibility(
+                                visible = !publishState.isRunning && !activeError.isNullOrBlank(),
+                                enter = fadeIn(),
+                                exit = fadeOut()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 14.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(colors.danger.copy(alpha = 0.12f))
+                                        .border(1.dp, colors.danger.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Error,
+                                            contentDescription = null,
+                                            tint = colors.danger,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = stringResource(R.string.err_upload_failed),
+                                            color = colors.danger,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = activeError.orEmpty(),
+                                        color = colors.textPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                    if (publishState.canRetry) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(colors.accent)
+                                                .testTag("retry_publish_button")
+                                                .clickable {
+                                                    AdminPublishCoordinator.retryLastPublish(context, adminEmail) {
+                                                        onCatalogChanged()
+                                                    }
+                                                }
+                                                .padding(vertical = 10.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Refresh,
+                                                    contentDescription = null,
+                                                    tint = colors.textOnAccent,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = stringResource(R.string.retry),
+                                                    color = colors.textOnAccent,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             // SUBMIT BUTTON
-                            val canSave = name.isNotBlank() && !isSaving && !isUploading
+                            val canSave = name.isNotBlank() && !publishState.isRunning
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1448,6 +1411,7 @@ fun AdminPanelScreen(
                                         if (canSave) colors.border else colors.border.copy(alpha = 0.4f),
                                         RoundedCornerShape(14.dp)
                                     )
+                                    .testTag("admin_save_app_button")
                                     .clickable(enabled = canSave) { startSaveProcess() }
                                     .padding(vertical = 14.dp),
                                 contentAlignment = Alignment.Center
@@ -1462,8 +1426,7 @@ fun AdminPanelScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = when {
-                                            isUploading -> stringResource(R.string.admin_uploading_cloud)
-                                            isSaving -> stringResource(R.string.admin_saving_app)
+                                            publishState.isRunning -> stringResource(R.string.admin_uploading_cloud)
                                             editingAppId != null -> stringResource(R.string.admin_update_app_btn)
                                             else -> stringResource(R.string.admin_save_app_btn)
                                         },
@@ -1903,7 +1866,7 @@ fun AdminPanelScreen(
             containerColor = colors.card,
             title = {
                 Text(
-                    text = stringResource(R.string.admin_supabase_error_title, err.code.toString()),
+                    text = stringResource(R.string.admin_supabase_error_title, err.code),
                     color = colors.danger,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp

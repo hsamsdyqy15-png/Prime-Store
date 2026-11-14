@@ -538,4 +538,43 @@
     <string name="supabase_no_permission">صلاحيات غير كافية للحفظ</string>
     <string name="supabase_parse_error">خطأ في قراءة الاستجابة: %1$s</string>
     <string name="supabase_file_open_failed">تعذر فتح الملف للقراءة</string>
+
+    <!-- Centralized GitHub Key & Resilient Publishing -->
+    <string name="gh_owner_section_title">مفتاح GitHub 🔑</string>
+    <string name="gh_status_enabled_with_date">مفعّل ✔ آخر تحديث: %1$s</string>
+    <string name="gh_status_enabled_short">مفعّل ✔</string>
+    <string name="gh_status_not_configured">غير مضبوط</string>
+    <string name="gh_status_admin_managed">مفتاح GitHub: مفعّل ✔ (يديره المالك)</string>
+    <string name="gh_status_admin_not_configured">مفتاح GitHub: غير مضبوط</string>
+    <string name="gh_key_expiring_soon">المفتاح ينتهي قريباً</string>
+    <string name="gh_paste_token_label">لصق مفتاح GitHub جديد</string>
+    <string name="gh_save_key_btn">حفظ</string>
+    <string name="gh_test_conn_btn">اختبار الاتصال</string>
+    <string name="gh_delete_key_btn">حذف المفتاح</string>
+    <string name="gh_delete_key_confirm_title">تأكيد حذف مفتاح GitHub</string>
+    <string name="gh_delete_key_confirm_msg">سيتم حذف مفتاح GitHub المركزي من Supabase، ولن يتمكن المشرفون من رفع ملفات APK إلى GitHub حتى تضيف مفتاحاً جديداً.</string>
+    <string name="gh_key_saved_success">تم حفظ مفتاح GitHub بنجاح ✔</string>
+    <string name="gh_key_deleted_success">تم حذف مفتاح GitHub ✔</string>
+    <string name="err_gh_token_missing_admin">لم يضبط المالك مفتاح GitHub بعد</string>
+    <string name="err_gh_token_missing_owner">أضف المفتاح من شاشة مفتاح GitHub</string>
+    <string name="err_gh_401_admin">مفتاح GitHub المركزي منتهٍ أو غير صالح، اطلب من المالك تحديثه</string>
+    <string name="err_gh_401_owner">مفتاح GitHub غير صالح أو منتهي الصلاحية، يرجى تحديثه من قسم مفتاح GitHub</string>
+    <string name="err_gh_403">لا توجد صلاحية كافية في GitHub (403) أو تم تجاوز حد الطلبات</string>
+    <string name="err_gh_404">المستودع %1$s/%2$s غير موجود أو لا يملك المفتاح صلاحية الوصول إليه (404)</string>
+    <string name="err_rls_not_admin">حسابك لا يملك صلاحية النشر في قاعدة البيانات</string>
+    <string name="err_no_internet_retry">لا يوجد اتصال بالإنترنت، أعد الاتصال واضغط إعادة المحاولة</string>
+    <string name="err_upload_failed">فشل الرفع</string>
+    <string name="err_session_expired_relogin">انتهت جلستك، سجّل الدخول من جديد</string>
+    <string name="publish_retrying_attempt">جاري إعادة محاولة الرفع (%1$d/%2$d)…</string>
+    <string name="publish_waiting_network">انقطع الاتصال، بانتظار عودة الإنترنت…</string>
+    <string name="gh_service_waiting_network">بانتظار عودة الاتصال بالإنترنت…</string>
+    <string name="self_check_title">فحص جاهزية النشر</string>
+    <string name="self_check_btn">فحص جاهزية النشر</string>
+    <string name="self_check_running">جاري الفحص…</string>
+    <string name="self_check_session">1. صلاحية الجلسة</string>
+    <string name="self_check_admin_list">2. وجود البريد في قائمة المشرفين</string>
+    <string name="self_check_central_key">3. قراءة المفتاح المركزي</string>
+    <string name="self_check_gh_repo">4. الاتصال بمستودع GitHub</string>
+    <string name="self_check_apps_write">5. صلاحية الكتابة على apps</string>
+    <string name="admin_publish_success_draft_cleared">تم النشر والحفظ في المتجر بنجاح ✔</string>
 </resources>

@@ -178,31 +178,13 @@ fun PrimeStoreApp(
                             // Sub-screen 0: Admin Panel Screen
                             if (uiState.showAdminPanel) {
                                 AdminPanelScreen(
-                                    adminEmail = uiState.userProfile?.email ?: ADMIN_EMAIL,
-                                    accessToken = context.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE).getString("ps_token", null),
+                                    adminEmail = uiState.userProfile?.email.orEmpty(),
                                     apps = apps,
-                                    onSaveApp = { id, name, category, rating, size, description, features, iconUrl, fileUrl, screenshots, isOpenSource, sourceCodeUrl, supportedAbis, version, categoryKey ->
-                                        viewModel.saveAppFromAdmin(
-                                            id = id,
-                                            name = name,
-                                            category = category,
-                                            rating = rating,
-                                            size = size,
-                                            description = description,
-                                            features = features,
-                                            iconUrl = iconUrl,
-                                            fileUrl = fileUrl,
-                                            screenshots = screenshots,
-                                            isOpenSource = isOpenSource,
-                                            sourceCodeUrl = sourceCodeUrl,
-                                            supportedAbis = supportedAbis,
-                                            version = version,
-                                            categoryKey = categoryKey
-                                        )
-                                    },
+                                    onCatalogChanged = { viewModel.refreshCatalogAfterAdminChange() },
                                     onDeleteApp = { appId ->
                                         viewModel.deleteAppFromAdmin(appId)
                                     },
+                                    onSessionExpired = { viewModel.onSessionExpired() },
                                     onBackClick = { viewModel.closeAdminPanel() }
                                 )
                             }
@@ -426,8 +408,8 @@ fun PrimeStoreApp(
                                                 onOpenAdminPanel = {
                                                     viewModel.openAdminPanel()
                                                 },
-                                                onAdminLogin = { email, pass ->
-                                                    viewModel.loginAdmin(email, pass)
+                                                onAdminLogin = { email, pass, onResult ->
+                                                    viewModel.loginAdmin(email, pass, onResult)
                                                 },
                                                 onToast = { msg ->
                                                     viewModel.emitToast(msg)

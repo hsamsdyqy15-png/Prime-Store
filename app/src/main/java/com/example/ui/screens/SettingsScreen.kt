@@ -133,7 +133,7 @@ fun SettingsScreen(
     onRateApp: () -> Unit,
     onLogoutClick: () -> Unit,
     onOpenAdminPanel: () -> Unit = {},
-    onAdminLogin: (email: String, pass: String) -> Boolean = { _, _ -> false },
+    onAdminLogin: (email: String, pass: String, onResult: (Boolean, String?) -> Unit) -> Unit = { _, _, cb -> cb(false, null) },
     onToast: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -154,6 +154,7 @@ fun SettingsScreen(
 
     var adminEmailInput by remember { mutableStateOf("") }
     var adminPasswordInput by remember { mutableStateOf("") }
+    var adminLoginError by remember { mutableStateOf<String?>(null) }
 
     var userEmailInput by remember { mutableStateOf("") }
     var userPasswordInput by remember { mutableStateOf("") }
@@ -1142,7 +1143,12 @@ fun SettingsScreen(
         // Admin Login Dialog
         if (showAdminLoginDialog) {
             AlertDialog(
-                onDismissRequest = { showAdminLoginDialog = false },
+                onDismissRequest = {
+                    if (!isAuthLoading) {
+                        showAdminLoginDialog = false
+                        adminLoginError = null
+                    }
+                },
                 containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1167,7 +1173,10 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = adminEmailInput,
-                            onValueChange = { adminEmailInput = it },
+                            onValueChange = {
+                                adminEmailInput = it
+                                adminLoginError = null
+                            },
                             label = { Text(stringResource(R.string.admin_email_label), fontSize = 11.sp) },
                             placeholder = { Text("admin@example.com", fontSize = 11.sp) },
                             singleLine = true,
@@ -1190,7 +1199,10 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = adminPasswordInput,
-                            onValueChange = { adminPasswordInput = it },
+                            onValueChange = {
+                                adminPasswordInput = it
+                                adminLoginError = null
+                            },
                             label = { Text(stringResource(R.string.admin_password_label), fontSize = 11.sp) },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
@@ -1208,16 +1220,39 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        if (!adminLoginError.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = adminLoginError!!,
+                                color = colors.danger,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        if (isAuthLoading) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = colors.accent, modifier = Modifier.size(24.dp))
+                            }
+                        }
                     }
                 },
                 confirmButton = {
                     Button(
+                        enabled = !isAuthLoading,
                         onClick = {
-                            val success = onAdminLogin(adminEmailInput, adminPasswordInput)
-                            if (success) {
-                                showAdminLoginDialog = false
-                                adminEmailInput = ""
-                                adminPasswordInput = ""
+                            adminLoginError = null
+                            onAdminLogin(adminEmailInput, adminPasswordInput) { success, errMsg ->
+                                if (success) {
+                                    showAdminLoginDialog = false
+                                    adminEmailInput = ""
+                                    adminPasswordInput = ""
+                                    adminLoginError = null
+                                } else {
+                                    adminLoginError = errMsg
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
@@ -1226,7 +1261,13 @@ fun SettingsScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showAdminLoginDialog = false }) {
+                    TextButton(
+                        enabled = !isAuthLoading,
+                        onClick = {
+                            showAdminLoginDialog = false
+                            adminLoginError = null
+                        }
+                    ) {
                         Text(stringResource(R.string.cancel), color = colors.textMuted)
                     }
                 }

@@ -8,6 +8,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
 import com.example.R
+import com.example.data.github.AdminPublishCoordinator
+import com.example.data.github.AdminPublishState
+import com.example.data.github.GitHubStorageHelper
+import com.example.data.github.GitHubTokenProvider
+import com.example.data.github.GitHubTokenStatusSnapshot
 import com.example.data.github.StoreReleaseInfo
 import com.example.data.github.StoreSelfUpdater
 import com.example.data.github.StoreUpdateCheckResult
@@ -129,6 +134,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     val reviews: StateFlow<Map<String, List<ReviewItem>>> = repository.reviews
     val searchHistory: StateFlow<List<String>> = repository.searchHistory
     val toastEvents = repository.toastEvents
+    val githubTokenStatus: StateFlow<GitHubTokenStatusSnapshot> = GitHubTokenProvider.status
+    val adminPublishState: StateFlow<AdminPublishState> = AdminPublishCoordinator.state
+
+    private var pendingReturnToAdminAfterLogin: Boolean = false
 
     // =========================================================================
     // 1) Installed Apps & Updates State
@@ -212,6 +221,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     private val settingsRepo = com.example.data.repository.SettingsRepository.getInstance(application)
 
     init {
+        GitHubStorageHelper.purgeLegacyLocalToken(application.applicationContext)
         SupabaseClient.init(application.applicationContext)
         SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
         restoreSession()
@@ -911,8 +921,8 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     // =========================================================================
 
     fun restoreSession() {
-        val email = SupabaseClient.getSavedUserEmail() ?: authPrefs.getString("ps_email", null)
-        if (!email.isNullOrBlank()) {
+        val email = SupabaseClient.getSavedUserEmail()
+        if (!email.isNullOrBlank() && SupabaseClient.hasStoredSession()) {
             val isUserAdmin = SupabaseClient.isAdmin(email)
             val adminName = getApplication<Application>().getString(R.string.admin_badge)
             _uiState.value = _uiState.value.copy(
@@ -926,17 +936,32 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             viewModelScope.launch {
                 SupabaseClient.getValidToken(forceRefresh = false)
             }
+        } else {
+            authPrefs.edit()
+                .remove("ps_email")
+                .remove("ps_token")
+                .remove("ps_rt")
+                .apply()
         }
     }
 
     fun onSessionExpired() {
+        GitHubTokenProvider.clear()
         SupabaseClient.clearSession()
-        authPrefs.edit().clear().apply()
-        val msg = getApplication<Application>().getString(R.string.toast_session_expired)
+        authPrefs.edit()
+            .remove("ps_email")
+            .remove("ps_token")
+            .remove("ps_rt")
+            .apply()
+        if (_uiState.value.showAdminPanel) {
+            pendingReturnToAdminAfterLogin = true
+        }
+        val msg = getApplication<Application>().getString(R.string.err_session_expired_relogin)
         _uiState.value = _uiState.value.copy(
             userProfile = null,
             isAdmin = false,
             showAdminPanel = false,
+            currentTab = MainTab.SETTINGS,
             showLoginDialog = true,
             authErrorMessage = msg
         )
@@ -1214,14 +1239,17 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             val result = SupabaseClient.signInWithPassword(trimmedEmail, pass)
             _uiState.value = _uiState.value.copy(isAuthLoading = false)
 
-            if (result.success || SupabaseClient.isAdmin(trimmedEmail)) {
+            if (result.success && !result.accessToken.isNullOrBlank()) {
                 val userEmail = result.email ?: trimmedEmail
                 val isUserAdmin = SupabaseClient.isAdmin(userEmail)
                 authPrefs.edit()
                     .putString("ps_email", userEmail)
-                    .putString("ps_token", result.accessToken.orEmpty())
-                    .putString("ps_rt", result.refreshToken.orEmpty())
+                    .remove("ps_token")
+                    .remove("ps_rt")
                     .apply()
+
+                val returnToAdmin = isUserAdmin && pendingReturnToAdminAfterLogin
+                pendingReturnToAdminAfterLogin = false
 
                 _uiState.value = _uiState.value.copy(
                     userProfile = UserProfile(
@@ -1230,7 +1258,8 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                         isPrimeMember = isUserAdmin
                     ),
                     isAdmin = isUserAdmin,
-                    showLoginDialog = false
+                    showLoginDialog = false,
+                    showAdminPanel = returnToAdmin || _uiState.value.showAdminPanel
                 )
                 emitToast(ctx.getString(if (isUserAdmin) R.string.toast_login_welcome_admin else R.string.toast_login_success))
             } else {
@@ -1256,8 +1285,8 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 val isUserAdmin = SupabaseClient.isAdmin(userEmail)
                 authPrefs.edit()
                     .putString("ps_email", userEmail)
-                    .putString("ps_token", result.accessToken.orEmpty())
-                    .putString("ps_rt", result.refreshToken.orEmpty())
+                    .remove("ps_token")
+                    .remove("ps_rt")
                     .apply()
 
                 _uiState.value = _uiState.value.copy(
@@ -1277,8 +1306,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun signOutAll() {
+        GitHubTokenProvider.clear()
         SupabaseClient.clearSession()
-        authPrefs.edit().clear().apply()
+        pendingReturnToAdminAfterLogin = false
+        authPrefs.edit()
+            .remove("ps_email")
+            .remove("ps_token")
+            .remove("ps_rt")
+            .apply()
         _uiState.value = _uiState.value.copy(
             userProfile = null,
             isAdmin = false,
@@ -1288,25 +1323,54 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         emitToast(getApplication<Application>().getString(R.string.toast_logout_success))
     }
 
-    fun loginAdmin(email: String, pass: String): Boolean {
+    fun loginAdmin(
+        email: String,
+        pass: String,
+        onResult: (success: Boolean, errorMsg: String?) -> Unit = { _, _ -> }
+    ) {
         val ctx = getApplication<Application>()
-        if (SupabaseClient.isAdmin(email)) {
-            val userEmail = email.trim()
-            authPrefs.edit().putString("ps_email", userEmail).apply()
-            _uiState.value = _uiState.value.copy(
-                isAdmin = true,
-                showAdminLoginDialog = false,
-                userProfile = UserProfile(
-                    name = ctx.getString(R.string.admin_badge),
-                    email = userEmail,
-                    isPrimeMember = true
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isBlank() || pass.isBlank()) {
+            val msg = ctx.getString(R.string.toast_enter_email_pass)
+            emitToast(msg)
+            onResult(false, msg)
+            return
+        }
+        if (!SupabaseClient.isAdmin(trimmedEmail)) {
+            val msg = ctx.getString(R.string.toast_admin_not_authorized)
+            emitToast(msg)
+            onResult(false, msg)
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isAuthLoading = true, authErrorMessage = null)
+            val authRes = SupabaseClient.signInWithPassword(trimmedEmail, pass)
+            _uiState.value = _uiState.value.copy(isAuthLoading = false)
+
+            if (authRes.success && !authRes.accessToken.isNullOrBlank()) {
+                val userEmail = authRes.email ?: trimmedEmail
+                authPrefs.edit()
+                    .putString("ps_email", userEmail)
+                    .remove("ps_token")
+                    .remove("ps_rt")
+                    .apply()
+                pendingReturnToAdminAfterLogin = false
+                _uiState.value = _uiState.value.copy(
+                    isAdmin = true,
+                    showAdminLoginDialog = false,
+                    userProfile = UserProfile(
+                        name = ctx.getString(R.string.admin_badge),
+                        email = userEmail,
+                        isPrimeMember = true
+                    )
                 )
-            )
-            emitToast(ctx.getString(R.string.toast_admin_login_success))
-            return true
-        } else {
-            emitToast(ctx.getString(R.string.toast_admin_not_authorized))
-            return false
+                emitToast(ctx.getString(R.string.toast_admin_login_success))
+                onResult(true, null)
+            } else {
+                val msg = authRes.errorMessage ?: ctx.getString(R.string.toast_admin_wrong_creds)
+                emitToast(msg)
+                onResult(false, msg)
+            }
         }
     }
 
@@ -1379,9 +1443,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         refreshInstalledApps()
     }
 
+    fun refreshCatalogAfterAdminChange() {
+        repository.refreshFromSupabase()
+        refreshPagedApps()
+        refreshInstalledApps()
+    }
+
     fun deleteAppFromAdmin(appId: String) {
-        val token = authPrefs.getString("ps_token", null)
-        repository.deleteApp(appId, token)
+        repository.deleteApp(appId, null)
         refreshPagedApps()
         refreshInstalledApps()
     }

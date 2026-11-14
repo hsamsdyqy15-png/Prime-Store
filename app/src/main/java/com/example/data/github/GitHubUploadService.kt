@@ -6,8 +6,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
@@ -26,6 +28,7 @@ class GitHubUploadService : Service() {
         const val EXTRA_PROGRESS = "extra_progress"
         const val EXTRA_UPLOADED_MB = "extra_uploaded_mb"
         const val EXTRA_TOTAL_MB = "extra_total_mb"
+        const val EXTRA_STATUS_TEXT = "extra_status_text"
 
         fun start(context: Context, fileName: String) {
             val intent = Intent(context, GitHubUploadService::class.java).apply {
@@ -39,27 +42,45 @@ class GitHubUploadService : Service() {
             }
         }
 
-        fun updateProgress(context: Context, fileName: String, progress: Int, uploadedMb: String, totalMb: String) {
+        fun updateProgress(
+            context: Context,
+            fileName: String,
+            progress: Int,
+            uploadedMb: String,
+            totalMb: String,
+            statusText: String? = null
+        ) {
             val intent = Intent(context, GitHubUploadService::class.java).apply {
                 action = ACTION_UPDATE
                 putExtra(EXTRA_FILE_NAME, fileName)
                 putExtra(EXTRA_PROGRESS, progress)
                 putExtra(EXTRA_UPLOADED_MB, uploadedMb)
                 putExtra(EXTRA_TOTAL_MB, totalMb)
+                if (!statusText.isNullOrBlank()) {
+                    putExtra(EXTRA_STATUS_TEXT, statusText)
+                }
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+            }
         }
 
         fun stop(context: Context) {
             val intent = Intent(context, GitHubUploadService::class.java).apply {
                 action = ACTION_STOP
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+            }
         }
     }
 
     private lateinit var notificationManager: NotificationManager
     private var currentFileName: String = ""
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -73,7 +94,8 @@ class GitHubUploadService : Service() {
             ACTION_START -> {
                 currentFileName = intent.getStringExtra(EXTRA_FILE_NAME)
                     ?: getString(R.string.gh_service_default_file)
-                startForeground(NOTIFICATION_ID, buildNotification(0, "0 MB", "0 MB"))
+                acquireLocks()
+                startForeground(NOTIFICATION_ID, buildNotification(0, "0 MB", "0 MB", null))
             }
             ACTION_UPDATE -> {
                 val fName = intent.getStringExtra(EXTRA_FILE_NAME) ?: currentFileName
@@ -81,9 +103,11 @@ class GitHubUploadService : Service() {
                 val progress = intent.getIntExtra(EXTRA_PROGRESS, 0)
                 val upMb = intent.getStringExtra(EXTRA_UPLOADED_MB) ?: "0 MB"
                 val totMb = intent.getStringExtra(EXTRA_TOTAL_MB) ?: "0 MB"
-                notificationManager.notify(NOTIFICATION_ID, buildNotification(progress, upMb, totMb))
+                val statusText = intent.getStringExtra(EXTRA_STATUS_TEXT)
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(progress, upMb, totMb, statusText))
             }
             ACTION_STOP -> {
+                releaseLocks()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -91,7 +115,55 @@ class GitHubUploadService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onDestroy() {
+        releaseLocks()
+        super.onDestroy()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun acquireLocks() {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PrimeStore::GitHubUploadWakeLock")
+                wakeLock?.setReferenceCounted(false)
+            }
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire(60 * 60 * 1000L)
+            }
+        } catch (_: Exception) {
+        }
+
+        try {
+            if (wifiLock == null) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                @Suppress("DEPRECATION")
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiLock = wm?.createWifiLock(mode, "PrimeStore::GitHubUploadWifiLock")
+                wifiLock?.setReferenceCounted(false)
+            }
+            if (wifiLock?.isHeld == false) {
+                wifiLock?.acquire()
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
+        try {
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+        } catch (_: Exception) {
+        }
+    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -107,7 +179,12 @@ class GitHubUploadService : Service() {
         }
     }
 
-    private fun buildNotification(progress: Int, uploadedMb: String, totalMb: String): android.app.Notification {
+    private fun buildNotification(
+        progress: Int,
+        uploadedMb: String,
+        totalMb: String,
+        statusOverride: String?
+    ): android.app.Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -115,11 +192,14 @@ class GitHubUploadService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val contentText = statusOverride?.takeIf { it.isNotBlank() }
+            ?: "$uploadedMb / $totalMb ($progress%)"
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.gh_service_uploading_title, currentFileName))
-            .setContentText("$uploadedMb / $totalMb ($progress%)")
+            .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setProgress(100, progress, progress == 0)
+            .setProgress(100, progress, progress == 0 || !statusOverride.isNullOrBlank())
             .setOngoing(true)
             .setContentIntent(pendingIntent)
             .build()

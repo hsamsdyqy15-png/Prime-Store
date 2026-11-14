@@ -538,4 +538,43 @@
     <string name="supabase_no_permission">Insufficient permission to save</string>
     <string name="supabase_parse_error">Response parse error: %1$s</string>
     <string name="supabase_file_open_failed">Could not open file for reading</string>
+
+    <!-- Centralized GitHub Key & Resilient Publishing -->
+    <string name="gh_owner_section_title">GitHub Key 🔑</string>
+    <string name="gh_status_enabled_with_date">Enabled ✔ Last updated: %1$s</string>
+    <string name="gh_status_enabled_short">Enabled ✔</string>
+    <string name="gh_status_not_configured">Not configured</string>
+    <string name="gh_status_admin_managed">GitHub Key: Enabled ✔ (Managed by Owner)</string>
+    <string name="gh_status_admin_not_configured">GitHub Key: Not configured</string>
+    <string name="gh_key_expiring_soon">Key expiring soon — please test or rotate it</string>
+    <string name="gh_paste_token_label">Paste new GitHub token (PAT)</string>
+    <string name="gh_save_key_btn">Save</string>
+    <string name="gh_test_conn_btn">Test Connection</string>
+    <string name="gh_delete_key_btn">Delete Key</string>
+    <string name="gh_delete_key_confirm_title">Confirm Delete GitHub Key</string>
+    <string name="gh_delete_key_confirm_msg">This will remove the central GitHub key from Supabase. Admins will not be able to upload APK files until you save a new key.</string>
+    <string name="gh_key_saved_success">GitHub key saved ✔</string>
+    <string name="gh_key_deleted_success">GitHub key deleted ✔</string>
+    <string name="err_gh_token_missing_admin">The owner has not configured the GitHub key yet</string>
+    <string name="err_gh_token_missing_owner">Add the key from the GitHub Key screen</string>
+    <string name="err_gh_401_admin">The central GitHub key is invalid or expired. Please ask the owner to update it.</string>
+    <string name="err_gh_401_owner">The stored GitHub key is invalid or expired. Please update it in the GitHub Key section.</string>
+    <string name="err_gh_403">Insufficient GitHub permissions (403) or API rate limit exceeded</string>
+    <string name="err_gh_404">Repository %1$s/%2$s not found or key lacks access (404)</string>
+    <string name="err_rls_not_admin">Your account does not have permission to publish in the database</string>
+    <string name="err_no_internet_retry">No internet connection. Reconnect and tap Retry.</string>
+    <string name="err_upload_failed">Upload failed</string>
+    <string name="err_session_expired_relogin">Your session expired, please log in again</string>
+    <string name="publish_retrying_attempt">Retrying upload (%1$d/%2$d)…</string>
+    <string name="publish_waiting_network">Connection dropped, waiting for internet…</string>
+    <string name="gh_service_waiting_network">Waiting for internet connection…</string>
+    <string name="self_check_title">Publish Readiness Check</string>
+    <string name="self_check_btn">Check Publish Readiness</string>
+    <string name="self_check_running">Checking…</string>
+    <string name="self_check_session">1. Active Supabase session</string>
+    <string name="self_check_admin_list">2. Email in admin list</string>
+    <string name="self_check_central_key">3. Read central key</string>
+    <string name="self_check_gh_repo">4. GitHub repository connection</string>
+    <string name="self_check_apps_write">5. Database apps write permission</string>
+    <string name="admin_publish_success_draft_cleared">Published and saved to catalog ✔</string>
 </resources>
