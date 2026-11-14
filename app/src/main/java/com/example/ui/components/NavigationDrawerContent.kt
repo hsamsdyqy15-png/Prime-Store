@@ -250,7 +250,7 @@ fun NavigationDrawerContent(
                 Text(text = category.iconEmoji, fontSize = 18.sp)
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = category.titleAr,
+                    text = stringResource(id = category.titleRes),
                     color = colors.textPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium

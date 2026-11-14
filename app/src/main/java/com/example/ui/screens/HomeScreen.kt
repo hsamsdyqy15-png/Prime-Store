@@ -78,21 +78,23 @@ import com.example.ui.theme.AccentGold
 import com.example.ui.theme.AccentGreen
 import com.example.ui.theme.PrimeTheme
 
+import androidx.annotation.StringRes
+
 data class CategoryQuickItem(
     val category: AppCategory,
-    val title: String,
+    @StringRes val titleRes: Int,
     val glowColor: Long
 )
 
 val QUICK_CATEGORIES = listOf(
-    CategoryQuickItem(AppCategory.GAMES, "ألعاب", 0xFFA855F7),
-    CategoryQuickItem(AppCategory.APPS, "تطبيقات", 0xFF22C55E),
-    CategoryQuickItem(AppCategory.ROOT_TOOLS, "أدوات الروت", 0xFFDC2626),
-    CategoryQuickItem(AppCategory.OPEN_SOURCE, "مفتوح المصدر", 0xFF3B82F6),
-    CategoryQuickItem(AppCategory.POPULAR, "الأكثر شهرة", 0xFFFBBF24),
-    CategoryQuickItem(AppCategory.NEW_GAMES, "الجديد", 0xFFF97316),
-    CategoryQuickItem(AppCategory.TOOLS, "أدوات", 0xFF8B5CF6),
-    CategoryQuickItem(AppCategory.MORE, "المزيد", 0xFFA855F7)
+    CategoryQuickItem(AppCategory.GAMES, R.string.cat_games, 0xFFA855F7),
+    CategoryQuickItem(AppCategory.APPS, R.string.cat_apps, 0xFF22C55E),
+    CategoryQuickItem(AppCategory.ROOT_TOOLS, R.string.cat_root_tools, 0xFFDC2626),
+    CategoryQuickItem(AppCategory.OPEN_SOURCE, R.string.cat_open_source, 0xFF3B82F6),
+    CategoryQuickItem(AppCategory.POPULAR, R.string.cat_popular, 0xFFFBBF24),
+    CategoryQuickItem(AppCategory.NEW_GAMES, R.string.cat_new_games, 0xFFF97316),
+    CategoryQuickItem(AppCategory.TOOLS, R.string.cat_tools, 0xFF8B5CF6),
+    CategoryQuickItem(AppCategory.MORE, R.string.cat_more, 0xFFA855F7)
 )
 
 @Composable
@@ -176,8 +178,8 @@ fun HomeScreen(
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Text("🚀 ", fontSize = 20.sp)
                         Column {
-                            Text(stringResource(id = R.string.update_available_title), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text(stringResource(id = R.string.update_available_desc), color = Color.White.copy(alpha = 0.9f), fontSize = 11.sp)
+                            Text(stringResource(id = R.string.update_available_title), color = colors.textOnAccent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(stringResource(id = R.string.update_available_desc), color = colors.textOnAccent.copy(alpha = 0.9f), fontSize = 11.sp)
                         }
                     }
                     Box(
@@ -186,7 +188,7 @@ fun HomeScreen(
                             .background(AccentGold)
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
-                        Text(stringResource(id = R.string.update), color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text(stringResource(id = R.string.update), color = Color(0xFF11071F), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
             }
@@ -263,19 +265,19 @@ fun HomeScreen(
 
                 val categoryFilterItems = remember {
                     listOf(
-                        CategoryItem("all", "الكل", "All", "🌐", "عام"),
-                        CategoryItem("apps", "تطبيقات", "Apps", "🤖", "عام"),
-                        CategoryItem("games", "ألعاب", "Games", "🎮", "عام"),
-                        CategoryItem("trending", "الأكثر شعبية", "Trending", "🔥", "عام"),
-                        CategoryItem("tools", "أدوات", "Tools", "🔧", "تطبيقات"),
-                        CategoryItem("open_source", "مفتوح المصدر", "FOSS", "🔓", "تطبيقات"),
-                        CategoryItem("entertainment", "ترفيه", "Entertainment", "▶️", "تطبيقات"),
-                        CategoryItem("productivity", "إنتاجية", "Productivity", "📊", "تطبيقات"),
-                        CategoryItem("social", "تواصل", "Social", "👥", "تطبيقات"),
-                        CategoryItem("education", "تعليم", "Education", "🎓", "تطبيقات"),
-                        CategoryItem("music_audio", "صوتيات", "Music", "🎵", "تطبيقات"),
-                        CategoryItem("video_players_editors", "فيديو", "Video", "🎬", "تطبيقات"),
-                        CategoryItem("root_tools", "أدوات الروت", "Root", "⚡", "تطبيقات")
+                        StoreCategories.find("all"),
+                        StoreCategories.find("apps"),
+                        StoreCategories.find("games"),
+                        StoreCategories.find("trending"),
+                        StoreCategories.find("tools"),
+                        StoreCategories.find("open_source"),
+                        StoreCategories.find("entertainment"),
+                        StoreCategories.find("productivity"),
+                        StoreCategories.find("social"),
+                        StoreCategories.find("education"),
+                        StoreCategories.find("music_audio"),
+                        StoreCategories.find("video_players_editors"),
+                        StoreCategories.find("root_tools")
                     )
                 }
 
@@ -294,14 +296,12 @@ fun HomeScreen(
                     }
                 }
 
-                val filterChips = remember {
-                    listOf(
-                        Pair(HomeFilterType.ALL, "الكل 🌐"),
-                        Pair(HomeFilterType.SMALL_SIZE, "حجم خفيف (<35MB) ⚡"),
-                        Pair(HomeFilterType.TOP_RATED, "الأعلى تقييماً ⭐"),
-                        Pair(HomeFilterType.NEWEST, "الأحدث إصداراً 🆕")
-                    )
-                }
+                val filterChips = listOf(
+                    Pair(HomeFilterType.ALL, stringResource(R.string.filter_all)),
+                    Pair(HomeFilterType.SMALL_SIZE, stringResource(R.string.filter_lightweight)),
+                    Pair(HomeFilterType.TOP_RATED, stringResource(R.string.filter_top_rated)),
+                    Pair(HomeFilterType.NEWEST, stringResource(R.string.filter_newest))
+                )
 
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -367,7 +367,7 @@ fun HomeScreen(
                         Text(text = "🔍", fontSize = 42.sp)
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = if (pagedError != null) "تعذر جلب التطبيقات" else "لا توجد تطبيقات في هذا القسم حالياً",
+                            text = if (pagedError != null) stringResource(R.string.home_fetch_error) else stringResource(R.string.home_no_apps_in_section),
                             color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
@@ -496,7 +496,7 @@ fun ApptekaCard(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = app.displayCategoryTitle,
+                    text = app.localizedCategoryTitle(),
                     color = colors.accent,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -903,6 +903,7 @@ fun CategoryGridItem(
                 indication = ripple(bounded = false, color = colors.accent)
             ) { onClick() }
     ) {
+        val itemTitle = stringResource(id = item.titleRes)
         Box(
             modifier = Modifier
                 .size(64.dp)
@@ -919,14 +920,14 @@ fun CategoryGridItem(
         ) {
             Icon(
                 painter = painterResource(id = item.category.iconResId),
-                contentDescription = item.title,
+                contentDescription = itemTitle,
                 tint = colors.accent,
                 modifier = Modifier.size(28.dp)
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = item.title,
+            text = itemTitle,
             color = colors.textPrimary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
@@ -958,7 +959,7 @@ fun HomeCategoryChip(
             Text(text = item.emoji, fontSize = 12.sp)
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = item.titleAr,
+                text = stringResource(id = item.titleRes),
                 color = if (selected) colors.textOnAccent else colors.textSecondary,
                 fontSize = 12.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium

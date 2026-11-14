@@ -2,6 +2,7 @@ package com.example.data.github
 
 import android.content.Context
 import com.example.BuildConfig
+import com.example.R
 import com.example.data.installer.PackageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,6 +11,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 data class StoreReleaseInfo(
     val tagName: String,
@@ -43,7 +45,9 @@ object StoreSelfUpdater {
         val currentCode = BuildConfig.VERSION_CODE
 
         if (lastKnown != -1 && currentCode > lastKnown) {
-            onUpdatedNotification("تم تحديث المتجر إلى الإصدار ${BuildConfig.VERSION_NAME} بنجاح! 🎉")
+            onUpdatedNotification(
+                context.getString(R.string.store_update_success_banner, BuildConfig.VERSION_NAME)
+            )
         }
         prefs.edit().putInt(KEY_KNOWN_VERSION_CODE, currentCode).apply()
     }
@@ -80,7 +84,7 @@ object StoreSelfUpdater {
                 if (responseCode == HttpURLConnection.HTTP_NOT_MODIFIED) {
                     val cachedBody = prefs.getString(KEY_LAST_BODY, null)
                     if (!cachedBody.isNullOrBlank()) {
-                        val parsed = parseReleaseJson(cachedBody)
+                        val parsed = parseReleaseJson(context, cachedBody)
                         if (parsed != null && parsed.versionCode > BuildConfig.VERSION_CODE) {
                             return@withContext StoreUpdateCheckResult.UpdateAvailable(parsed)
                         }
@@ -90,18 +94,22 @@ object StoreSelfUpdater {
 
                 if (responseCode == 403) {
                     return@withContext StoreUpdateCheckResult.Error(
-                        message = "تم تجاوز حد الطلبات المسموح به لموقع GitHub حالياً، يرجى المحاولة بعد قليل.",
+                        message = context.getString(R.string.github_rate_limit),
                         isRateLimit = true
                     )
                 }
 
                 if (responseCode == 404) {
-                    return@withContext StoreUpdateCheckResult.Error("تعذر فحص التحديث: لا توجد إصدارات منشورة للمتجر بعد.")
+                    return@withContext StoreUpdateCheckResult.Error(
+                        context.getString(R.string.github_no_releases)
+                    )
                 }
 
                 if (responseCode !in 200..299) {
                     val err = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    return@withContext StoreUpdateCheckResult.Error("خطأ في فحص التحديث ($responseCode): $err")
+                    return@withContext StoreUpdateCheckResult.Error(
+                        context.getString(R.string.github_check_http_error, responseCode, err)
+                    )
                 }
 
                 val etag = conn.getHeaderField("ETag")
@@ -113,8 +121,10 @@ object StoreSelfUpdater {
                 }
                 editor.apply()
 
-                val release = parseReleaseJson(responseBody)
-                    ?: return@withContext StoreUpdateCheckResult.Error("تعذر قراءة بيانات التحديث من GitHub")
+                val release = parseReleaseJson(context, responseBody)
+                    ?: return@withContext StoreUpdateCheckResult.Error(
+                        context.getString(R.string.github_parse_error)
+                    )
 
                 if (release.versionCode > BuildConfig.VERSION_CODE) {
                     StoreUpdateCheckResult.UpdateAvailable(release)
@@ -122,25 +132,38 @@ object StoreSelfUpdater {
                     StoreUpdateCheckResult.UpToDate
                 }
             } catch (e: Exception) {
-                StoreUpdateCheckResult.Error("خطأ في الاتصال: ${e.message ?: "تعذر الوصول إلى سيرفر التحديث"}")
+                StoreUpdateCheckResult.Error(
+                    context.getString(
+                        R.string.github_connection_error,
+                        e.message ?: context.getString(R.string.error_unexpected)
+                    )
+                )
             }
         }
     }
 
-    private fun parseReleaseJson(jsonStr: String): StoreReleaseInfo? {
+    private fun parseReleaseJson(context: Context, jsonStr: String): StoreReleaseInfo? {
         return try {
             val root = JSONObject(jsonStr)
-            val tagName = root.optString("tag_name", "")
-            val bodyNotes = root.optString("body", "تحسينات عامة في الأداء واستقرار التطبيق")
+            val tagName = if (root.isNull("tag_name")) "" else root.optString("tag_name", "").trim()
+            val rawBody = if (root.isNull("body")) "" else root.optString("body", "").trim()
+            val bodyNotes = if (rawBody.isBlank() || rawBody.equals("null", ignoreCase = true)) {
+                context.getString(R.string.whats_new_default)
+            } else {
+                rawBody
+            }
 
-            // Version number is the number after "build-" in tag_name, e.g. "build-42" -> 42
             val buildCodeStr = if (tagName.contains("build-", ignoreCase = true)) {
                 tagName.substringAfter("build-").takeWhile { it.isDigit() }
             } else {
                 tagName.filter { it.isDigit() }
             }
             val versionCode = buildCodeStr.toIntOrNull() ?: 1
-            val versionName = if (tagName.isNotBlank()) tagName.removePrefix("v").removePrefix("build-") else "1.0.$versionCode"
+            val versionName = if (tagName.isNotBlank()) {
+                tagName.removePrefix("v").removePrefix("build-")
+            } else {
+                "1.0.$versionCode"
+            }
 
             val assets = root.optJSONArray("assets")
             var apkUrl = ""
@@ -211,10 +234,11 @@ object StoreSelfUpdater {
                 input.close()
 
                 if (!targetFile.exists() || targetFile.length() == 0L) {
-                    return@withContext Result.failure(Exception("فشل تحميل ملف التحديث"))
+                    return@withContext Result.failure(
+                        Exception(context.getString(R.string.github_download_failed))
+                    )
                 }
 
-                // Verify signature against current app's signature
                 val currentAppInfo = PackageHelper.getInstalledInfo(context, context.packageName)
                 val downloadedArchive = PackageHelper.getArchiveInfo(context, targetFile)
 
@@ -222,7 +246,7 @@ object StoreSelfUpdater {
                     if (currentAppInfo.signatureSha256.isNotBlank() && downloadedArchive.signatureSha256.isNotBlank()) {
                         if (!currentAppInfo.signatureSha256.equals(downloadedArchive.signatureSha256, ignoreCase = true)) {
                             return@withContext Result.failure(
-                                Exception("بصمة توقيع ملف التحديث لا تطابق النسخة الحالية من المتجر. يجب حذف النسخة القديمة لتثبيتها.")
+                                Exception(context.getString(R.string.github_sig_mismatch))
                             )
                         }
                     }
@@ -237,9 +261,9 @@ object StoreSelfUpdater {
 
     private fun formatSize(bytes: Long): String {
         return when {
-            bytes >= 1024 * 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
-            bytes >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024))
-            bytes >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+            bytes >= 1024 * 1024 * 1024 -> String.format(Locale.US, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
+            bytes >= 1024 * 1024 -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024))
+            bytes >= 1024 -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
             else -> "$bytes B"
         }
     }

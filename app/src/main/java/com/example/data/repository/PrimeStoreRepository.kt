@@ -127,13 +127,13 @@ class PrimeStoreRepository(private val context: Context) {
     fun toggleFavorite(appId: String) {
         val current = _favorites.value.toMutableSet()
         val app = _apps.value.find { it.id == appId }
-        val appName = app?.nameAr ?: app?.name ?: "التطبيق"
+        val appName = app?.nameAr ?: app?.name ?: context.getString(R.string.dl_service_default_app)
         if (current.contains(appId)) {
             current.remove(appId)
-            emitToast("تمت إزالة $appName من المفضلة")
+            emitToast(context.getString(R.string.toast_fav_removed, appName))
         } else {
             current.add(appId)
-            emitToast("تمت إضافة $appName إلى المفضلة ❤️")
+            emitToast(context.getString(R.string.toast_fav_added, appName))
         }
         _favorites.value = current
         saveFavoritesToPrefs()
@@ -169,13 +169,15 @@ class PrimeStoreRepository(private val context: Context) {
                 currentList.add(0, completedItem)
             }
             _downloads.value = currentList
-            emitToast("${app.nameAr} محمل بالفعل وجاهز للتثبيت ✔")
+            val displayName = app.nameAr.ifBlank { app.name }
+            emitToast(context.getString(R.string.toast_already_downloaded, displayName))
             onApkDownloadCompleted?.invoke(appId, targetFile)
             return
         }
 
         if (activeDownloadJobs.containsKey(appId)) {
-            emitToast("جاري تحميل ${app.nameAr} حالياً")
+            val displayName = app.nameAr.ifBlank { app.name }
+            emitToast(context.getString(R.string.toast_already_downloading, displayName))
             return
         }
 
@@ -183,21 +185,21 @@ class PrimeStoreRepository(private val context: Context) {
         val isDirectApk = SupabaseClient.isValidDownloadLink(rawUrl)
 
         if (!isDirectApk) {
-            emitToast("رابط التحميل غير مباشر أو غير مدعوم، يرجى مراجعة الأدمن")
+            emitToast(context.getString(R.string.toast_invalid_download_link))
             val failedItem = DownloadItem(
                 appId = app.id,
                 appName = app.nameAr.ifBlank { app.name },
                 appIcon = app.iconEmoji,
                 accentColor = app.accentColor,
                 progress = 0f,
-                speed = "فشل",
+                speed = context.getString(R.string.status_failed),
                 downloadedSize = "0 MB",
                 totalSize = app.size,
                 isCompleted = false,
                 isPaused = false,
                 status = DownloadStatus.FAILED,
                 apkFilePath = null,
-                errorMessage = "رابط التحميل غير مباشر، أخبر الأدمن"
+                errorMessage = context.getString(R.string.error_invalid_download_link_short)
             )
             if (existingIndex >= 0) {
                 currentList[existingIndex] = failedItem
@@ -217,7 +219,7 @@ class PrimeStoreRepository(private val context: Context) {
             appIcon = app.iconEmoji,
             accentColor = app.accentColor,
             progress = 0.01f,
-            speed = "جاري البدء...",
+            speed = context.getString(R.string.status_starting),
             downloadedSize = "0 MB",
             totalSize = app.size,
             isCompleted = false,
@@ -234,7 +236,7 @@ class PrimeStoreRepository(private val context: Context) {
         }
         _downloads.value = currentList
 
-        emitToast("بدأ تحميل $appDisplayName")
+        emitToast(context.getString(R.string.toast_download_started, appDisplayName))
         DownloadService.start(context, appDisplayName)
 
         val job = scope.launch(Dispatchers.IO) {
@@ -260,7 +262,7 @@ class PrimeStoreRepository(private val context: Context) {
                     throw IOException("HTTP ${response.code}: ${response.message}")
                 }
 
-                val responseBody = response.body ?: throw IOException("الملف فارغ أو غير متاح")
+                val responseBody = response.body ?: throw IOException(context.getString(R.string.error_empty_file))
                 val contentLength = responseBody.contentLength()
                 val totalBytes = if (contentLength > 0) contentLength else app.sizeBytes.coerceAtLeast(10_000_000L)
 
@@ -348,7 +350,7 @@ class PrimeStoreRepository(private val context: Context) {
                 DownloadService.stop(context)
                 activeDownloadJobs.remove(appId)
 
-                emitToast("اكتمل تحميل $appDisplayName، جاري فتح التثبيت...")
+                emitToast(context.getString(R.string.toast_download_completed, appDisplayName))
 
                 scope.launch {
                     com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
@@ -367,17 +369,18 @@ class PrimeStoreRepository(private val context: Context) {
                 tempFile.delete()
                 DownloadService.stop(context)
                 activeDownloadJobs.remove(appId)
-                val errorMsg = e.message ?: "فشل التحميل"
+                val failedLabel = context.getString(R.string.status_failed)
+                val errorMsg = e.message ?: failedLabel
                 _downloads.value = _downloads.value.map { d ->
                     if (d.appId == appId) {
                         d.copy(
                             status = DownloadStatus.FAILED,
-                            speed = "فشل",
+                            speed = failedLabel,
                             errorMessage = errorMsg
                         )
                     } else d
                 }
-                emitToast("فشل تحميل $appDisplayName: $errorMsg")
+                emitToast(context.getString(R.string.toast_download_failed, appDisplayName, errorMsg))
             } finally {
                 response?.close()
             }
@@ -389,10 +392,11 @@ class PrimeStoreRepository(private val context: Context) {
         activeDownloadJobs[appId]?.cancel()
         activeDownloadJobs.remove(appId)
         DownloadService.stop(context)
+        val pausedLabel = context.getString(R.string.status_paused)
         _downloads.value = _downloads.value.map {
-            if (it.appId == appId) it.copy(isPaused = true, status = DownloadStatus.PAUSED, speed = "متوقف") else it
+            if (it.appId == appId) it.copy(isPaused = true, status = DownloadStatus.PAUSED, speed = pausedLabel) else it
         }
-        emitToast("تم إيقاف التحميل مؤقتاً")
+        emitToast(context.getString(R.string.toast_download_paused))
     }
 
     fun resumeDownload(appId: String) {
@@ -412,7 +416,7 @@ class PrimeStoreRepository(private val context: Context) {
             // Ignored
         }
         _downloads.value = _downloads.value.filterNot { it.appId == appId }
-        emitToast("تم إلغاء التحميل")
+        emitToast(context.getString(R.string.toast_download_cancelled))
     }
 
     fun clearAllDownloads() {
@@ -420,16 +424,17 @@ class PrimeStoreRepository(private val context: Context) {
         activeDownloadJobs.clear()
         DownloadService.stop(context)
         _downloads.value = emptyList()
-        emitToast("تم مسح جميع التحميلات")
+        emitToast(context.getString(R.string.toast_downloads_cleared))
     }
 
-    fun addReview(appId: String, rating: Int, comment: String, author: String = "أنت") {
+    fun addReview(appId: String, rating: Int, comment: String, author: String? = null) {
+        val reviewerName = author ?: context.getString(R.string.default_reviewer_name)
         val newReview = ReviewItem(
             id = "rev_${System.currentTimeMillis()}",
-            userName = author,
+            userName = reviewerName,
             userAvatar = "👑",
             rating = rating,
-            date = "الآن",
+            date = context.getString(R.string.review_date_now),
             comment = comment
         )
         val current = _reviews.value.toMutableMap()
@@ -437,7 +442,7 @@ class PrimeStoreRepository(private val context: Context) {
         list.add(0, newReview)
         current[appId] = list
         _reviews.value = current
-        emitToast("شكراً! تم نشر تقييمك بنجاح ⭐")
+        emitToast(context.getString(R.string.toast_review_published))
     }
 
     fun emitToast(msg: String) {
@@ -495,9 +500,9 @@ class PrimeStoreRepository(private val context: Context) {
             )
             if (result.success) {
                 refreshFromSupabase()
-                emitToast("تم نشر التطبيق في المتجر بنجاح! 🎉")
+                emitToast(context.getString(R.string.toast_app_published))
             } else {
-                emitToast("خطأ Supabase (${result.code}): ${result.message}")
+                emitToast(context.getString(R.string.toast_supabase_error, result.httpCode, result.message))
             }
         }
     }
@@ -524,9 +529,9 @@ class PrimeStoreRepository(private val context: Context) {
             )
             if (result.success) {
                 refreshFromSupabase()
-                emitToast("تم تحديث التطبيق بنجاح! ✔")
+                emitToast(context.getString(R.string.toast_app_updated))
             } else {
-                emitToast("خطأ Supabase (${result.code}): ${result.message}")
+                emitToast(context.getString(R.string.toast_supabase_error, result.httpCode, result.message))
             }
         }
     }
@@ -534,10 +539,10 @@ class PrimeStoreRepository(private val context: Context) {
     fun deleteApp(appId: String, accessToken: String? = null) {
         val current = _apps.value.toMutableList()
         val app = current.find { it.id == appId }
-        val name = app?.nameAr ?: app?.name ?: "التطبيق"
+        val name = app?.nameAr ?: app?.name ?: context.getString(R.string.dl_service_default_app)
         current.removeAll { it.id == appId }
         _apps.value = current
-        emitToast("تم حذف تطبيق $name من المتجر 🗑️")
+        emitToast(context.getString(R.string.toast_app_deleted, name))
 
         scope.launch {
             com.example.data.supabase.SupabaseClient.deleteApp(accessToken, appId)

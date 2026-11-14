@@ -59,10 +59,11 @@ class GitHubUploadService : Service() {
     }
 
     private lateinit var notificationManager: NotificationManager
-    private var currentFileName: String = "ملف APK"
+    private var currentFileName: String = ""
 
     override fun onCreate() {
         super.onCreate()
+        currentFileName = getString(R.string.gh_service_default_file)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
     }
@@ -70,7 +71,8 @@ class GitHubUploadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                currentFileName = intent.getStringExtra(EXTRA_FILE_NAME) ?: "ملف APK"
+                currentFileName = intent.getStringExtra(EXTRA_FILE_NAME)
+                    ?: getString(R.string.gh_service_default_file)
                 startForeground(NOTIFICATION_ID, buildNotification(0, "0 MB", "0 MB"))
             }
             ACTION_UPDATE -> {
@@ -95,10 +97,10 @@ class GitHubUploadService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "رفع الملفات إلى GitHub Releases",
+                getString(R.string.gh_service_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "إشعارات تقدم رفع ملفات APK في الخلفية"
+                description = getString(R.string.gh_service_channel_desc)
                 setShowBadge(false)
             }
             notificationManager.createNotificationChannel(channel)
@@ -114,7 +116,7 @@ class GitHubUploadService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("جاري رفع $currentFileName إلى GitHub")
+            .setContentTitle(getString(R.string.gh_service_uploading_title, currentFileName))
             .setContentText("$uploadedMb / $totalMb ($progress%)")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setProgress(100, progress, progress == 0)

@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.stringResource
+import com.example.R
 import com.example.data.installer.ApkInstaller
 import com.example.ui.components.DowngradeOrSameVersionDialog
 import com.example.ui.components.LowStorageDialog
@@ -62,10 +64,6 @@ import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.UpdatesAndInstalledScreen
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeBackground
-import com.example.ui.theme.PrimeTextMuted
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -236,6 +234,10 @@ fun PrimeStoreApp(
                                         downloadItem = downloads.find { it.appId == selectedApp.id },
                                         reviews = reviews[selectedApp.id] ?: emptyList(),
                                         allApps = apps.ifEmpty { pagedApps },
+                                        targetLanguageCode = uiState.currentLanguage,
+                                        autoTranslateEnabled = uiState.autoTranslateEnabled,
+                                        wifiOnlyTranslation = uiState.wifiOnlyTranslation,
+                                        onDisableWifiOnlyAndRetry = { viewModel.disableWifiOnlyTranslation() },
                                         onBackClick = { viewModel.closeAppDetails() },
                                         onSearchClick = { viewModel.openSearch() },
                                         onToggleFavorite = { viewModel.toggleFavorite(selectedApp.id) },
@@ -245,7 +247,7 @@ fun PrimeStoreApp(
                                         onUninstallClick = { pkg -> viewModel.uninstallPackage(pkg, context) },
                                         onOpenAppClick = { pkg -> viewModel.openInstalledApp(pkg, context) },
                                         onReportProblem = { reason, details ->
-                                            viewModel.submitProblemReport(selectedApp.id, selectedApp.nameAr, reason, details)
+                                            viewModel.submitProblemReport(selectedApp.id, selectedApp.nameAr.ifBlank { selectedApp.name }, reason, details)
                                         },
                                         onAppClick = { appId -> viewModel.openAppDetails(appId) },
                                         onAddReview = { rating, comment ->
@@ -253,7 +255,7 @@ fun PrimeStoreApp(
                                         },
                                         onScreenshotClick = { /* preview */ },
                                         onShareClick = {
-                                            viewModel.emitToast("تم نسخ رابط ${selectedApp.nameAr}")
+                                            viewModel.emitToast(context.getString(R.string.copied_link_toast, selectedApp.nameAr.ifBlank { selectedApp.name }))
                                         }
                                     )
                                 } else {
@@ -364,7 +366,8 @@ fun PrimeStoreApp(
 
                                         MainTab.SETTINGS -> {
                                             SettingsScreen(
-                                                currentLanguage = uiState.currentLanguage,
+                                                currentLanguage = uiState.selectedLanguageTag,
+                                                effectiveLanguage = uiState.currentLanguage,
                                                 isDarkMode = uiState.isDarkMode,
                                                 notificationsEnabled = uiState.notificationsEnabled,
                                                 cacheSize = uiState.cacheSize,
@@ -412,10 +415,10 @@ fun PrimeStoreApp(
                                                 onToggleNotifications = { viewModel.toggleNotifications() },
                                                 onClearCache = { viewModel.clearCache() },
                                                 onShareApp = {
-                                                    viewModel.emitToast("تم نسخ رابط تطبيق Prime Store 🔗")
+                                                    viewModel.emitToast(context.getString(R.string.copied_link_toast, context.getString(R.string.app_name)))
                                                 },
                                                 onRateApp = {
-                                                    viewModel.emitToast("شكراً لدعمك وتقييمك 5 نجوم ⭐⭐⭐⭐⭐")
+                                                    viewModel.emitToast(context.getString(R.string.rate_thanks_toast))
                                                 },
                                                 onLogoutClick = {
                                                     viewModel.logout()
@@ -445,11 +448,11 @@ fun PrimeStoreApp(
                     onDismissRequest = { viewModel.dismissInstallPermissionDialog() },
                     containerColor = colors.card,
                     title = {
-                        Text("تثبيت التطبيقات 📦", color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.install_permission_title), color = colors.textPrimary, fontWeight = FontWeight.Bold)
                     },
                     text = {
                         Text(
-                            "يرجى السماح لـ Prime Store بتثبيت التطبيقات لمتابعة التثبيت",
+                            stringResource(R.string.install_permission_desc),
                             color = colors.textSecondary,
                             fontSize = 14.sp
                         )
@@ -462,12 +465,12 @@ fun PrimeStoreApp(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                         ) {
-                            Text("السماح", color = colors.textOnAccent, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.allow), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { viewModel.dismissInstallPermissionDialog() }) {
-                            Text("إلغاء", color = colors.textMuted)
+                            Text(stringResource(R.string.cancel), color = colors.textMuted)
                         }
                     }
                 )

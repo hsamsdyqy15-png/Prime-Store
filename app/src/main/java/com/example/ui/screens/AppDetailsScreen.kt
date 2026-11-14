@@ -4,10 +4,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,14 +35,15 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import com.example.ui.theme.AccentRed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -50,55 +51,61 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.R
+import com.example.data.installer.ApkInstaller
+import com.example.data.installer.PackageHelper
 import com.example.data.model.AppItem
 import com.example.data.model.DownloadItem
 import com.example.data.model.DownloadStatus
 import com.example.data.model.ReviewItem
+import com.example.data.security.AiSecurityScanner
+import com.example.data.security.SecurityReport
+import com.example.data.translation.MlKitTranslatorHelper
+import com.example.data.translation.TranslationOutcome
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.components.NeonGradientButton
+import com.example.ui.components.ProblemReportDialog
 import com.example.ui.components.StarRatingBar
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.AccentGreen
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurpleGlow
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.NeonPurpleSecondary
-import com.example.ui.theme.PrimeCardBackground
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextPrimary
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
+import kotlinx.coroutines.launch
+import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppDetailsScreen(
     app: AppItem,
@@ -106,6 +113,10 @@ fun AppDetailsScreen(
     downloadItem: DownloadItem?,
     reviews: List<ReviewItem>,
     allApps: List<AppItem> = emptyList(),
+    targetLanguageCode: String = "en",
+    autoTranslateEnabled: Boolean = true,
+    wifiOnlyTranslation: Boolean = false,
+    onDisableWifiOnlyAndRetry: () -> Unit = {},
     onBackClick: () -> Unit,
     onSearchClick: () -> Unit,
     onToggleFavorite: () -> Unit,
@@ -121,42 +132,170 @@ fun AppDetailsScreen(
     onShareClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("حول التطبيق", "تحليل الذكاء الاصطناعي 🤖", "مراجعات", "لقطات الشاشة")
+    val tabs = listOf(
+        stringResource(R.string.tab_overview),
+        stringResource(R.string.tab_ai_analysis),
+        stringResource(R.string.tab_reviews),
+        stringResource(R.string.tab_screenshots)
+    )
+
     var showMenu by remember { mutableStateOf(false) }
     var showReviewModal by remember { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
     var showSecurityDialog by remember { mutableStateOf(false) }
     var isScanningSecurity by remember { mutableStateOf(false) }
-    var securityReport by remember { mutableStateOf<com.example.data.security.SecurityReport?>(null) }
+    var securityReport by remember { mutableStateOf<SecurityReport?>(null) }
     var showUninstallConflictDialog by remember { mutableStateOf(false) }
     var detectedInstalledPackage by remember { mutableStateOf<String?>(null) }
     var showReportDialog by remember { mutableStateOf(false) }
-    var showOriginalText by remember { mutableStateOf(false) }
     var showConfirmUninstallDialog by remember { mutableStateOf(false) }
 
+    // On-device ML Kit Translation state
+    var showOriginalText by remember(app.id, targetLanguageCode) { mutableStateOf(false) }
+    var translationRetryCount by remember { mutableIntStateOf(0) }
+    var isTranslating by remember(app.id, targetLanguageCode) { mutableStateOf(false) }
+    var translatedDesc by remember(app.id, targetLanguageCode) { mutableStateOf<String?>(null) }
+    var translatedFeatures by remember(app.id, targetLanguageCode) { mutableStateOf<List<String>?>(null) }
+    var translatedChangelog by remember(app.id, targetLanguageCode) { mutableStateOf<String?>(null) }
+    var detectedSourceLang by remember(app.id, targetLanguageCode) { mutableStateOf<String?>(null) }
+    var translationError by remember(app.id, targetLanguageCode) { mutableStateOf<String?>(null) }
+    var isTranslationWifiBlocked by remember(app.id, targetLanguageCode) { mutableStateOf(false) }
+
+    val baseDescription = remember(app, targetLanguageCode) {
+        if (targetLanguageCode.equals("ar", ignoreCase = true)) {
+            app.descriptionAr.ifBlank { app.descriptionEn }
+        } else {
+            app.descriptionEn.ifBlank { app.descriptionAr }
+        }
+    }
+
+    LaunchedEffect(app.id, targetLanguageCode, autoTranslateEnabled, wifiOnlyTranslation, translationRetryCount) {
+        if (!autoTranslateEnabled) {
+            isTranslating = false
+            translatedDesc = null
+            translatedFeatures = null
+            translatedChangelog = null
+            detectedSourceLang = null
+            translationError = null
+            isTranslationWifiBlocked = false
+            return@LaunchedEffect
+        }
+
+        isTranslating = true
+        translationError = null
+        isTranslationWifiBlocked = false
+        translatedDesc = null
+        translatedFeatures = null
+        translatedChangelog = null
+        detectedSourceLang = null
+
+        val descOutcome = MlKitTranslatorHelper.translateField(
+            context = context,
+            appId = app.id,
+            field = "description",
+            originalText = baseDescription,
+            targetLanguageCode = targetLanguageCode,
+            wifiOnly = wifiOnlyTranslation
+        )
+        when (descOutcome) {
+            is TranslationOutcome.Success -> {
+                translatedDesc = descOutcome.translatedText
+                detectedSourceLang = descOutcome.sourceLangTag
+            }
+            is TranslationOutcome.AlreadyInTargetLanguage -> {
+                translatedDesc = null
+            }
+            is TranslationOutcome.Error -> {
+                translationError = descOutcome.reason
+                isTranslationWifiBlocked = descOutcome.isWifiBlocked
+            }
+        }
+
+        if (translationError == null && app.featuresAr.isNotEmpty()) {
+            val featOutcome = MlKitTranslatorHelper.translateField(
+                context = context,
+                appId = app.id,
+                field = "features",
+                originalText = app.featuresAr.joinToString("\n"),
+                targetLanguageCode = targetLanguageCode,
+                wifiOnly = wifiOnlyTranslation
+            )
+            when (featOutcome) {
+                is TranslationOutcome.Success -> {
+                    translatedFeatures = featOutcome.translatedText
+                        .split("\n")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                    if (detectedSourceLang == null) {
+                        detectedSourceLang = featOutcome.sourceLangTag
+                    }
+                }
+                is TranslationOutcome.AlreadyInTargetLanguage -> Unit
+                is TranslationOutcome.Error -> {
+                    if (translatedDesc == null) {
+                        translationError = featOutcome.reason
+                        isTranslationWifiBlocked = featOutcome.isWifiBlocked
+                    }
+                }
+            }
+        }
+
+        val rawChangelog = app.changelog?.trim().orEmpty()
+        if (translationError == null && rawChangelog.isNotBlank()) {
+            val chgOutcome = MlKitTranslatorHelper.translateField(
+                context = context,
+                appId = app.id,
+                field = "changelog",
+                originalText = rawChangelog,
+                targetLanguageCode = targetLanguageCode,
+                wifiOnly = wifiOnlyTranslation
+            )
+            if (chgOutcome is TranslationOutcome.Success) {
+                translatedChangelog = chgOutcome.translatedText
+                if (detectedSourceLang == null) {
+                    detectedSourceLang = chgOutcome.sourceLangTag
+                }
+            }
+        }
+
+        isTranslating = false
+    }
+
     val installedInfo = remember(app.packageName, app.name) {
-        val apkFile = com.example.data.installer.ApkInstaller.getApkFile(context, app.id)
-        val pkg = com.example.data.installer.ApkInstaller.findInstalledPackage(context, app.name, apkFile, app.packageName)
-        if (!pkg.isNullOrBlank()) com.example.data.installer.PackageHelper.getInstalledInfo(context, pkg) else null
+        val apkFile = ApkInstaller.getApkFile(context, app.id)
+        val pkg = ApkInstaller.findInstalledPackage(context, app.name, apkFile, app.packageName)
+        if (!pkg.isNullOrBlank()) PackageHelper.getInstalledInfo(context, pkg) else null
     }
 
     val similarApps = remember(allApps, app) {
-        allApps.filter { it.id != app.id && (it.category == app.category || it.categoryKey == app.categoryKey) }.take(6)
+        allApps.filter {
+            it.id != app.id && (it.category == app.category || it.categoryKey == app.categoryKey)
+        }.take(6)
     }
 
-    android.util.Log.d(
-        "PrimeStore",
-        "AppDetailsScreen opened -> id: ${app.id}, name: ${app.name}, icon_url: ${app.iconUrl}, file_url: ${app.fileUrl}, screenshots: ${app.screenshotUrls}"
-    )
-
-    androidx.compose.runtime.LaunchedEffect(app.id) {
-        android.util.Log.d(
-            "PrimeStore",
-            "AppDetailsScreen LaunchedEffect -> id: ${app.id}, name: ${app.name}, icon_url: ${app.iconUrl}, file_url: ${app.fileUrl}, screenshots: ${app.screenshotUrls}"
-        )
+    val displayedDescription = if (!showOriginalText && !translatedDesc.isNullOrBlank()) {
+        translatedDesc!!
+    } else {
+        baseDescription
     }
+    val displayedFeatures = if (!showOriginalText && !translatedFeatures.isNullOrEmpty()) {
+        translatedFeatures!!
+    } else {
+        app.featuresAr
+    }
+    val defaultWhatsNew = stringResource(R.string.whats_new_default)
+    val displayedChangelog = if (!showOriginalText && !translatedChangelog.isNullOrBlank()) {
+        translatedChangelog!!
+    } else {
+        app.changelog?.ifBlank { null } ?: defaultWhatsNew
+    }
+    val hasAnyTranslation = !translatedDesc.isNullOrBlank() ||
+        !translatedFeatures.isNullOrEmpty() ||
+        !translatedChangelog.isNullOrBlank()
 
     Box(
         modifier = modifier
@@ -182,52 +321,61 @@ fun AppDetailsScreen(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "رجوع",
-                            tint = Color.White
+                            contentDescription = stringResource(R.string.back),
+                            tint = colors.textPrimary
                         )
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onToggleFavorite) {
+                        IconButton(
+                            onClick = onToggleFavorite,
+                            modifier = Modifier.testTag("details_favorite_button")
+                        ) {
                             Icon(
                                 imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                contentDescription = "المفضلة",
-                                tint = if (isFavorite) Color(0xFFEF4444) else Color.White
+                                contentDescription = stringResource(R.string.tab_favorites),
+                                tint = if (isFavorite) colors.danger else colors.textPrimary
                             )
                         }
 
-                        IconButton(onClick = onSearchClick) {
+                        IconButton(
+                            onClick = onSearchClick,
+                            modifier = Modifier.testTag("details_search_button")
+                        ) {
                             Icon(
                                 imageVector = Icons.Filled.Search,
-                                contentDescription = "بحث",
-                                tint = Color.White
+                                contentDescription = stringResource(R.string.search),
+                                tint = colors.textPrimary
                             )
                         }
 
                         Box {
-                            IconButton(onClick = { showMenu = true }) {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.testTag("details_more_button")
+                            ) {
                                 Icon(
                                     imageVector = Icons.Filled.MoreVert,
-                                    contentDescription = "المزيد",
-                                    tint = Color.White
+                                    contentDescription = stringResource(R.string.options),
+                                    tint = colors.textPrimary
                                 )
                             }
                             DropdownMenu(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
                                 modifier = Modifier
-                                    .background(Color(0xFF1E162A))
-                                    .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                                    .background(colors.card)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("مشاركة التطبيق 🔗", color = Color.White) },
+                                    text = { Text(stringResource(R.string.share), color = colors.textPrimary) },
                                     onClick = {
                                         showMenu = false
                                         onShareClick()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("إبلاغ عن مشكلة أو محتوى ⚠️", color = Color.White) },
+                                    text = { Text(stringResource(R.string.report_problem), color = colors.textPrimary) },
                                     onClick = {
                                         showMenu = false
                                         showReportDialog = true
@@ -239,7 +387,7 @@ fun AppDetailsScreen(
                 }
             }
 
-            // Header info matching Screenshot 4: Big Icon, Title, Rating, Category badges
+            // Header Info
             item {
                 Column(
                     modifier = Modifier
@@ -259,16 +407,15 @@ fun AppDetailsScreen(
 
                     Text(
                         text = app.name,
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.Star,
                             contentDescription = null,
@@ -278,38 +425,52 @@ fun AppDetailsScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "${app.rating}",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = " (${app.ratingCount})",
-                            color = PrimeTextMuted,
+                            color = colors.textMuted,
                             fontSize = 13.sp
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Tags & Version badges
-                    Row(
+                    // Version & Category Tags
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {
-                        // Version Badge
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF2E1065))
-                                .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
+                                .background(colors.accent.copy(alpha = if (colors.isDark) 0.22f else 0.12f))
+                                .border(1.dp, colors.accent.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 12.dp, vertical = 5.dp)
                         ) {
                             Text(
                                 text = app.displayVersionBadge,
-                                color = Color(0xFFE9D5FF),
+                                color = colors.accent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(colors.cardAlt)
+                                .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = app.localizedCategoryTitle(),
+                                color = colors.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
 
@@ -317,13 +478,13 @@ fun AppDetailsScreen(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF281C38))
-                                    .border(1.dp, NeonBorder, RoundedCornerShape(10.dp))
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.border, RoundedCornerShape(10.dp))
                                     .padding(horizontal = 12.dp, vertical = 5.dp)
                             ) {
                                 Text(
                                     text = tag,
-                                    color = NeonPurplePrimary,
+                                    color = colors.textSecondary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -341,33 +502,36 @@ fun AppDetailsScreen(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF1E3A8A))
-                                    .border(1.dp, Color(0xFF3B82F6), RoundedCornerShape(10.dp))
+                                    .background(colors.accent.copy(alpha = if (colors.isDark) 0.22f else 0.12f))
+                                    .border(1.dp, colors.accent.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
                                     .padding(horizontal = 10.dp, vertical = 5.dp)
                             ) {
                                 Text(
-                                    text = "🔓 مشروع مفتوح المصدر (FOSS)",
-                                    color = Color(0xFF93C5FD),
+                                    text = "🔓 ${stringResource(R.string.foss_badge)}",
+                                    color = colors.accent,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
 
                             if (!app.sourceCodeUrl.isNullOrBlank()) {
-                                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                                val uriHandler = LocalUriHandler.current
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xFF281C38))
-                                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
+                                        .background(colors.cardAlt)
+                                        .border(1.dp, colors.border, RoundedCornerShape(10.dp))
                                         .clickable {
-                                            try { uriHandler.openUri(app.sourceCodeUrl) } catch (e: Exception) {}
+                                            try {
+                                                uriHandler.openUri(app.sourceCodeUrl)
+                                            } catch (_: Exception) {
+                                            }
                                         }
                                         .padding(horizontal = 10.dp, vertical = 5.dp)
                                 ) {
                                     Text(
-                                        text = "🐙 عرض الكود المصدر ↗",
-                                        color = Color.White,
+                                        text = "🐙 ${stringResource(R.string.source_code_button)} ↗",
+                                        color = colors.textPrimary,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -381,13 +545,13 @@ fun AppDetailsScreen(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF1E142D))
-                            .border(1.dp, Color(0xFF10B981).copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                            .background(colors.success.copy(alpha = if (colors.isDark) 0.18f else 0.10f))
+                            .border(1.dp, colors.success.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
                             .padding(horizontal = 12.dp, vertical = 5.dp)
                     ) {
                         Text(
-                            text = "⚡ المعالجات المدعومة: ${app.supportedAbis}",
-                            color = Color(0xFF34D399),
+                            text = "⚡ ${stringResource(R.string.architecture)}: ${app.supportedAbis}",
+                            color = colors.success,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -395,16 +559,15 @@ fun AppDetailsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Download Action Button / Progress
+                    // Download / Install / Update / Open Action Section
                     if (downloadItem != null && downloadItem.status == DownloadStatus.DOWNLOADING) {
-                        // In-progress downloading state with progress, speed, and cancel
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .shadow(8.dp, RoundedCornerShape(18.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
+                                .shadow(if (colors.isDark) 8.dp else 2.dp, RoundedCornerShape(18.dp), ambientColor = colors.accentGlow, spotColor = colors.accent)
                                 .clip(RoundedCornerShape(18.dp))
-                                .background(Color(0xFF1E142D))
-                                .border(1.dp, NeonBorderGlow, RoundedCornerShape(18.dp))
+                                .background(colors.card)
+                                .border(1.dp, colors.border, RoundedCornerShape(18.dp))
                                 .padding(16.dp)
                         ) {
                             Row(
@@ -413,24 +576,24 @@ fun AppDetailsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "جاري التحميل... ${(downloadItem.progress * 100).toInt()}%",
-                                    color = Color.White,
+                                    text = stringResource(R.string.downloading_percent, (downloadItem.progress * 100).toInt()),
+                                    color = colors.textPrimary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
                                 )
                                 Text(
                                     text = downloadItem.speed,
-                                    color = NeonPurplePrimary,
+                                    color = colors.accent,
                                     fontSize = 12.sp
                                 )
                                 IconButton(
                                     onClick = onCancelDownload,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Close,
-                                        contentDescription = "إلغاء",
-                                        tint = Color.White
+                                        contentDescription = stringResource(R.string.cancel),
+                                        tint = colors.textPrimary
                                     )
                                 }
                             }
@@ -441,44 +604,44 @@ fun AppDetailsScreen(
                                     .fillMaxWidth()
                                     .height(8.dp)
                                     .clip(RoundedCornerShape(4.dp)),
-                                color = NeonPurplePrimary,
-                                trackColor = Color(0xFF3B2456)
+                                color = colors.accent,
+                                trackColor = colors.surface
                             )
                         }
                     } else if (downloadItem != null && downloadItem.status == DownloadStatus.FAILED) {
-                        // Failed state with retry button
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(18.dp))
-                                .background(Color(0xFF2D141E))
-                                .border(1.dp, Color(0xFFEF4444), RoundedCornerShape(18.dp))
+                                .background(colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f))
+                                .border(1.dp, colors.danger.copy(alpha = 0.6f), RoundedCornerShape(18.dp))
                                 .padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = downloadItem.errorMessage ?: "فشل التحميل، يرجى المحاولة مرة أخرى",
-                                color = Color(0xFFFCA5A5),
+                                text = downloadItem.errorMessage ?: stringResource(R.string.download_failed_retry),
+                                color = colors.danger,
                                 fontSize = 13.sp,
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             NeonGradientButton(
-                                text = "إعادة المحاولة 🔄",
+                                text = stringResource(R.string.download_retry),
                                 icon = Icons.Filled.Download,
+                                testTag = "details_retry_download_button",
                                 modifier = Modifier.fillMaxWidth(),
                                 onClick = onDownloadClick
                             )
                         }
                     } else if (downloadItem != null && (downloadItem.isCompleted || downloadItem.status == DownloadStatus.COMPLETED)) {
-                        // Completed state -> Direct Install button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             NeonGradientButton(
-                                text = "تثبيت التطبيق 📦",
+                                text = stringResource(R.string.ready_to_install),
                                 icon = Icons.Filled.CheckCircle,
+                                testTag = "details_install_button",
                                 modifier = Modifier.weight(1f),
                                 onClick = onInstallClick
                             )
@@ -486,19 +649,20 @@ fun AppDetailsScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Button(
                                     onClick = { showConfirmUninstallDialog = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E1220)),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed.copy(alpha = 0.6f)),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.6f)),
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.height(48.dp)
                                 ) {
-                                    Icon(imageVector = Icons.Filled.Delete, contentDescription = "حذف التطبيق", tint = AccentRed)
+                                    Icon(imageVector = Icons.Filled.Delete, contentDescription = stringResource(R.string.uninstall), tint = colors.danger)
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("حذف", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text(stringResource(R.string.uninstall), color = colors.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
                         }
                     } else if (installedInfo != null) {
-                        // Installed state
                         val hasUpdate = app.versionCode > installedInfo.versionCode
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -506,15 +670,17 @@ fun AppDetailsScreen(
                         ) {
                             if (hasUpdate) {
                                 NeonGradientButton(
-                                    text = "تحديث التطبيق 🚀 (${app.size})",
+                                    text = "${stringResource(R.string.update_to_version, app.version)} (${app.size})",
                                     icon = Icons.Filled.Download,
+                                    testTag = "details_update_button",
                                     modifier = Modifier.weight(1f),
                                     onClick = onDownloadClick
                                 )
                             } else {
                                 NeonGradientButton(
-                                    text = "فتح التطبيق ↗️",
+                                    text = stringResource(R.string.open_app),
                                     icon = Icons.Filled.OpenInNew,
+                                    testTag = "details_open_button",
                                     modifier = Modifier.weight(1f),
                                     onClick = { onOpenAppClick(installedInfo.packageName) }
                                 )
@@ -522,56 +688,69 @@ fun AppDetailsScreen(
 
                             Spacer(modifier = Modifier.width(8.dp))
 
-                            // Permanent Uninstall button
                             Button(
                                 onClick = { showConfirmUninstallDialog = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E1220)),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed.copy(alpha = 0.6f)),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.6f)),
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.height(48.dp)
                             ) {
-                                Icon(imageVector = Icons.Filled.Delete, contentDescription = "حذف التطبيق", tint = AccentRed)
+                                Icon(imageVector = Icons.Filled.Delete, contentDescription = stringResource(R.string.uninstall), tint = colors.danger)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("حذف", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(stringResource(R.string.uninstall), color = colors.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     } else {
-                        // Ready to download button
                         NeonGradientButton(
-                            text = "تحميل الآن  (${app.size})",
+                            text = "${stringResource(R.string.download)} (${app.size})",
                             icon = Icons.Filled.Download,
+                            testTag = "details_download_button",
                             modifier = Modifier.fillMaxWidth(),
                             onClick = onDownloadClick
                         )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
+
+                    // AI Security Scan Button
                     Button(
                         onClick = {
                             scope.launch {
                                 isScanningSecurity = true
                                 showSecurityDialog = true
-                                val apkFile = com.example.data.installer.ApkInstaller.getApkFile(context, app.id)
-                                val report = com.example.data.security.AiSecurityScanner.scanApk(context, apkFile)
+                                val apkFile = ApkInstaller.getApkFile(context, app.id)
+                                val report = AiSecurityScanner.scanApk(context, apkFile)
                                 securityReport = report
                                 isScanningSecurity = false
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E142D)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("details_security_scan_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.card),
                         shape = RoundedCornerShape(16.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.5f))
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.success.copy(alpha = 0.6f))
                     ) {
-                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = "فحص الأمان", tint = Color(0xFF34D399))
+                        Icon(imageVector = Icons.Filled.Shield, contentDescription = null, tint = colors.success)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("فحص الأمان بالذكاء الاصطناعي 🛡️", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            text = stringResource(R.string.security_analysis),
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    // Resolve Signature / Install Conflict Button
                     Button(
                         onClick = {
-                            val apkFile = com.example.data.installer.ApkInstaller.getApkFile(context, app.id)
-                            val resolvedPkg = com.example.data.installer.ApkInstaller.findInstalledPackage(
+                            val apkFile = ApkInstaller.getApkFile(context, app.id)
+                            val resolvedPkg = ApkInstaller.findInstalledPackage(
                                 context,
                                 app.name,
                                 apkFile,
@@ -580,27 +759,37 @@ fun AppDetailsScreen(
                             detectedInstalledPackage = resolvedPkg
                             showUninstallConflictDialog = true
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF281020)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("details_conflict_fix_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f)
+                        ),
                         shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f))
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.55f))
                     ) {
-                        Text("🗑️ حل مشكلة تعارض التثبيت (حذف النسخة القديمة)", color = Color(0xFFFFB4AB), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "🛡️ ${stringResource(R.string.uninstall_and_install)}",
+                            color = colors.danger,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
 
-            // Tabs Row: حول التطبيق, مراجعات, لقطات الشاشة
+            // Tabs Row
             item {
                 Spacer(modifier = Modifier.height(14.dp))
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = Color.Transparent,
-                    contentColor = NeonPurplePrimary,
+                    contentColor = colors.accent,
                     indicator = { tabPositions ->
                         TabRowDefaults.SecondaryIndicator(
                             Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = NeonPurplePrimary,
+                            color = colors.accent,
                             height = 3.dp
                         )
                     },
@@ -609,7 +798,7 @@ fun AppDetailsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(NeonBorder)
+                                .background(colors.border)
                         )
                     }
                 ) {
@@ -620,9 +809,11 @@ fun AppDetailsScreen(
                             text = {
                                 Text(
                                     text = title,
-                                    color = if (selectedTab == index) Color.White else PrimeTextMuted,
+                                    color = if (selectedTab == index) colors.accent else colors.textMuted,
                                     fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp,
+                                    maxLines = 2,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         )
@@ -633,55 +824,136 @@ fun AppDetailsScreen(
             // Tab Content
             when (selectedTab) {
                 0 -> {
-                    // "حول التطبيق" (About App Tab)
                     item {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(20.dp)
                         ) {
-                            // AI Translation header badge
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF221538))
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("🌐 ", fontSize = 14.sp)
+                            // ML Kit Translation Status Banner
+                            if (isTranslating) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.cardAlt)
+                                        .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = colors.accent,
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
                                     Text(
-                                        text = if (showOriginalText) "النص الأصلي (الإنجليزية)" else "مترجم تلقائياً بالذكاء الاصطناعي",
-                                        color = Color.White,
+                                        text = stringResource(R.string.translating_text),
+                                        color = colors.textPrimary,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                 }
-                                Text(
-                                    text = if (showOriginalText) "عرض الترجمة 🔄" else "عرض النص الأصلي 📄",
-                                    color = NeonPurplePrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.clickable { showOriginalText = !showOriginalText }
-                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            } else if (translationError != null && !hasAnyTranslation) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f))
+                                        .border(1.dp, colors.danger.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = if (isTranslationWifiBlocked) {
+                                            stringResource(R.string.translation_wifi_blocked_msg)
+                                        } else {
+                                            translationError ?: stringResource(R.string.translation_error_msg)
+                                        },
+                                        color = colors.danger,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    TextButton(
+                                        onClick = {
+                                            if (isTranslationWifiBlocked) {
+                                                onDisableWifiOnlyAndRetry()
+                                            }
+                                            translationRetryCount++
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isTranslationWifiBlocked) {
+                                                stringResource(R.string.disable_wifi_and_retry)
+                                            } else {
+                                                stringResource(R.string.retry)
+                                            },
+                                            color = colors.accent,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                            } else if (hasAnyTranslation) {
+                                val srcDisplay = remember(detectedSourceLang) {
+                                    MlKitTranslatorHelper.getLanguageDisplayName(detectedSourceLang ?: "auto")
+                                        .ifBlank { detectedSourceLang?.uppercase() ?: "Auto" }
+                                }
+                                val tgtDisplay = remember(targetLanguageCode) {
+                                    MlKitTranslatorHelper.getLanguageDisplayName(targetLanguageCode)
+                                        .ifBlank { targetLanguageCode.uppercase() }
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.cardAlt)
+                                        .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = if (showOriginalText) {
+                                            stringResource(R.string.original_text_badge, srcDisplay)
+                                        } else {
+                                            stringResource(R.string.auto_translated_badge, srcDisplay, tgtDisplay)
+                                        },
+                                        color = colors.textPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (showOriginalText) {
+                                            stringResource(R.string.show_translation)
+                                        } else {
+                                            stringResource(R.string.show_original)
+                                        },
+                                        color = colors.accent,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .testTag("toggle_translation_button")
+                                            .clickable { showOriginalText = !showOriginalText }
+                                            .padding(4.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
-
                             // Changelog Expandable Section
-                            val changelogNotes = app.changelog?.ifBlank { null }
-                                ?: "تحسينات عامة في الأداء، دعم معمارية المعالجات الحديثة ${app.supportedAbis}، وإصلاح مشاكل التثبيت."
-
                             var isChangelogExpanded by remember { mutableStateOf(false) }
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF191124))
-                                    .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                                    .background(colors.card)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable { isChangelogExpanded = !isChangelogExpanded }
                                     .padding(12.dp)
                             ) {
@@ -691,11 +963,11 @@ fun AppDetailsScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                             Text("🚀 ", fontSize = 15.sp)
                                             Text(
-                                                text = "ما الجديد في هذا الإصدار (v${app.version})",
-                                                color = Color.White,
+                                                text = "${stringResource(R.string.whats_new)} (v${app.version})",
+                                                color = colors.textPrimary,
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -703,15 +975,15 @@ fun AppDetailsScreen(
                                         Icon(
                                             imageVector = if (isChangelogExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                                             contentDescription = null,
-                                            tint = NeonPurplePrimary,
+                                            tint = colors.accent,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
 
                                     AnimatedVisibility(visible = isChangelogExpanded) {
                                         Text(
-                                            text = changelogNotes,
-                                            color = Color(0xFFE2E8F0),
+                                            text = displayedChangelog,
+                                            color = colors.textSecondary,
                                             fontSize = 12.sp,
                                             lineHeight = 18.sp,
                                             modifier = Modifier.padding(top = 8.dp)
@@ -723,58 +995,56 @@ fun AppDetailsScreen(
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = if (showOriginalText) app.descriptionEn.ifBlank { app.descriptionAr } else app.descriptionAr,
-                                color = PrimeTextSecondary,
+                                text = displayedDescription,
+                                color = colors.textSecondary,
                                 fontSize = 14.sp,
                                 lineHeight = 22.sp
                             )
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                            if (displayedFeatures.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(16.dp))
 
-                            Text(
-                                text = "الميزات الرئيسية:",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                                Text(
+                                    text = stringResource(R.string.features),
+                                    color = colors.textPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                            // Green checkmarks features ✔
-                            app.featuresAr.forEach { feature ->
-                                Row(
-                                    modifier = Modifier.padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.CheckCircle,
-                                        contentDescription = null,
-                                        tint = AccentGreen,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = feature,
-                                        color = Color.White,
-                                        fontSize = 13.sp
-                                    )
+                                displayedFeatures.forEach { feature ->
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = null,
+                                            tint = colors.success,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = feature,
+                                            color = colors.textPrimary,
+                                            fontSize = 13.sp
+                                        )
+                                    }
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(20.dp))
 
-                            // Screenshots horizontal preview
                             Text(
-                                text = "لقطات من داخل اللعبة:",
-                                color = Color.White,
+                                text = stringResource(R.string.screenshots),
+                                color = colors.textPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(bottom = 10.dp)
                             )
 
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 if (app.screenshotUrls.isNotEmpty()) {
                                     itemsIndexed(app.screenshotUrls) { index, shotUrl ->
                                         ScreenshotThumbnail(
@@ -797,8 +1067,8 @@ fun AppDetailsScreen(
                         }
                     }
                 }
+
                 1 -> {
-                    // "تحليل الذكاء الاصطناعي 🤖" (AI Deep Analysis Tab)
                     item {
                         Column(
                             modifier = Modifier
@@ -810,12 +1080,8 @@ fun AppDetailsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(Color(0xFF2E1065), Color(0xFF1E142D), Color(0xFF0F172A))
-                                        )
-                                    )
-                                    .border(1.dp, Color(0xFFA855F7).copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.accent.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
                                     .padding(16.dp)
                             ) {
                                 Row(
@@ -825,36 +1091,37 @@ fun AppDetailsScreen(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "تقييم الذكاء الاصطناعي الشامل 🤖",
-                                            color = Color(0xFFD8B4FE),
+                                            text = stringResource(R.string.security_analysis),
+                                            color = colors.accent,
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = "تطبيق فائق الأداء والاعتمادية",
-                                            color = Color.White,
+                                            text = stringResource(R.string.ai_safe_status),
+                                            color = colors.textPrimary,
                                             fontSize = 16.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Text(
-                                            text = "تم فحص الكود البرمجي وصلاحيات النظام وتوافقية المعمارية ${app.supportedAbis}",
-                                            color = PrimeTextMuted,
+                                            text = "${stringResource(R.string.architecture)}: ${app.supportedAbis}",
+                                            color = colors.textSecondary,
                                             fontSize = 11.sp
                                         )
                                     }
+                                    Spacer(modifier = Modifier.width(12.dp))
                                     Box(
                                         modifier = Modifier
                                             .size(58.dp)
                                             .clip(RoundedCornerShape(14.dp))
-                                            .background(Color(0xFF6B21A8))
-                                            .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(14.dp)),
+                                            .background(colors.accent)
+                                            .border(1.dp, colors.border, RoundedCornerShape(14.dp)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(text = "9.9", color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp)
-                                            Text(text = "من 10", color = Color(0xFFE9D5FF), fontSize = 9.sp)
+                                            Text(text = "9.9", color = colors.textOnAccent, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                                            Text(text = "/ 10", color = colors.textOnAccent.copy(alpha = 0.85f), fontSize = 9.sp)
                                         }
                                     }
                                 }
@@ -862,33 +1129,33 @@ fun AppDetailsScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // AI Safety & Security Badge
+                            // AI Safety Banner
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF064E3B).copy(alpha = 0.7f))
-                                    .border(1.dp, Color(0xFF10B981), RoundedCornerShape(12.dp))
+                                    .background(colors.success.copy(alpha = if (colors.isDark) 0.18f else 0.10f))
+                                    .border(1.dp, colors.success.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
                                     .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = null,
-                                    tint = Color(0xFF34D399),
+                                    tint = colors.success,
                                     modifier = Modifier.size(22.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
-                                        text = "فحص الأمان: نظيف ومعتمد 100% 🛡️",
-                                        color = Color.White,
+                                        text = stringResource(R.string.ai_safe_status),
+                                        color = colors.textPrimary,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
                                     Text(
-                                        text = "خالٍ تماماً من الفيروسات والبرمجيات الخبيثة ومتوافق مع معايير الأمان العالمية.",
-                                        color = Color(0xFFA7F3D0),
+                                        text = stringResource(R.string.ai_summary_safe),
+                                        color = colors.textSecondary,
                                         fontSize = 11.sp
                                     )
                                 }
@@ -896,70 +1163,55 @@ fun AppDetailsScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // Architecture & CPU Compatibility Analysis
+                            // Technical Specifications Card
                             Text(
-                                text = "تحليل توافقية المعالج والنظام ⚡",
-                                color = Color.White,
+                                text = stringResource(R.string.package_architecture_info),
+                                color = colors.textPrimary,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF181224)),
+                                colors = CardDefaults.cardColors(containerColor = colors.card),
                                 shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, NeonBorder)
+                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.border)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text("المعمارية المدعومة:", color = PrimeTextMuted, fontSize = 12.sp)
-                                        Text(app.supportedAbis, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    }
+                                    SpecRow(
+                                        label = stringResource(R.string.architecture),
+                                        value = app.supportedAbis,
+                                        valueColor = colors.accent
+                                    )
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text("رقم الإصدار:", color = PrimeTextMuted, fontSize = 12.sp)
-                                        Text(app.version, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    }
+                                    SpecRow(
+                                        label = stringResource(R.string.version),
+                                        value = app.version,
+                                        valueColor = colors.textPrimary
+                                    )
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text("اسم الحزمة (Package):", color = PrimeTextMuted, fontSize = 12.sp)
-                                        Text(app.packageName ?: "com.primestore.${app.name.lowercase().replace(" ", "")}", color = Color(0xFFF472B6), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                    }
+                                    SpecRow(
+                                        label = stringResource(R.string.package_name),
+                                        value = app.packageName ?: "com.primestore.${app.name.lowercase().replace(" ", "")}",
+                                        valueColor = colors.accent
+                                    )
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text("مفتوح المصدر (FOSS):", color = PrimeTextMuted, fontSize = 12.sp)
-                                        Text(if (app.isOpenSource) "نعم 🌟" else "لا", color = if (app.isOpenSource) Color(0xFF34D399) else PrimeTextMuted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    }
+                                    SpecRow(
+                                        label = stringResource(R.string.foss_badge),
+                                        value = if (app.isOpenSource) stringResource(R.string.onboarding_perm_enabled) else "—",
+                                        valueColor = if (app.isOpenSource) colors.success else colors.textMuted
+                                    )
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // AI Smart Recommendations
-                            Text(
-                                text = "توصيات وميزات الذكاء الاصطناعي الذكية 💡",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
+                            // Core Highlights
                             listOf(
-                                "🚀 تثبيت فائق السرعة عبر تقنية Direct Stream دون استهلاك الذاكرة",
-                                "🔋 استهلاك طاقة مثالي بدون عمليات خفية في الخلفية",
-                                "⚡ دعم كامل للمعالجات الحديثة 64-bit لأعلى سرعة وأقل تأخير",
-                                "🛡️ حماية تلقائية من تعارض التوقيع وحزم النظام القديمة"
+                                stringResource(R.string.onboarding_feat_1),
+                                stringResource(R.string.onboarding_feat_2),
+                                stringResource(R.string.onboarding_feat_3),
+                                stringResource(R.string.onboarding_feat_4)
                             ).forEach { itemText ->
                                 Row(
                                     modifier = Modifier.padding(vertical = 4.dp),
@@ -972,14 +1224,14 @@ fun AppDetailsScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(itemText, color = PrimeTextSecondary, fontSize = 12.sp)
+                                    Text(itemText, color = colors.textSecondary, fontSize = 12.sp)
                                 }
                             }
                         }
                     }
                 }
+
                 2 -> {
-                    // "مراجعات" (Reviews Tab)
                     item {
                         Column(
                             modifier = Modifier
@@ -992,8 +1244,8 @@ fun AppDetailsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "آراء ومراجعات المستخدمين",
-                                    color = Color.White,
+                                    text = stringResource(R.string.reviews),
+                                    color = colors.textPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1001,13 +1253,14 @@ fun AppDetailsScreen(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(PrimeGradientBrush)
+                                        .background(colors.buttonGradient)
+                                        .testTag("add_review_button")
                                         .clickable { showReviewModal = true }
-                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
                                 ) {
                                     Text(
-                                        text = "+ أضف تقييمك",
-                                        color = Color.White,
+                                        text = "+ ${stringResource(R.string.add_review_title)}",
+                                        color = colors.textOnAccent,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -1024,9 +1277,10 @@ fun AppDetailsScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "كن أول من يكتب مراجعة لهذا التطبيق! ⭐",
-                                        color = PrimeTextMuted,
-                                        fontSize = 13.sp
+                                        text = stringResource(R.string.no_reviews_yet),
+                                        color = colors.textMuted,
+                                        fontSize = 13.sp,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             } else {
@@ -1038,44 +1292,51 @@ fun AppDetailsScreen(
                         }
                     }
                 }
+
                 3 -> {
-                    // "لقطات الشاشة" (Screenshots Tab)
                     item {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(20.dp)
                         ) {
-                            Text(
-                                text = "اضغط على أي لقطة لعرضها بالحجم الكامل:",
-                                color = PrimeTextSecondary,
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(bottom = 12.dp)
-                            )
-
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                if (app.screenshotUrls.isNotEmpty()) {
-                                    itemsIndexed(app.screenshotUrls) { index, shotUrl ->
-                                        ScreenshotThumbnail(
-                                            colorHex = 0xFF4C1D95,
-                                            index = index,
-                                            width = 160.dp,
-                                            height = 240.dp,
-                                            imageUrl = shotUrl,
-                                            onClick = { onScreenshotClick(index) }
-                                        )
-                                    }
-                                } else {
-                                    itemsIndexed(app.screenshotsColors) { index, colorHex ->
-                                        ScreenshotThumbnail(
-                                            colorHex = colorHex,
-                                            index = index,
-                                            width = 160.dp,
-                                            height = 240.dp,
-                                            onClick = { onScreenshotClick(index) }
-                                        )
+                            if (app.screenshotUrls.isEmpty() && app.screenshotsColors.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.screenshots_empty),
+                                        color = colors.textMuted,
+                                        fontSize = 13.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            } else {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    if (app.screenshotUrls.isNotEmpty()) {
+                                        itemsIndexed(app.screenshotUrls) { index, shotUrl ->
+                                            ScreenshotThumbnail(
+                                                colorHex = 0xFF4C1D95,
+                                                index = index,
+                                                width = 160.dp,
+                                                height = 240.dp,
+                                                imageUrl = shotUrl,
+                                                onClick = { onScreenshotClick(index) }
+                                            )
+                                        }
+                                    } else {
+                                        itemsIndexed(app.screenshotsColors) { index, colorHex ->
+                                            ScreenshotThumbnail(
+                                                colorHex = colorHex,
+                                                index = index,
+                                                width = 160.dp,
+                                                height = 240.dp,
+                                                onClick = { onScreenshotClick(index) }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1094,15 +1355,13 @@ fun AppDetailsScreen(
                             .padding(horizontal = 20.dp)
                     ) {
                         Text(
-                            text = "تطبيقات مشابهة قد تهمك 💡",
-                            color = Color.White,
+                            text = stringResource(R.string.similar_apps),
+                            color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(10.dp))
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(similarApps) { simApp ->
                                 NeonCard(
                                     modifier = Modifier.width(130.dp),
@@ -1123,15 +1382,15 @@ fun AppDetailsScreen(
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Text(
                                             text = simApp.nameAr.ifBlank { simApp.name },
-                                            color = Color.White,
+                                            color = colors.textPrimary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = simApp.size,
-                                            color = PrimeTextMuted,
+                                            color = colors.textMuted,
                                             fontSize = 11.sp
                                         )
                                     }
@@ -1146,7 +1405,7 @@ fun AppDetailsScreen(
         // Add Review Modal Dialog
         if (showReviewModal) {
             AddReviewDialog(
-                appName = app.nameAr,
+                appName = app.nameAr.ifBlank { app.name },
                 onDismiss = { showReviewModal = false },
                 onSubmit = { rating, comment ->
                     onAddReview(rating, comment)
@@ -1157,7 +1416,7 @@ fun AppDetailsScreen(
 
         // Problem Report Dialog
         if (showReportDialog) {
-            com.example.ui.components.ProblemReportDialog(
+            ProblemReportDialog(
                 appName = app.nameAr.ifBlank { app.name },
                 onSubmit = { reason, details ->
                     onReportProblem(reason, details)
@@ -1170,14 +1429,18 @@ fun AppDetailsScreen(
         if (showConfirmUninstallDialog && installedInfo != null) {
             AlertDialog(
                 onDismissRequest = { showConfirmUninstallDialog = false },
-                containerColor = Color(0xFF1E142D),
+                containerColor = colors.card,
                 title = {
-                    Text("حذف التطبيق 🗑️", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.confirm_uninstall_title),
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 text = {
                     Text(
-                        "هل أنت متأكد من رغبتك في إلغاء تثبيت \"${app.nameAr.ifBlank { app.name }}\" من جهازك؟",
-                        color = Color.White,
+                        text = stringResource(R.string.confirm_uninstall_msg, app.nameAr.ifBlank { app.name }),
+                        color = colors.textSecondary,
                         fontSize = 14.sp
                     )
                 },
@@ -1187,14 +1450,14 @@ fun AppDetailsScreen(
                             showConfirmUninstallDialog = false
                             onUninstallClick(installedInfo.packageName)
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.danger)
                     ) {
-                        Text("نعم، احذف التطبيق", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.yes_uninstall), color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showConfirmUninstallDialog = false }) {
-                        Text("إلغاء", color = PrimeTextMuted)
+                        Text(stringResource(R.string.cancel), color = colors.textMuted)
                     }
                 }
             )
@@ -1204,23 +1467,35 @@ fun AppDetailsScreen(
         if (showSecurityDialog) {
             AlertDialog(
                 onDismissRequest = { showSecurityDialog = false },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = Color(0xFF34D399))
+                        Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = colors.success)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "تقرير فحص الأمان بالذكاء الاصطناعي 🤖", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(
+                            text = stringResource(R.string.security_analysis),
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
                     }
                 },
                 text = {
                     if (isScanningSecurity) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            androidx.compose.material3.CircularProgressIndicator(color = NeonPurplePrimary)
+                            CircularProgressIndicator(color = colors.accent)
                             Spacer(modifier = Modifier.height(14.dp))
-                            Text("جاري فحص التطبيق وتحليل الأكواد والصلاحيات بالذكاء الاصطناعي... ⏳", color = PrimeTextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
+                            Text(
+                                text = stringResource(R.string.ai_scan_loading),
+                                color = colors.textSecondary,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     } else if (securityReport != null) {
                         val rep = securityReport!!
@@ -1229,32 +1504,54 @@ fun AppDetailsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(if (rep.isSafe) Color(0xFF064E3B) else Color(0xFF7F1D1D))
+                                    .background(
+                                        if (rep.isSafe) {
+                                            colors.success.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                                        } else {
+                                            colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                                        }
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (rep.isSafe) colors.success else colors.danger,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
                                     .padding(12.dp)
                             ) {
-                                val safetyText = if (rep.isSafe) "🟢 التطبيق آمن 100% ومثالي للتثبيت" else "⚠️ تحذير: يحتوي على صلاحيات حساسة"
                                 Text(
-                                    text = safetyText,
-                                    color = Color.White,
+                                    text = if (rep.isSafe) stringResource(R.string.ai_safe_status) else stringResource(R.string.ai_caution_status),
+                                    color = if (rep.isSafe) colors.success else colors.danger,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
-                            Text("اسم الحزمة (Package): ${rep.packageName}", color = PrimeTextSecondary, fontSize = 12.sp)
-                            Text("رقم الإصدار: ${rep.versionName}", color = PrimeTextSecondary, fontSize = 12.sp)
-                            Text("عدد الصلاحيات: ${rep.permissionsCount}", color = PrimeTextSecondary, fontSize = 12.sp)
+                            Text("${stringResource(R.string.package_name)}: ${rep.packageName}", color = colors.textSecondary, fontSize = 12.sp)
+                            Text("${stringResource(R.string.version)}: ${rep.versionName}", color = colors.textSecondary, fontSize = 12.sp)
+                            Text(stringResource(R.string.risk_score_label, rep.riskScore), color = colors.textSecondary, fontSize = 12.sp)
+                            Text(stringResource(R.string.permissions_count_label, rep.permissionsCount), color = colors.textSecondary, fontSize = 12.sp)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (rep.dangerousPermissions.isEmpty()) {
+                                Text(stringResource(R.string.no_dangerous_permissions), color = colors.success, fontSize = 12.sp)
+                            } else {
+                                Text(
+                                    text = stringResource(R.string.sensitive_permissions_label, rep.dangerousPermissions.size),
+                                    color = colors.danger,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(rep.aiSummaryAr, color = Color.White, fontSize = 13.sp, lineHeight = 18.sp)
+                            Text(rep.aiSummaryAr, color = colors.textPrimary, fontSize = 13.sp, lineHeight = 18.sp)
                         }
                     }
                 },
                 confirmButton = {
                     Button(
                         onClick = { showSecurityDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("حسناً، فهمت", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.ok), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
                     }
                 }
             )
@@ -1265,14 +1562,14 @@ fun AppDetailsScreen(
             val targetPkg = detectedInstalledPackage ?: app.packageName ?: "com.primestore.${app.name.lowercase().replace(" ", "")}"
             AlertDialog(
                 onDismissRequest = { showUninstallConflictDialog = false },
-                containerColor = Color(0xFF16101F),
+                containerColor = colors.card,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Filled.Close, contentDescription = null, tint = Color(0xFFEF4444))
+                        Icon(imageVector = Icons.Filled.Close, contentDescription = null, tint = colors.danger)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "حل مشكلة تعارض التثبيت والتوقيع 🛡️",
-                            color = Color.White,
+                            text = stringResource(R.string.signature_conflict_title),
+                            color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
@@ -1281,8 +1578,8 @@ fun AppDetailsScreen(
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = "إذا ظهر خطأ 'الحزمة تبدو غير صالحة' أو 'هل تريد تحديث التطبيق؟' ثم فشل التثبيت، فهذا بسبب اختلاف توقيع النسخة المثبتة على هاتفك سابقاً عن النسخة الجديدة.",
-                            color = PrimeTextSecondary,
+                            text = stringResource(R.string.android_sig_security_note),
+                            color = colors.textSecondary,
                             fontSize = 12.sp,
                             lineHeight = 18.sp
                         )
@@ -1291,87 +1588,91 @@ fun AppDetailsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF281020))
-                                .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                .background(colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f))
+                                .border(1.dp, colors.danger.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                                 .padding(10.dp)
                         ) {
                             Column {
                                 Text(
-                                    text = "الحزمة المستهدفة للإلغاء والحذف:",
-                                    color = Color(0xFFFFB4AB),
+                                    text = stringResource(R.string.package_name),
+                                    color = colors.danger,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = targetPkg,
-                                    color = Color.White,
+                                    color = colors.textPrimary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
                         Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "اختر أحد الحلول السريعة التالية:",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
 
-                        // Solution 1: Direct System Uninstall Prompt
                         Button(
                             onClick = {
-                                val success = com.example.data.installer.ApkInstaller.uninstallPreviousVersion(context, targetPkg)
+                                val success = ApkInstaller.uninstallPreviousVersion(context, targetPkg)
                                 if (!success) {
-                                    com.example.data.installer.ApkInstaller.openAppDetailsSettings(context, targetPkg)
+                                    ApkInstaller.openAppDetailsSettings(context, targetPkg)
                                 }
                                 showUninstallConflictDialog = false
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.danger),
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("1. إلغاء تثبيت النسخة القديمة فوراً 🗑️", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = stringResource(R.string.uninstall_from_device),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Solution 2: Open App Info in System Settings
                         Button(
                             onClick = {
-                                val success = com.example.data.installer.ApkInstaller.openAppDetailsSettings(context, targetPkg)
+                                val success = ApkInstaller.openAppDetailsSettings(context, targetPkg)
                                 if (!success) {
-                                    com.example.data.installer.ApkInstaller.openManageApplicationsSettings(context)
+                                    ApkInstaller.openManageApplicationsSettings(context)
                                 }
                                 showUninstallConflictDialog = false
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B2456)),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.cardAlt),
                             shape = RoundedCornerShape(10.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, NeonBorder)
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.border)
                         ) {
-                            Text("2. فتح صفحة التطبيق بإعدادات الهاتف ⚙️", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = stringResource(R.string.details),
+                                color = colors.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Solution 3: Open Device Application Manager
                         OutlinedButton(
                             onClick = {
-                                com.example.data.installer.ApkInstaller.openManageApplicationsSettings(context)
+                                ApkInstaller.openManageApplicationsSettings(context)
                                 showUninstallConflictDialog = false
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("3. فتح إدارة كافة تطبيقات الهاتف 📱", color = PrimeTextSecondary, fontSize = 12.sp)
+                            Text(
+                                text = stringResource(R.string.installed_apps_title),
+                                color = colors.textSecondary,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = { showUninstallConflictDialog = false }) {
-                        Text("إغلاق", color = PrimeTextMuted)
+                        Text(stringResource(R.string.close), color = colors.textMuted)
                     }
                 }
             )
@@ -1380,44 +1681,73 @@ fun AppDetailsScreen(
 }
 
 @Composable
+private fun SpecRow(
+    label: String,
+    value: String,
+    valueColor: Color
+) {
+    val colors = PrimeTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = colors.textMuted,
+            fontSize = 12.sp
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = value,
+            color = valueColor,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
 fun ScreenshotThumbnail(
     colorHex: Long,
     index: Int,
     modifier: Modifier = Modifier,
-    width: androidx.compose.ui.unit.Dp = 140.dp,
-    height: androidx.compose.ui.unit.Dp = 95.dp,
+    width: Dp = 140.dp,
+    height: Dp = 95.dp,
     imageUrl: String? = null,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
     Box(
         modifier = modifier
             .size(width, height)
-            .shadow(6.dp, RoundedCornerShape(14.dp), ambientColor = NeonPurpleDeep, spotColor = NeonPurplePrimary)
+            .shadow(if (colors.isDark) 6.dp else 2.dp, RoundedCornerShape(14.dp), ambientColor = colors.accentGlow, spotColor = colors.accent)
             .clip(RoundedCornerShape(14.dp))
             .background(
                 Brush.linearGradient(
-                    listOf(Color(colorHex), Color(0xFF16101F))
+                    listOf(Color(colorHex), colors.cardAlt)
                 )
             )
-            .border(1.dp, NeonBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.border, RoundedCornerShape(14.dp))
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         if (!imageUrl.isNullOrBlank()) {
-            coil.compose.AsyncImage(
+            AsyncImage(
                 model = imageUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp)),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                contentDescription = stringResource(R.string.screenshots),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(14.dp)),
+                contentScale = ContentScale.Crop
             )
         } else {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text = "🎮", fontSize = 24.sp)
                 Text(
-                    text = "🎮",
-                    fontSize = 24.sp
-                )
-                Text(
-                    text = "لقطة ${index + 1}",
+                    text = "${stringResource(R.string.screenshots)} ${index + 1}",
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -1429,6 +1759,7 @@ fun ScreenshotThumbnail(
 
 @Composable
 fun ReviewItemCard(review: ReviewItem) {
+    val colors = PrimeTheme.colors
     NeonCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -1449,14 +1780,14 @@ fun ReviewItemCard(review: ReviewItem) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = review.userName,
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
                 }
                 Text(
                     text = review.date,
-                    color = PrimeTextMuted,
+                    color = colors.textMuted,
                     fontSize = 11.sp
                 )
             }
@@ -1465,7 +1796,7 @@ fun ReviewItemCard(review: ReviewItem) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = review.comment,
-                color = PrimeTextSecondary,
+                color = colors.textSecondary,
                 fontSize = 13.sp,
                 lineHeight = 19.sp
             )
@@ -1479,24 +1810,25 @@ fun AddReviewDialog(
     onDismiss: () -> Unit,
     onSubmit: (Int, String) -> Unit
 ) {
+    val colors = PrimeTheme.colors
     var rating by remember { mutableIntStateOf(5) }
     var comment by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF16101F),
+        containerColor = colors.card,
         title = {
             Text(
-                text = "تقييم $appName",
-                color = Color.White,
+                text = "${stringResource(R.string.add_review_title)} — $appName",
+                color = colors.textPrimary,
                 fontWeight = FontWeight.Bold
             )
         },
         text = {
             Column {
                 Text(
-                    text = "اختر تقييمك بالنجوم:",
-                    color = PrimeTextSecondary,
+                    text = stringResource(R.string.rating),
+                    color = colors.textSecondary,
                     fontSize = 13.sp
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1509,7 +1841,7 @@ fun AddReviewDialog(
                             Icon(
                                 imageVector = Icons.Filled.Star,
                                 contentDescription = null,
-                                tint = if (i <= rating) AccentGold else Color(0xFF4B4656),
+                                tint = if (i <= rating) AccentGold else colors.textMuted.copy(alpha = 0.4f),
                                 modifier = Modifier.size(32.dp)
                             )
                         }
@@ -1519,16 +1851,17 @@ fun AddReviewDialog(
                 OutlinedTextField(
                     value = comment,
                     onValueChange = { comment = it },
-                    placeholder = { Text("اكتب رأيك الصريح عن التطبيق...", color = PrimeTextMuted) },
+                    placeholder = { Text(stringResource(R.string.review_comment_hint), color = colors.textMuted) },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color(0xFF1F162D),
-                        unfocusedContainerColor = Color(0xFF1F162D),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedIndicatorColor = NeonPurplePrimary,
-                        unfocusedIndicatorColor = NeonBorder
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = colors.surface,
+                        unfocusedContainerColor = colors.surface,
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary,
+                        focusedBorderColor = colors.accent,
+                        unfocusedBorderColor = colors.border
                     ),
+                    shape = RoundedCornerShape(12.dp),
                     maxLines = 4
                 )
             }
@@ -1540,14 +1873,14 @@ fun AddReviewDialog(
                         onSubmit(rating, comment)
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
             ) {
-                Text("نشر التقييم", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.submit_review), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("إلغاء", color = PrimeTextMuted)
+                Text(stringResource(R.string.cancel), color = colors.textMuted)
             }
         }
     )

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DarkMode
@@ -32,16 +34,11 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Wifi
-import com.example.data.github.StoreReleaseInfo
-import com.example.ui.theme.AccentGold
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,32 +63,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
 import com.example.R
+import com.example.data.github.StoreReleaseInfo
 import com.example.data.model.StoreUpdateInfo
 import com.example.ui.UserProfile
 import com.example.ui.components.NeonCard
 import com.example.ui.components.NeonGradientButton
-import com.example.ui.theme.AccentRed
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.AccentGold
+import com.example.ui.theme.AccentOption
 import com.example.ui.theme.PrimeTheme
-import androidx.compose.ui.res.stringResource
 
 @Composable
 fun SettingsScreen(
     currentLanguage: String,
+    effectiveLanguage: String = currentLanguage,
     isDarkMode: Boolean,
     notificationsEnabled: Boolean,
     cacheSize: String,
@@ -110,7 +107,7 @@ fun SettingsScreen(
     updatesCount: Int = 0,
     installedCount: Int = 0,
     themeMode: String = "dark",
-    themeAccent: Long = 0xFFA855F7,
+    themeAccent: Long = AccentOption.PURPLE.hex,
     onSetThemeMode: (String) -> Unit = {},
     onSetThemeAccent: (Long) -> Unit = {},
     autoTranslateEnabled: Boolean = true,
@@ -140,37 +137,40 @@ fun SettingsScreen(
     onToast: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val colors = PrimeTheme.colors
+
     var showAboutDialog by remember { mutableStateOf(false) }
     var showCacheDialog by remember { mutableStateOf(false) }
     var showAdminLoginDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
 
-    // Store update dialog states
     var showUpdateFoundDialog by remember { mutableStateOf(false) }
     var showUpToDateDialog by remember { mutableStateOf(false) }
     var pendingUpdateInfo by remember { mutableStateOf<StoreUpdateInfo?>(null) }
 
-    // Secret 7-tap counter
     var versionTapCount by remember { mutableIntStateOf(0) }
     var lastVersionTapTime by remember { mutableLongStateOf(0L) }
 
-    // Admin login form state
     var adminEmailInput by remember { mutableStateOf("") }
     var adminPasswordInput by remember { mutableStateOf("") }
 
-    // User login dialog state
     var userEmailInput by remember { mutableStateOf("") }
     var userPasswordInput by remember { mutableStateOf("") }
     var isSignUpMode by remember { mutableStateOf(false) }
 
-    val colors = PrimeTheme.colors
+    val resolvedLanguageDisplay = languageDisplayName(effectiveLanguage)
+    val languageRowSubtitle = if (currentLanguage.equals("auto", ignoreCase = true)) {
+        "${stringResource(R.string.lang_auto)} ($resolvedLanguageDisplay)"
+    } else {
+        resolvedLanguageDisplay
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .testTag("settings_screen")
     ) {
-        // Title: الإعدادات
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -191,13 +191,14 @@ fun SettingsScreen(
                 .fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 16.dp)
         ) {
-            // User Card
+            // 1. Account Card
             item {
                 val isUserLoggedIn = userProfile != null
                 NeonCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
+                        .testTag("account_card")
                         .clickable {
                             if (!isUserLoggedIn) {
                                 onOpenLogin()
@@ -214,11 +215,14 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .size(50.dp)
                                 .clip(CircleShape)
-                                .background(colors.surface),
+                                .background(colors.surface)
+                                .border(1.dp, colors.border, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (isUserLoggedIn) (if (isAdmin) "👑" else userProfile?.name?.firstOrNull()?.toString() ?: "U") else "👤",
+                                text = if (isUserLoggedIn) {
+                                    if (isAdmin) "👑" else userProfile?.name?.firstOrNull()?.toString() ?: "U"
+                                } else "👤",
                                 fontSize = 22.sp,
                                 color = colors.textPrimary,
                                 fontWeight = FontWeight.Bold
@@ -229,13 +233,17 @@ fun SettingsScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (isUserLoggedIn) (if (isAdmin) "مدير النظام (Admin) 🛠️" else userProfile?.name.orEmpty()) else "غير مسجل الدخول",
+                                text = when {
+                                    !isUserLoggedIn -> stringResource(R.string.not_logged_in)
+                                    isAdmin -> "${stringResource(R.string.admin_badge)} 🛠️"
+                                    else -> userProfile?.name.orEmpty().ifBlank { stringResource(R.string.account_profile) }
+                                },
                                 color = colors.textPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (isUserLoggedIn) userProfile?.email.orEmpty() else "سجّل دخولك للمزامنة والميزات الكاملة",
+                                text = if (isUserLoggedIn) userProfile?.email.orEmpty() else stringResource(R.string.login_sync_hint),
                                 color = if (isAdmin) colors.accent else colors.textSecondary,
                                 fontSize = 12.sp
                             )
@@ -245,15 +253,12 @@ fun SettingsScreen(
                             if (isAdmin || (userProfile?.isPrimeMember == true)) {
                                 Box(
                                     modifier = Modifier
-                                        .background(
-                                            colors.surface,
-                                            RoundedCornerShape(8.dp)
-                                        )
+                                        .background(colors.surface, RoundedCornerShape(8.dp))
                                         .border(1.dp, colors.accent, RoundedCornerShape(8.dp))
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
-                                        text = if (isAdmin) "أدمن" else "PRIME",
+                                        text = if (isAdmin) stringResource(R.string.admin_badge) else "PRIME",
                                         color = colors.accent,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Black
@@ -262,7 +267,7 @@ fun SettingsScreen(
                             }
                         } else {
                             Text(
-                                text = "دخول ›",
+                                text = "${stringResource(R.string.login)} ›",
                                 color = colors.accent,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -272,24 +277,26 @@ fun SettingsScreen(
                 }
             }
 
-            // Hidden Admin Control Panel row (ONLY visible if logged-in user is ADMIN)
+            // 2. Hidden Admin Control Panel Row
             if (isAdmin) {
                 item {
                     SettingsOptionItem(
-                        title = "لوحة التحكم",
-                        subtitle = "إدارة التطبيقات والرفع إلى المتجر (المشرف)",
+                        title = stringResource(R.string.admin_panel_title),
+                        subtitle = stringResource(R.string.admin_panel_desc),
                         icon = Icons.Filled.Build,
+                        testTag = "admin_panel_button",
                         onClick = onOpenAdminPanel
                     )
                 }
             }
 
-            // Updates Row with Badge
+            // 3. App Updates Row
             item {
                 NeonCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
+                        .testTag("app_updates_row")
                         .clickable { onOpenUpdates() }
                 ) {
                     Row(
@@ -304,13 +311,14 @@ fun SettingsScreen(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF281C38)),
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.border, RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Refresh,
                                     contentDescription = null,
-                                    tint = NeonPurplePrimary,
+                                    tint = colors.accent,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -318,8 +326,8 @@ fun SettingsScreen(
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "تحديثات التطبيقات",
-                                        color = Color.White,
+                                        text = stringResource(R.string.app_updates_title),
+                                        color = colors.textPrimary,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -333,7 +341,7 @@ fun SettingsScreen(
                                         ) {
                                             Text(
                                                 text = "$updatesCount",
-                                                color = Color.Black,
+                                                color = Color(0xFF11071F),
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -341,8 +349,12 @@ fun SettingsScreen(
                                     }
                                 }
                                 Text(
-                                    text = if (updatesCount > 0) "يتوفر $updatesCount تحديث جديد لتطبيقاتك" else "جميع تطبيقاتك محدثة لآخر إصدار",
-                                    color = if (updatesCount > 0) AccentGold else PrimeTextSecondary,
+                                    text = if (updatesCount > 0) {
+                                        stringResource(R.string.app_updates_available, updatesCount)
+                                    } else {
+                                        stringResource(R.string.app_updates_all_up_to_date)
+                                    },
+                                    color = if (updatesCount > 0) colors.warning else colors.textSecondary,
                                     fontSize = 12.sp
                                 )
                             }
@@ -350,24 +362,25 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                             contentDescription = null,
-                            tint = PrimeTextMuted,
+                            tint = colors.textMuted,
                             modifier = Modifier.size(16.dp)
                         )
                     }
                 }
             }
 
-            // Installed Apps Row
+            // 4. Installed Apps Row
             item {
                 SettingsOptionItem(
-                    title = "تطبيقاتي المثبتة",
-                    subtitle = if (installedCount > 0) "$installedCount تطبيق مثبت من المتجر" else "عرض وإدارة التطبيقات المثبتة",
+                    title = stringResource(R.string.installed_apps_title),
+                    subtitle = stringResource(R.string.installed_apps_subtitle, installedCount),
                     icon = Icons.Filled.Apps,
+                    testTag = "installed_apps_row",
                     onClick = onOpenInstalledApps
                 )
             }
 
-            // GitHub Self-Update Banner
+            // 5. GitHub Self-Update Banner
             if (githubReleaseInfo != null) {
                 item {
                     NeonCard(
@@ -384,32 +397,42 @@ fun SettingsScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "تحديث المتجر متاح عبر GitHub 🐙",
-                                        color = Color.White,
+                                        text = stringResource(R.string.github_store_update_title),
+                                        color = colors.textPrimary,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp
                                     )
                                     Text(
-                                        text = "الإصدار v${githubReleaseInfo.versionName} (${githubReleaseInfo.assetSizeFormatted})",
-                                        color = NeonPurplePrimary,
+                                        text = stringResource(
+                                            R.string.github_version_size,
+                                            githubReleaseInfo.versionName,
+                                            githubReleaseInfo.assetSizeFormatted
+                                        ),
+                                        color = colors.accent,
                                         fontSize = 12.sp
                                     )
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(PrimeGradientBrush)
+                                        .background(colors.buttonGradient)
                                         .clickable { onDownloadGitHubRelease(githubReleaseInfo) }
-                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
                                 ) {
-                                    Text("تحديث الآن ⚡", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = stringResource(R.string.github_update_now),
+                                        color = colors.textOnAccent,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                             if (githubReleaseInfo.bodyNotes.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = githubReleaseInfo.bodyNotes.take(150),
-                                    color = PrimeTextMuted,
+                                    color = colors.textSecondary,
                                     fontSize = 11.sp,
                                     lineHeight = 16.sp
                                 )
@@ -419,14 +442,13 @@ fun SettingsScreen(
                 }
             }
 
-            // =================================================================
-            // Store Version & Update Check Row (مع نقطة حمراء وزر فحص التحديث)
-            // =================================================================
+            // 6. Store Version & Check Updates Row
             item {
                 NeonCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
+                        .testTag("check_store_update_row")
                         .clickable {
                             onCheckForUpdate { hasUpdate, info ->
                                 if (hasUpdate && info != null) {
@@ -448,8 +470,8 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "الإصدار",
-                                    color = Color.White,
+                                    text = stringResource(R.string.store_version_title),
+                                    color = colors.textPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -459,20 +481,24 @@ fun SettingsScreen(
                                         modifier = Modifier
                                             .size(8.dp)
                                             .clip(CircleShape)
-                                            .background(AccentRed)
+                                            .background(colors.danger)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "تحديث جديد متوفر!",
-                                        color = AccentRed,
+                                        text = stringResource(R.string.store_new_update_dot),
+                                        color = colors.danger,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
                             Text(
-                                text = "Prime Store v${BuildConfig.VERSION_NAME} (كود ${BuildConfig.VERSION_CODE})",
-                                color = PrimeTextSecondary,
+                                text = stringResource(
+                                    R.string.store_version_code,
+                                    BuildConfig.VERSION_NAME,
+                                    BuildConfig.VERSION_CODE
+                                ),
+                                color = colors.textSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -480,7 +506,7 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (isCheckingUpdate) {
                                 CircularProgressIndicator(
-                                    color = NeonPurplePrimary,
+                                    color = colors.accent,
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp
                                 )
@@ -489,13 +515,21 @@ fun SettingsScreen(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .then(if (hasNewUpdateBadge) Modifier.background(PrimeGradientBrush) else Modifier.background(Color(0xFF281C38)))
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    .background(if (hasNewUpdateBadge) colors.accent else colors.cardAlt)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (hasNewUpdateBadge) colors.accent else colors.border,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Text(
-                                    text = if (isCheckingUpdate) "فحص..." else "بحث عن تحديث",
-                                    color = Color.White,
+                                    text = if (isCheckingUpdate) {
+                                        stringResource(R.string.checking_updates)
+                                    } else {
+                                        stringResource(R.string.check_for_updates)
+                                    },
+                                    color = if (hasNewUpdateBadge) colors.textOnAccent else colors.textPrimary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -504,7 +538,7 @@ fun SettingsScreen(
                             Icon(
                                 imageVector = Icons.Filled.SystemUpdate,
                                 contentDescription = null,
-                                tint = NeonPurplePrimary,
+                                tint = colors.accent,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -512,36 +546,29 @@ fun SettingsScreen(
                 }
             }
 
-            // 1. اللغة (Language) 🌐
+            // 7. Language Picker Row
             item {
                 SettingsOptionItem(
-                    title = "اللغة",
-                    subtitle = when (currentLanguage) {
-                        "ar" -> "🇸🇦 العربية (Arabic)"
-                        "en" -> "🇬🇧 English"
-                        "fr" -> "🇫🇷 Français (French)"
-                        "es" -> "🇪🇸 Español (Spanish)"
-                        "de" -> "🇩🇪 Deutsch (German)"
-                        "tr" -> "🇹🇷 Türkçe (Turkish)"
-                        "ru" -> "🇷🇺 Русский (Russian)"
-                        else -> currentLanguage
-                    },
+                    title = stringResource(R.string.store_language),
+                    subtitle = languageRowSubtitle,
                     icon = Icons.Filled.Language,
+                    testTag = "language_settings_row",
                     onClick = { showLanguageDialog = true }
                 )
             }
 
-            // 1.1 تحديث البيانات والمنشورات فوراً 🔄
+            // 8. Refresh Catalog Row
             item {
                 SettingsOptionItem(
-                    title = "تحديث المنشورات والتطبيقات",
-                    subtitle = "إعادة جلب وتحديث كافة التطبيقات من السحابة",
+                    title = stringResource(R.string.refresh_apps_data),
+                    subtitle = stringResource(R.string.refresh_apps_desc),
                     icon = Icons.Filled.Refresh,
+                    testTag = "refresh_catalog_row",
                     onClick = onRefreshData
                 )
             }
 
-            // 2. المظهر والألوان (Theme & Colors) 🌙🎨
+            // 9. Appearance Mode & Accent Color Card
             item {
                 NeonCard(
                     modifier = Modifier
@@ -553,9 +580,7 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .padding(14.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.DarkMode,
                                 contentDescription = null,
@@ -564,7 +589,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "نمط المظهر",
+                                text = stringResource(R.string.theme_mode_title),
                                 color = colors.textPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
@@ -576,34 +601,36 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             val modes = listOf(
-                                "system" to stringResource(R.string.theme_system),
-                                "dark" to stringResource(R.string.theme_dark),
-                                "amoled" to stringResource(R.string.theme_amoled),
-                                "light" to stringResource(R.string.theme_light)
+                                "system" to stringResource(R.string.theme_mode_system),
+                                "dark" to stringResource(R.string.theme_mode_dark),
+                                "amoled" to stringResource(R.string.theme_mode_amoled),
+                                "light" to stringResource(R.string.theme_mode_light)
                             )
                             modes.forEach { (modeKey, label) ->
                                 val isSelected = themeMode.equals(modeKey, ignoreCase = true)
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
+                                        .defaultMinSize(minHeight = 40.dp)
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(
-                                            if (isSelected) colors.accent else colors.surface
-                                        )
+                                        .background(if (isSelected) colors.accent else colors.surface)
                                         .border(
                                             width = 1.dp,
                                             color = if (isSelected) colors.accent else colors.border,
                                             shape = RoundedCornerShape(10.dp)
                                         )
+                                        .testTag("theme_mode_$modeKey")
                                         .clickable { onSetThemeMode(modeKey) }
-                                        .padding(vertical = 8.dp),
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = label,
                                         color = if (isSelected) colors.textOnAccent else colors.textSecondary,
                                         fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -611,45 +638,64 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "لون التمييز (Accent Color)",
+                            text = stringResource(R.string.accent_color_title),
                             color = colors.textSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        val accentColors = listOf(
-                            0xFFA855F7L to "بنفسجي",
-                            0xFF22D3EEL to "سماوي",
-                            0xFF10B981L to "زمردي",
-                            0xFFF43F5EL to "وردي",
-                            0xFFF59E0BL to "عنبر"
-                        )
+                        Spacer(modifier = Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            accentColors.forEach { (colorVal, _) ->
-                                val isChosen = themeAccent == colorVal
+                            AccentOption.entries.forEach { option ->
+                                val isChosen = themeAccent == option.hex
+                                val label = stringResource(option.labelRes)
+                                val circleColor = Color(option.hex)
+                                val checkTint = if (option == AccentOption.CYAN || option == AccentOption.ORANGE) {
+                                    Color(0xFF11071F)
+                                } else {
+                                    Color.White
+                                }
                                 Box(
                                     modifier = Modifier
-                                        .size(38.dp)
+                                        .size(48.dp)
                                         .clip(CircleShape)
-                                        .background(Color(colorVal))
-                                        .border(
-                                            width = if (isChosen) 3.dp else 1.dp,
-                                            color = if (isChosen) colors.textPrimary else Color.Transparent,
-                                            shape = CircleShape
-                                        )
-                                        .clickable { onSetThemeAccent(colorVal) }
-                                )
+                                        .semantics { contentDescription = label }
+                                        .testTag("accent_color_${option.name.lowercase()}")
+                                        .clickable { onSetThemeAccent(option.hex) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(circleColor)
+                                            .border(
+                                                width = if (isChosen) 2.5.dp else 1.dp,
+                                                color = if (isChosen) colors.textPrimary else colors.border,
+                                                shape = CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isChosen) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null,
+                                                tint = checkTint,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // 2.1 إعدادات الترجمة بالذكاء الاصطناعي (AI Translation) 🌐🤖
+            // 10. AI Instant Translation Card
             item {
                 NeonCard(
                     modifier = Modifier
@@ -668,25 +714,28 @@ fun SettingsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "الترجمة الفورية بالذكاء الاصطناعي",
-                                    color = Color.White,
+                                    text = stringResource(R.string.ai_translation_title),
+                                    color = colors.textPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "ترجمة تلقائية للوصف والميزات إلى لغة جهازك على الجهاز محلياً",
-                                    color = PrimeTextSecondary,
+                                    text = stringResource(R.string.ai_translation_desc),
+                                    color = colors.textSecondary,
                                     fontSize = 11.sp
                                 )
                             }
+                            Spacer(modifier = Modifier.width(8.dp))
                             Switch(
                                 checked = autoTranslateEnabled,
                                 onCheckedChange = { onToggleAutoTranslate() },
+                                modifier = Modifier.testTag("auto_translate_switch"),
                                 colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = NeonPurplePrimary,
-                                    uncheckedThumbColor = PrimeTextMuted,
-                                    uncheckedTrackColor = Color(0xFF281C38)
+                                    checkedThumbColor = colors.textOnAccent,
+                                    checkedTrackColor = colors.accent,
+                                    uncheckedThumbColor = colors.textMuted,
+                                    uncheckedTrackColor = colors.surface,
+                                    uncheckedBorderColor = colors.border
                                 )
                             )
                         }
@@ -697,7 +746,7 @@ fun SettingsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(1.dp)
-                                    .background(NeonBorder.copy(alpha = 0.4f))
+                                    .background(colors.border.copy(alpha = 0.6f))
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             Row(
@@ -707,24 +756,28 @@ fun SettingsScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "تنزيل نماذج الترجمة عبر Wi-Fi فقط",
-                                        color = Color.White,
-                                        fontSize = 13.sp
+                                        text = stringResource(R.string.translation_wifi_only),
+                                        color = colors.textPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        text = "لتوفير باقة بيانات الجوال",
-                                        color = PrimeTextMuted,
+                                        text = stringResource(R.string.translation_wifi_desc),
+                                        color = colors.textSecondary,
                                         fontSize = 11.sp
                                     )
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Switch(
                                     checked = wifiOnlyTranslation,
                                     onCheckedChange = { onToggleWifiOnlyTranslation() },
+                                    modifier = Modifier.testTag("wifi_only_translate_switch"),
                                     colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = NeonPurplePrimary,
-                                        uncheckedThumbColor = PrimeTextMuted,
-                                        uncheckedTrackColor = Color(0xFF281C38)
+                                        checkedThumbColor = colors.textOnAccent,
+                                        checkedTrackColor = colors.accent,
+                                        uncheckedThumbColor = colors.textMuted,
+                                        uncheckedTrackColor = colors.surface,
+                                        uncheckedBorderColor = colors.border
                                     )
                                 )
                             }
@@ -733,7 +786,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. الإشعارات (Notifications) 🔔
+            // 11. Notifications Toggle Card
             item {
                 NeonCard(
                     modifier = Modifier
@@ -747,16 +800,20 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "الإشعارات",
-                                color = Color.White,
+                                text = stringResource(R.string.notifications),
+                                color = colors.textPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (notificationsEnabled) "مفعلة" else "معطلة",
-                                color = PrimeTextSecondary,
+                                text = if (notificationsEnabled) {
+                                    stringResource(R.string.notifications_enabled)
+                                } else {
+                                    stringResource(R.string.notifications_disabled)
+                                },
+                                color = colors.textSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -765,18 +822,20 @@ fun SettingsScreen(
                             Switch(
                                 checked = notificationsEnabled,
                                 onCheckedChange = { onToggleNotifications() },
+                                modifier = Modifier.testTag("notifications_switch"),
                                 colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = NeonPurplePrimary,
-                                    uncheckedThumbColor = PrimeTextMuted,
-                                    uncheckedTrackColor = Color(0xFF281C38)
+                                    checkedThumbColor = colors.textOnAccent,
+                                    checkedTrackColor = colors.accent,
+                                    uncheckedThumbColor = colors.textMuted,
+                                    uncheckedTrackColor = colors.surface,
+                                    uncheckedBorderColor = colors.border
                                 )
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Icon(
                                 imageVector = Icons.Filled.Notifications,
                                 contentDescription = null,
-                                tint = NeonPurplePrimary,
+                                tint = colors.accent,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -784,52 +843,56 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. إدارة التخزين (Storage Management) 🗄
+            // 12. Storage Management
             item {
                 SettingsOptionItem(
-                    title = "إدارة التخزين",
-                    subtitle = "ذاكرة التخزين المؤقت: $cacheSize",
+                    title = stringResource(R.string.storage_mgmt),
+                    subtitle = stringResource(R.string.cache_size_used, cacheSize),
                     icon = Icons.Filled.Storage,
+                    testTag = "storage_mgmt_row",
                     onClick = { showCacheDialog = true }
                 )
             }
 
-            // 5. حول التطبيق (About App) ℹ
+            // 13. About Store
             item {
                 SettingsOptionItem(
-                    title = "حول التطبيق",
-                    subtitle = "الإصدار ${BuildConfig.VERSION_NAME} (Prime Store)",
+                    title = stringResource(R.string.about_store),
+                    subtitle = "${BuildConfig.VERSION_NAME} (${stringResource(R.string.app_name)})",
                     icon = Icons.Filled.Info,
+                    testTag = "about_store_row",
                     onClick = { showAboutDialog = true }
                 )
             }
 
-            // 6. مشاركة التطبيق (Share App) 🔗
+            // 14. Share App
             item {
                 SettingsOptionItem(
-                    title = "مشاركة التطبيق",
-                    subtitle = "شارك المتجر مع أصدقائك",
+                    title = stringResource(R.string.share_app),
+                    subtitle = stringResource(R.string.app_subtitle),
                     icon = Icons.Filled.Share,
+                    testTag = "share_store_row",
                     onClick = onShareApp
                 )
             }
 
-            // 7. تقييم التطبيق (Rate App) ⭐
+            // 15. Rate App
             item {
                 SettingsOptionItem(
-                    title = "تقييم التطبيق",
-                    subtitle = "ساعدنا بالتقييم 5 نجوم على المتجر",
+                    title = stringResource(R.string.rate_app),
+                    subtitle = stringResource(R.string.rate_thanks_toast),
                     icon = Icons.Filled.Star,
+                    testTag = "rate_store_row",
                     onClick = onRateApp
                 )
             }
 
-            // 8. زر الإجراء: تسجيل الدخول أو تسجيل الخروج
+            // 16. Login / Logout Action Button
             item {
                 Spacer(modifier = Modifier.height(14.dp))
                 if (userProfile == null) {
                     NeonGradientButton(
-                        text = "تسجيل الدخول",
+                        text = stringResource(R.string.login),
                         icon = Icons.Default.Login,
                         testTag = "login_button",
                         modifier = Modifier.fillMaxWidth(),
@@ -837,7 +900,7 @@ fun SettingsScreen(
                     )
                 } else {
                     NeonGradientButton(
-                        text = "تسجيل الخروج",
+                        text = stringResource(R.string.logout),
                         icon = Icons.AutoMirrored.Filled.ExitToApp,
                         testTag = "logout_button",
                         modifier = Modifier.fillMaxWidth(),
@@ -847,10 +910,6 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(30.dp))
             }
         }
-
-        // =====================================================================
-        // Store Update Dialogs
-        // =====================================================================
 
         // Update Found Dialog
         if (showUpdateFoundDialog && pendingUpdateInfo != null) {
@@ -863,7 +922,7 @@ fun SettingsScreen(
                         Text(text = "🚀", fontSize = 24.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "تحديث جديد لـ Prime Store!",
+                            text = stringResource(R.string.update_available_title),
                             color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp
@@ -873,7 +932,11 @@ fun SettingsScreen(
                 text = {
                     Column {
                         Text(
-                            text = "الإصدار الجديد: ${update.versionName} (كود ${update.versionCode})",
+                            text = stringResource(
+                                R.string.store_version_code,
+                                update.versionName,
+                                update.versionCode
+                            ),
                             color = colors.accent,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
@@ -881,7 +944,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         if (update.notes.isNotBlank()) {
                             Text(
-                                text = "ملاحظات التحديث:",
+                                text = stringResource(R.string.admin_update_notes),
                                 color = colors.textPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
@@ -895,7 +958,7 @@ fun SettingsScreen(
                             )
                         } else {
                             Text(
-                                text = "يتضمن هذا التحديث تحسينات في الأداء وإصلاحات لمشاكل التثبيت والتنزيل.",
+                                text = stringResource(R.string.update_available_desc),
                                 color = colors.textSecondary,
                                 fontSize = 12.sp
                             )
@@ -904,7 +967,10 @@ fun SettingsScreen(
                         if (isDownloadingStoreUpdate) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "جاري تحميل التحديث... ${(storeUpdateDownloadProgress * 100).toInt()}%",
+                                text = stringResource(
+                                    R.string.downloading_update_percent,
+                                    (storeUpdateDownloadProgress * 100).toInt()
+                                ),
                                 color = colors.accent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -939,13 +1005,17 @@ fun SettingsScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("تحديث الآن", color = colors.textOnAccent, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = stringResource(R.string.github_update_now),
+                                color = colors.textOnAccent,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showUpdateFoundDialog = false }) {
-                        Text("لاحقاً", color = colors.textMuted)
+                        Text(stringResource(R.string.cancel), color = colors.textMuted)
                     }
                 }
             )
@@ -960,12 +1030,16 @@ fun SettingsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = null, tint = colors.accent)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "أنت على آخر إصدار", color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = stringResource(R.string.check_for_updates),
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 },
                 text = {
                     Text(
-                        text = "أنت تستخدم أحدث نسخة من متجر Prime Store (${BuildConfig.VERSION_NAME}). لا توجد تحديثات جديدة حالياً.",
+                        text = "${stringResource(R.string.latest_version_toast)}\n${stringResource(R.string.store_version_code, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)}",
                         color = colors.textSecondary,
                         fontSize = 13.sp
                     )
@@ -975,13 +1049,13 @@ fun SettingsScreen(
                         onClick = { showUpToDateDialog = false },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("حسناً", color = colors.textOnAccent)
+                        Text(stringResource(R.string.ok), color = colors.textOnAccent)
                     }
                 }
             )
         }
 
-        // About Dialog with Secret 7-Tap on Version
+        // About Dialog with Secret 7-Tap Admin Access
         if (showAboutDialog) {
             AlertDialog(
                 onDismissRequest = {
@@ -993,32 +1067,33 @@ fun SettingsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "👑", fontSize = 24.sp)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Prime Store", color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                        Text(text = stringResource(R.string.app_name), color = colors.textPrimary, fontWeight = FontWeight.Bold)
                     }
                 },
                 text = {
                     Column {
                         Text(
-                            text = "متجر التطبيقات والألعاب الرائد",
+                            text = stringResource(R.string.app_subtitle),
                             color = colors.accent,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "تطبيق Prime Store يوفر لك الوصول السريع والآمن إلى أفضل وأشهر الألعاب والتطبيقات العالمية بواجهة عصرية، وإدارة متطورة للتنزيلات والمفضلة.",
+                            text = stringResource(R.string.about_store_desc),
                             color = colors.textSecondary,
                             fontSize = 13.sp,
                             lineHeight = 20.sp
                         )
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Secret Version Row: Tap 7 times to reveal Admin Login!
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(colors.surface)
+                                .border(1.dp, colors.border, RoundedCornerShape(8.dp))
+                                .testTag("about_secret_version_box")
                                 .clickable {
                                     val now = System.currentTimeMillis()
                                     if (now - lastVersionTapTime > 2000) {
@@ -1032,13 +1107,17 @@ fun SettingsScreen(
                                         showAboutDialog = false
                                         showAdminLoginDialog = true
                                     } else if (versionTapCount >= 3) {
-                                        onToast("متبقي ${7 - versionTapCount} نقرات لفتح دخول الأدمن")
+                                        onToast(context.getString(R.string.admin_secret_login) + " (${7 - versionTapCount})")
                                     }
                                 }
                                 .padding(10.dp)
                         ) {
                             Text(
-                                text = "الإصدار: v${BuildConfig.VERSION_NAME} (كود ${BuildConfig.VERSION_CODE})\nجميع الحقوق محفوظة © Prime Store Team",
+                                text = stringResource(
+                                    R.string.store_version_code,
+                                    BuildConfig.VERSION_NAME,
+                                    BuildConfig.VERSION_CODE
+                                ),
                                 color = colors.textMuted,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp
@@ -1054,13 +1133,13 @@ fun SettingsScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("حسناً", color = colors.textOnAccent)
+                        Text(stringResource(R.string.ok), color = colors.textOnAccent)
                     }
                 }
             )
         }
 
-        // Admin Login Dialog (Hidden Access)
+        // Admin Login Dialog
         if (showAdminLoginDialog) {
             AlertDialog(
                 onDismissRequest = { showAdminLoginDialog = false },
@@ -1070,7 +1149,7 @@ fun SettingsScreen(
                         Text(text = "🛠️", fontSize = 22.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "دخول الأدمن (Supabase Auth)",
+                            text = stringResource(R.string.admin_login_button),
                             color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
@@ -1080,7 +1159,7 @@ fun SettingsScreen(
                 text = {
                     Column {
                         Text(
-                            text = "أدخل بيانات حساب الأدمن المصرح له لإدارة متجر التطبيقات:",
+                            text = stringResource(R.string.admin_panel_desc),
                             color = colors.textSecondary,
                             fontSize = 12.sp
                         )
@@ -1089,8 +1168,8 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = adminEmailInput,
                             onValueChange = { adminEmailInput = it },
-                            label = { Text("البريد الإلكتروني", fontSize = 11.sp) },
-                            placeholder = { Text("zaim9002@gmail.com", fontSize = 11.sp) },
+                            label = { Text(stringResource(R.string.admin_email_label), fontSize = 11.sp) },
+                            placeholder = { Text("admin@example.com", fontSize = 11.sp) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -1112,7 +1191,7 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = adminPasswordInput,
                             onValueChange = { adminPasswordInput = it },
-                            label = { Text("كلمة المرور", fontSize = 11.sp) },
+                            label = { Text(stringResource(R.string.admin_password_label), fontSize = 11.sp) },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -1143,18 +1222,18 @@ fun SettingsScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("تسجيل دخول الأدمن", color = colors.textOnAccent)
+                        Text(stringResource(R.string.admin_login_button), color = colors.textOnAccent)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showAdminLoginDialog = false }) {
-                        Text("إلغاء", color = colors.textMuted)
+                        Text(stringResource(R.string.cancel), color = colors.textMuted)
                     }
                 }
             )
         }
 
-        // User Auth Dialog (Supabase Auth - Login / Sign Up)
+        // User Auth Dialog
         if (showLoginDialog) {
             AlertDialog(
                 onDismissRequest = { onCloseLogin() },
@@ -1164,7 +1243,7 @@ fun SettingsScreen(
                         Text(text = "👑", fontSize = 22.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isSignUpMode) "إنشاء حساب جديد" else "تسجيل الدخول",
+                            text = if (isSignUpMode) stringResource(R.string.sign_up) else stringResource(R.string.login),
                             color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
@@ -1174,7 +1253,7 @@ fun SettingsScreen(
                 text = {
                     Column {
                         Text(
-                            text = if (isSignUpMode) "أنشئ حسابك في Prime Store للوصول السحابي وحفظ مفضلاتك:" else "أدخل بريدك وكلمة المرور لتسجيل الدخول إلى حسابك:",
+                            text = stringResource(R.string.login_sync_hint),
                             color = colors.textSecondary,
                             fontSize = 12.sp
                         )
@@ -1183,7 +1262,7 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = userEmailInput,
                             onValueChange = { userEmailInput = it },
-                            label = { Text("البريد الإلكتروني", fontSize = 11.sp) },
+                            label = { Text(stringResource(R.string.email), fontSize = 11.sp) },
                             placeholder = { Text("user@example.com", fontSize = 11.sp) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -1206,7 +1285,7 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = userPasswordInput,
                             onValueChange = { userPasswordInput = it },
-                            label = { Text("كلمة المرور", fontSize = 11.sp) },
+                            label = { Text(stringResource(R.string.password), fontSize = 11.sp) },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -1228,7 +1307,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = authErrorMessage,
-                                color = AccentRed,
+                                color = colors.danger,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1248,7 +1327,11 @@ fun SettingsScreen(
                         ) {
                             TextButton(onClick = { isSignUpMode = !isSignUpMode }) {
                                 Text(
-                                    text = if (isSignUpMode) "لديك حساب بالفعل؟ تسجيل الدخول" else "ليس لديك حساب؟ إنشاء حساب جديد",
+                                    text = if (isSignUpMode) {
+                                        stringResource(R.string.have_account_login)
+                                    } else {
+                                        stringResource(R.string.no_account_create)
+                                    },
                                     color = colors.accent,
                                     fontSize = 12.sp
                                 )
@@ -1268,12 +1351,15 @@ fun SettingsScreen(
                         enabled = !isAuthLoading,
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text(if (isSignUpMode) "إنشاء الحساب" else "تسجيل الدخول", color = colors.textOnAccent)
+                        Text(
+                            text = if (isSignUpMode) stringResource(R.string.sign_up) else stringResource(R.string.login),
+                            color = colors.textOnAccent
+                        )
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { onCloseLogin() }) {
-                        Text("إلغاء", color = colors.textMuted)
+                        Text(stringResource(R.string.cancel), color = colors.textMuted)
                     }
                 }
             )
@@ -1285,11 +1371,11 @@ fun SettingsScreen(
                 onDismissRequest = { showCacheDialog = false },
                 containerColor = colors.card,
                 title = {
-                    Text(text = "مسح ذاكرة التخزين المؤقت", color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                    Text(text = stringResource(R.string.clear_cache), color = colors.textPrimary, fontWeight = FontWeight.Bold)
                 },
                 text = {
                     Text(
-                        text = "المساحة الحالية المستخدمة هي $cacheSize. هل تريد تحرير هذه المساحة ومسح الملفات المؤقتة؟",
+                        text = stringResource(R.string.clear_cache_confirm, cacheSize),
                         color = colors.textSecondary,
                         fontSize = 13.sp
                     )
@@ -1302,24 +1388,29 @@ fun SettingsScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {
-                        Text("مسح الآن", color = colors.textOnAccent)
+                        Text(stringResource(R.string.confirm), color = colors.textOnAccent)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showCacheDialog = false }) {
-                        Text("إلغاء", color = colors.textMuted)
+                        Text(stringResource(R.string.cancel), color = colors.textMuted)
                     }
                 }
             )
         }
     }
 
+    // Language Selection Dialog
     if (showLanguageDialog) {
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
             containerColor = colors.card,
             title = {
-                Text(text = "اختر لغة التطبيق 🌐", color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                Text(
+                    text = stringResource(R.string.choose_language),
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Box(
@@ -1327,23 +1418,21 @@ fun SettingsScreen(
                         .heightIn(max = 400.dp)
                         .fillMaxWidth()
                 ) {
-                    androidx.compose.foundation.lazy.LazyColumn(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                    LazyColumn(modifier = Modifier.fillMaxWidth()) {
                         val langs = listOf(
-                            "auto" to "🌐 لغة الجهاز الافتراضية (تلقائي)",
-                            "ar" to "🇸🇦 العربية (Arabic)",
-                            "en" to "🇬🇧 English",
-                            "tr" to "🇹🇷 Türkçe (Turkish)",
-                            "fr" to "🇫🇷 Français (French)",
-                            "es" to "🇪🇸 Español (Spanish)",
-                            "de" to "🇩🇪 Deutsch (German)",
-                            "ru" to "🇷🇺 Русский (Russian)",
-                            "fa" to "🇮🇷 فارسی (Persian)",
-                            "ur" to "🇵🇰 اردو (Urdu)",
-                            "hi" to "🇮🇳 हिन्दी (Hindi)",
-                            "id" to "🇮🇩 Bahasa Indonesia",
-                            "pt" to "🇵🇹 Português (Portuguese)"
+                            "auto" to "🌐 " + context.getString(R.string.lang_auto),
+                            "ar" to "🇸🇦 " + context.getString(R.string.lang_ar),
+                            "en" to "🇬🇧 " + context.getString(R.string.lang_en),
+                            "tr" to "🇹🇷 " + context.getString(R.string.lang_tr),
+                            "fr" to "🇫🇷 " + context.getString(R.string.lang_fr),
+                            "es" to "🇪🇸 " + context.getString(R.string.lang_es),
+                            "de" to "🇩🇪 " + context.getString(R.string.lang_de),
+                            "ru" to "🇷🇺 " + context.getString(R.string.lang_ru),
+                            "fa" to "🇮🇷 " + context.getString(R.string.lang_fa),
+                            "ur" to "🇵🇰 " + context.getString(R.string.lang_ur),
+                            "hi" to "🇮🇳 " + context.getString(R.string.lang_hi),
+                            "id" to "🇮🇩 " + context.getString(R.string.lang_id),
+                            "pt" to "🇵🇹 " + context.getString(R.string.lang_pt)
                         )
                         items(langs.size) { index ->
                             val (code, label) = langs[index]
@@ -1351,20 +1440,23 @@ fun SettingsScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(if (isCurrent) colors.surface else Color.Transparent)
+                                    .testTag("lang_option_$code")
                                     .clickable {
                                         onSetLanguage(code)
                                         showLanguageDialog = false
                                     }
-                                    .padding(12.dp),
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
                                     text = label,
                                     color = if (isCurrent) colors.accent else colors.textPrimary,
-                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
                                 )
                                 if (isCurrent) {
                                     Icon(
@@ -1383,10 +1475,34 @@ fun SettingsScreen(
                     onClick = { showLanguageDialog = false },
                     colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                 ) {
-                    Text("إغلاق", color = colors.textOnAccent, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.close),
+                        color = colors.textOnAccent,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun languageDisplayName(code: String): String {
+    return when (code.lowercase()) {
+        "auto" -> stringResource(R.string.lang_auto)
+        "ar" -> stringResource(R.string.lang_ar)
+        "en" -> stringResource(R.string.lang_en)
+        "tr" -> stringResource(R.string.lang_tr)
+        "fr" -> stringResource(R.string.lang_fr)
+        "es" -> stringResource(R.string.lang_es)
+        "de" -> stringResource(R.string.lang_de)
+        "ru" -> stringResource(R.string.lang_ru)
+        "fa" -> stringResource(R.string.lang_fa)
+        "ur" -> stringResource(R.string.lang_ur)
+        "hi" -> stringResource(R.string.lang_hi)
+        "id", "in" -> stringResource(R.string.lang_id)
+        "pt" -> stringResource(R.string.lang_pt)
+        else -> code
     }
 }
 
@@ -1395,6 +1511,7 @@ private fun SettingsOptionItem(
     title: String,
     subtitle: String,
     icon: ImageVector,
+    testTag: String = "settings_option_item",
     onClick: () -> Unit
 ) {
     val colors = PrimeTheme.colors
@@ -1402,6 +1519,7 @@ private fun SettingsOptionItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
+            .testTag(testTag)
             .clickable { onClick() }
     ) {
         Row(
@@ -1424,6 +1542,8 @@ private fun SettingsOptionItem(
                     fontSize = 12.sp
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(

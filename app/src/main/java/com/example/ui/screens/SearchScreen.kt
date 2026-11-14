@@ -154,7 +154,7 @@ fun SearchScreen(
                     Column(modifier = Modifier.padding(vertical = 10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "عمليات البحث الشائعة",
+                                text = stringResource(id = R.string.popular_searches),
                                 color = colors.textPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
@@ -209,7 +209,7 @@ fun SearchScreen(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "عمليات البحث الأخيرة",
+                                        text = stringResource(id = R.string.recent_searches),
                                         color = colors.textPrimary,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold
@@ -217,7 +217,7 @@ fun SearchScreen(
                                 }
 
                                 Text(
-                                    text = "مسح الكل",
+                                    text = stringResource(id = R.string.clear_all),
                                     color = colors.accent,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
@@ -268,7 +268,7 @@ fun SearchScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "نتائج البحث",
+                            text = stringResource(id = R.string.search_results),
                             color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
@@ -290,7 +290,7 @@ fun SearchScreen(
                                 Text(text = "🔍", fontSize = 42.sp)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "لم يتم العثور على نتائج تطابق \"$query\"",
+                                    text = stringResource(id = R.string.search_no_results, query),
                                     color = colors.textSecondary,
                                     fontSize = 13.sp
                                 )

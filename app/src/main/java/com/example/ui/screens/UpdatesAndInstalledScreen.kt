@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -31,13 +30,11 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,26 +47,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.installer.PackageHelper
+import com.example.R
 import com.example.data.model.AppItem
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
-import com.example.ui.components.NeonGradientButton
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.AccentGreen
-import com.example.ui.theme.AccentRed
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeCardBackground
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 
 data class InstalledAppItemState(
     val app: AppItem,
@@ -82,7 +72,7 @@ data class InstalledAppItemState(
 
 @Composable
 fun UpdatesAndInstalledScreen(
-    initialTab: Int = 0, // 0 = التحديثات, 1 = تطبيقاتي المثبتة
+    initialTab: Int = 0,
     installedApps: List<InstalledAppItemState>,
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit,
@@ -94,6 +84,7 @@ fun UpdatesAndInstalledScreen(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = PrimeTheme.colors
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     var appToUninstall by remember { mutableStateOf<InstalledAppItemState?>(null) }
     val updatesList = remember(installedApps) { installedApps.filter { it.hasUpdate } }
@@ -101,6 +92,7 @@ fun UpdatesAndInstalledScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(colors.background)
             .testTag("updates_and_installed_screen")
     ) {
         // Top App Bar
@@ -111,33 +103,48 @@ fun UpdatesAndInstalledScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBackClick) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                IconButton(
+                    onClick = onBackClick,
+                    modifier = Modifier.testTag("updates_back_button")
+                ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "رجوع",
-                        tint = Color.White
+                        contentDescription = stringResource(R.string.back),
+                        tint = colors.textPrimary
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (selectedTab == 0) "تحديثات التطبيقات 🚀" else "تطبيقاتي المثبتة 📱",
-                    color = Color.White,
+                    text = if (selectedTab == 0) {
+                        stringResource(R.string.updates_screen_title)
+                    } else {
+                        stringResource(R.string.installed_screen_title)
+                    },
+                    color = colors.textPrimary,
                     fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            IconButton(onClick = onRefresh) {
+            IconButton(
+                onClick = onRefresh,
+                modifier = Modifier.testTag("updates_refresh_button")
+            ) {
                 Icon(
                     imageVector = Icons.Filled.Refresh,
-                    contentDescription = "تحديث القائمة",
-                    tint = NeonPurplePrimary
+                    contentDescription = stringResource(R.string.refresh),
+                    tint = colors.accent
                 )
             }
         }
 
-        // Segmented Tabs: "التحديثات" (0) and "المثبتة" (1)
+        // Segmented Tabs
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -148,8 +155,8 @@ fun UpdatesAndInstalledScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF16101F))
-                    .border(1.dp, NeonBorder, RoundedCornerShape(16.dp))
+                    .background(colors.card)
+                    .border(1.dp, colors.border, RoundedCornerShape(16.dp))
                     .padding(4.dp)
             ) {
                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -158,15 +165,16 @@ fun UpdatesAndInstalledScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (selectedTab == 0) NeonPurplePrimary else Color.Transparent)
+                            .background(if (selectedTab == 0) colors.accent else Color.Transparent)
                             .clickable { selectedTab = 0 }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 10.dp)
+                            .testTag("updates_tab"),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "التحديثات",
-                                color = if (selectedTab == 0) Color.White else PrimeTextMuted,
+                                text = stringResource(R.string.updates_tab_title),
+                                color = if (selectedTab == 0) colors.textOnAccent else colors.textMuted,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -180,7 +188,7 @@ fun UpdatesAndInstalledScreen(
                                 ) {
                                     Text(
                                         text = "${updatesList.size}",
-                                        color = Color.Black,
+                                        color = Color(0xFF11071F),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -194,14 +202,15 @@ fun UpdatesAndInstalledScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (selectedTab == 1) NeonPurplePrimary else Color.Transparent)
+                            .background(if (selectedTab == 1) colors.accent else Color.Transparent)
                             .clickable { selectedTab = 1 }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 10.dp)
+                            .testTag("installed_tab"),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "المثبتة (${installedApps.size})",
-                            color = if (selectedTab == 1) Color.White else PrimeTextMuted,
+                            text = stringResource(R.string.installed_tab_title, installedApps.size),
+                            color = if (selectedTab == 1) colors.textOnAccent else colors.textMuted,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -225,16 +234,18 @@ fun UpdatesAndInstalledScreen(
                         Text(text = "✨", fontSize = 54.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "جميع تطبيقاتك محدثة لآخر إصدار!",
-                            color = Color.White,
+                            text = stringResource(R.string.app_updates_all_up_to_date),
+                            color = colors.textPrimary,
                             fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "لا توجد تحديثات جديدة متوفرة للتطبيقات المثبتة حالياً",
-                            color = PrimeTextMuted,
-                            fontSize = 13.sp
+                            text = stringResource(R.string.no_updates_subtitle),
+                            color = colors.textMuted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -250,30 +261,43 @@ fun UpdatesAndInstalledScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0xFF221538))
-                                .border(1.dp, NeonBorderGlow, RoundedCornerShape(14.dp))
+                                .background(colors.cardAlt)
+                                .border(1.dp, colors.border, RoundedCornerShape(14.dp))
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "يتوفر ${updatesList.size} تحديث جديد",
-                                    color = Color.White,
+                                    text = stringResource(R.string.updates_count_header, updatesList.size),
+                                    color = colors.textPrimary,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "قم بتحديث كل التطبيقات دفعة واحدة",
-                                    color = PrimeTextMuted,
+                                    text = stringResource(R.string.update_all_desc),
+                                    color = colors.textMuted,
                                     fontSize = 12.sp
                                 )
                             }
-                            NeonGradientButton(
-                                text = "تحديث الكل ⚡",
-                                onClick = onUpdateAll,
-                                modifier = Modifier.height(38.dp)
-                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .testTag("update_all_button")
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.buttonGradient)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
+                                    .clickable { onUpdateAll() }
+                                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.update_all_btn),
+                                    color = colors.textOnAccent,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
 
@@ -301,16 +325,18 @@ fun UpdatesAndInstalledScreen(
                         Text(text = "📦", fontSize = 54.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "لم يتم تثبيت تطبيقات من المتجر بعد",
-                            color = Color.White,
+                            text = stringResource(R.string.no_installed_apps_title),
+                            color = colors.textPrimary,
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "تصفح الأقسام وحمّل تطبيقاتك وألعابك المفضلة",
-                            color = PrimeTextMuted,
-                            fontSize = 13.sp
+                            text = stringResource(R.string.no_installed_apps_desc),
+                            color = colors.textMuted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -336,20 +362,21 @@ fun UpdatesAndInstalledScreen(
     // Confirmation Dialog for Uninstall
     if (appToUninstall != null) {
         val app = appToUninstall!!
+        val appDisplayName = app.app.nameAr.ifBlank { app.app.name }
         AlertDialog(
             onDismissRequest = { appToUninstall = null },
-            containerColor = Color(0xFF1E142D),
+            containerColor = colors.card,
             title = {
                 Text(
-                    text = "حذف التطبيق 🗑️",
-                    color = Color.White,
+                    text = stringResource(R.string.confirm_uninstall_title),
+                    color = colors.textPrimary,
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Text(
-                    text = "هل أنت متأكد من رغبتك في إلغاء تثبيت \"${app.app.nameAr.ifBlank { app.app.name }}\" من جهازك؟\n(ملاحظة: سيتم حذف بيانات التطبيق)",
-                    color = Color.White,
+                    text = stringResource(R.string.uninstall_warning_data, appDisplayName),
+                    color = colors.textSecondary,
                     fontSize = 14.sp
                 )
             },
@@ -360,14 +387,18 @@ fun UpdatesAndInstalledScreen(
                         appToUninstall = null
                         onUninstallApp(pkg)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.danger)
                 ) {
-                    Text("نعم، احذف التطبيق", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.yes_uninstall),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { appToUninstall = null }) {
-                    Text("إلغاء", color = PrimeTextMuted)
+                    Text(stringResource(R.string.cancel), color = colors.textMuted)
                 }
             }
         )
@@ -381,6 +412,7 @@ fun UpdateAppCard(
     onUpdate: () -> Unit,
     onUninstall: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
     var expandedChangelog by remember { mutableStateOf(false) }
 
     NeonCard(
@@ -414,26 +446,28 @@ fun UpdateAppCard(
                     Column {
                         Text(
                             text = item.app.nameAr.ifBlank { item.app.name },
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "v${item.installedVersionName}",
-                                color = PrimeTextMuted,
+                                color = colors.textMuted,
                                 fontSize = 12.sp
                             )
                             Text(
                                 text = " ➔ ",
-                                color = NeonPurplePrimary,
+                                color = colors.accent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = "v${item.app.version}",
-                                color = AccentGreen,
+                                color = colors.success,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -448,8 +482,8 @@ fun UpdateAppCard(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
-                            contentDescription = "حذف التطبيق",
-                            tint = AccentRed.copy(alpha = 0.8f),
+                            contentDescription = stringResource(R.string.uninstall),
+                            tint = colors.danger.copy(alpha = 0.85f),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -459,21 +493,21 @@ fun UpdateAppCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(PrimeGradientBrush)
+                            .background(colors.buttonGradient)
                             .clickable { onUpdate() }
                             .padding(horizontal = 14.dp, vertical = 7.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Filled.Download,
-                                contentDescription = "تحديث",
-                                tint = Color.White,
+                                contentDescription = stringResource(R.string.update),
+                                tint = colors.textOnAccent,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "تحديث",
-                                color = Color.White,
+                                text = stringResource(R.string.update),
+                                color = colors.textOnAccent,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -484,7 +518,7 @@ fun UpdateAppCard(
 
             // Changelog toggle
             val changelogText = item.app.changelog?.ifBlank { null }
-                ?: "تحسينات عامة في الأداء وإصلاح الأخطاء السابقة وتحديث التوافق."
+                ?: stringResource(R.string.whats_new_default)
 
             Spacer(modifier = Modifier.height(8.dp))
             Row(
@@ -496,15 +530,15 @@ fun UpdateAppCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "ما الجديد في هذا التحديث؟",
-                    color = NeonPurplePrimary,
+                    text = stringResource(R.string.whats_new_in_update),
+                    color = colors.accent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
                 Icon(
                     imageVector = if (expandedChangelog) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                     contentDescription = null,
-                    tint = NeonPurplePrimary,
+                    tint = colors.accent,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -515,12 +549,13 @@ fun UpdateAppCard(
                         .fillMaxWidth()
                         .padding(top = 4.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF191124))
+                        .background(colors.cardAlt)
+                        .border(1.dp, colors.border, RoundedCornerShape(10.dp))
                         .padding(10.dp)
                 ) {
                     Text(
                         text = changelogText,
-                        color = Color(0xFFE2E8F0),
+                        color = colors.textSecondary,
                         fontSize = 12.sp,
                         lineHeight = 18.sp
                     )
@@ -537,6 +572,7 @@ fun InstalledAppCard(
     onOpen: () -> Unit,
     onUninstall: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
     NeonCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -564,14 +600,16 @@ fun InstalledAppCard(
                 Column {
                     Text(
                         text = item.app.nameAr.ifBlank { item.app.name },
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "الإصدار المثبت: v${item.installedVersionName}",
-                        color = PrimeTextMuted,
+                        text = stringResource(R.string.installed_version_label, item.installedVersionName),
+                        color = colors.textMuted,
                         fontSize = 11.sp
                     )
                 }
@@ -585,8 +623,8 @@ fun InstalledAppCard(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Delete,
-                        contentDescription = "إلغاء التثبيت",
-                        tint = AccentRed.copy(alpha = 0.85f),
+                        contentDescription = stringResource(R.string.uninstall),
+                        tint = colors.danger.copy(alpha = 0.85f),
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -597,22 +635,22 @@ fun InstalledAppCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF2E1065))
-                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(10.dp))
+                        .background(colors.cardAlt)
+                        .border(1.dp, colors.border, RoundedCornerShape(10.dp))
                         .clickable { onOpen() }
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.OpenInNew,
-                            contentDescription = "فتح",
-                            tint = Color.White,
+                            contentDescription = stringResource(R.string.open),
+                            tint = colors.textPrimary,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "فتح",
-                            color = Color.White,
+                            text = stringResource(R.string.open),
+                            color = colors.textPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp
                         )

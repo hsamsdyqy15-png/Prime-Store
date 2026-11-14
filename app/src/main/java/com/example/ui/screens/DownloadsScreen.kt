@@ -100,7 +100,7 @@ fun DownloadsScreen(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = stringResource(R.string.downloads),
+                text = stringResource(R.string.downloads_title),
                 color = colors.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
@@ -176,7 +176,11 @@ fun DownloadsScreen(
                     Text(text = if (filterTab == 0) "📥" else "🎉", fontSize = 48.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = if (filterTab == 0) "لا توجد تنزيلات قيد المعالجة" else "لم تقم بتنزيل أي تطبيقات بعد",
+                        text = if (filterTab == 0) {
+                            stringResource(R.string.no_active_downloads)
+                        } else {
+                            stringResource(R.string.no_completed_downloads)
+                        },
                         color = colors.textMuted,
                         fontSize = 14.sp
                     )
@@ -290,7 +294,7 @@ fun ActiveDownloadCard(
                                         .padding(horizontal = 10.dp, vertical = 5.dp)
                                 ) {
                                     Text(
-                                        text = "إعادة 🔄",
+                                        text = stringResource(R.string.download_retry),
                                         color = colors.textOnAccent,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
@@ -304,7 +308,11 @@ fun ActiveDownloadCard(
                                 ) {
                                     Icon(
                                         imageVector = if (item.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                        contentDescription = if (item.isPaused) "استئناف" else "إيقاف مؤقت",
+                                        contentDescription = if (item.isPaused) {
+                                            stringResource(R.string.download_resume)
+                                        } else {
+                                            stringResource(R.string.download_pause)
+                                        },
                                         tint = colors.accent,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -316,7 +324,7 @@ fun ActiveDownloadCard(
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = "إلغاء",
+                                    contentDescription = stringResource(R.string.cancel),
                                     tint = colors.textMuted,
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -328,7 +336,7 @@ fun ActiveDownloadCard(
 
                     if (item.status == DownloadStatus.FAILED) {
                         Text(
-                            text = item.errorMessage ?: "فشل التحميل، اضغط إعادة للمحاولة",
+                            text = item.errorMessage ?: stringResource(R.string.download_failed_retry),
                             color = AccentRed,
                             fontSize = 11.sp
                         )
@@ -431,7 +439,11 @@ fun CompletedDownloadCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = if (isInstalled) "مثبت على جهازك • ${item.totalSize}" else "مكتمل التحميل • ${item.totalSize}",
+                        text = if (isInstalled) {
+                            stringResource(R.string.installed_on_device_size, item.totalSize)
+                        } else {
+                            stringResource(R.string.download_completed_size, item.totalSize)
+                        },
                         color = if (isInstalled) AccentGreen else colors.textSecondary,
                         fontSize = 12.sp,
                         fontWeight = if (isInstalled) FontWeight.Bold else FontWeight.Normal
@@ -501,7 +513,7 @@ fun CompletedDownloadCard(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
-                            contentDescription = "حذف التطبيق",
+                            contentDescription = stringResource(R.string.uninstall),
                             tint = AccentRed.copy(alpha = 0.85f),
                             modifier = Modifier.size(18.dp)
                         )
@@ -516,7 +528,7 @@ fun CompletedDownloadCard(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.MoreVert,
-                            contentDescription = "خيارات",
+                            contentDescription = stringResource(R.string.options),
                             tint = colors.textPrimary,
                             modifier = Modifier.size(20.dp)
                         )
@@ -531,14 +543,14 @@ fun CompletedDownloadCard(
                     ) {
                         if (isInstalled && !resolvedPkg.isNullOrBlank()) {
                             DropdownMenuItem(
-                                text = { Text("إعادة التثبيت 📦", color = colors.textPrimary) },
+                                text = { Text(stringResource(R.string.reinstall_apk), color = colors.textPrimary) },
                                 onClick = {
                                     showMenu = false
                                     onInstall()
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("حذف التطبيق من الجهاز 🗑️", color = AccentRed) },
+                                text = { Text(stringResource(R.string.uninstall_from_device), color = AccentRed) },
                                 onClick = {
                                     showMenu = false
                                     showUninstallDialog = true
@@ -546,7 +558,7 @@ fun CompletedDownloadCard(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("حذف ملف APK المحمّل 🗂️", color = colors.textPrimary) },
+                            text = { Text(stringResource(R.string.delete_apk_file), color = colors.textPrimary) },
                             onClick = {
                                 showMenu = false
                                 onDeleteApk()
@@ -563,10 +575,10 @@ fun CompletedDownloadCard(
             onDismissRequest = { showUninstallDialog = false },
             containerColor = colors.card,
             title = {
-                Text("حذف التطبيق 🗑️", color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.confirm_uninstall_title), color = colors.textPrimary, fontWeight = FontWeight.Bold)
             },
             text = {
-                Text("هل ترغب في إلغاء تثبيت \"${item.appName}\" من جهازك؟", color = colors.textSecondary, fontSize = 14.sp)
+                Text(stringResource(R.string.confirm_uninstall_msg, item.appName), color = colors.textSecondary, fontSize = 14.sp)
             },
             confirmButton = {
                 Button(
@@ -576,12 +588,12 @@ fun CompletedDownloadCard(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
                 ) {
-                    Text("إلغاء التثبيت", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.uninstall), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showUninstallDialog = false }) {
-                    Text("إلغاء", color = colors.textMuted)
+                    Text(stringResource(R.string.cancel), color = colors.textMuted)
                 }
             }
         )

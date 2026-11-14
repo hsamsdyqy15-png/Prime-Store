@@ -15,6 +15,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.result.ActivityResultLauncher
 import androidx.core.content.FileProvider
+import com.example.R
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
@@ -240,13 +241,13 @@ object PackageHelper {
         onStatusMessage: ((String) -> Unit)? = null
     ): Boolean {
         if (!file.exists() || file.length() == 0L) {
-            onStatusMessage?.invoke("ملف التثبيت غير موجود أو تالف")
+            onStatusMessage?.invoke(context.getString(R.string.pkg_file_missing))
             return false
         }
 
         if (!canRequestPackageInstalls(context)) {
             openUnknownAppSourcesSettings(context)
-            onStatusMessage?.invoke("يرجى تفعيل إذن تثبيت التطبيقات لمتابعة التثبيت")
+            onStatusMessage?.invoke(context.getString(R.string.pkg_enable_install_perm))
             return false
         }
 
@@ -296,7 +297,9 @@ object PackageHelper {
             context.startActivity(intent)
             true
         } catch (e: Exception) {
-            onStatusMessage?.invoke("تعذر فتح ملف التثبيت: ${e.message}")
+            onStatusMessage?.invoke(
+                context.getString(R.string.pkg_open_apk_failed, e.message ?: "")
+            )
             false
         }
     }

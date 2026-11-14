@@ -1,10 +1,7 @@
 package com.example.ui.screens
 
-import android.content.Context
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,15 +18,10 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,22 +32,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.installer.PackageHelper
 import com.example.ui.components.NeonGradientButton
 import com.example.ui.theme.AccentGold
-import com.example.ui.theme.AccentGreen
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeBackground
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 import kotlinx.coroutines.launch
 
 @Composable
@@ -65,13 +52,15 @@ fun OnboardingScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val colors = PrimeTheme.colors
     val pagerState = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PrimeBackground)
+            .background(colors.background)
+            .testTag("onboarding_screen")
     ) {
         Column(
             modifier = Modifier
@@ -87,8 +76,15 @@ fun OnboardingScreen(
                 horizontalArrangement = Arrangement.End
             ) {
                 if (pagerState.currentPage < 2) {
-                    TextButton(onClick = onFinishOnboarding) {
-                        Text("تخطي", color = PrimeTextMuted, fontSize = 14.sp)
+                    TextButton(
+                        onClick = onFinishOnboarding,
+                        modifier = Modifier.testTag("onboarding_skip_button")
+                    ) {
+                        Text(
+                            text = stringResource(R.string.onboarding_skip),
+                            color = colors.textMuted,
+                            fontSize = 14.sp
+                        )
                     }
                 } else {
                     Spacer(modifier = Modifier.height(36.dp))
@@ -129,7 +125,7 @@ fun OnboardingScreen(
                                 .height(8.dp)
                                 .width(if (isSelected) 24.dp else 8.dp)
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(if (isSelected) NeonPurplePrimary else Color(0xFF33204B))
+                                .background(if (isSelected) colors.accent else colors.cardAlt)
                         )
                     }
                 }
@@ -139,7 +135,8 @@ fun OnboardingScreen(
                 // Navigation Buttons
                 if (pagerState.currentPage < 2) {
                     NeonGradientButton(
-                        text = "التالي ➔",
+                        text = stringResource(R.string.onboarding_next),
+                        testTag = "onboarding_next_button",
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             scope.launch {
@@ -149,7 +146,8 @@ fun OnboardingScreen(
                     )
                 } else {
                     NeonGradientButton(
-                        text = "ابدأ الاستخدام الآن 🚀",
+                        text = stringResource(R.string.onboarding_start),
+                        testTag = "onboarding_start_button",
                         modifier = Modifier.fillMaxWidth(),
                         onClick = onFinishOnboarding
                     )
@@ -163,6 +161,7 @@ fun OnboardingScreen(
 
 @Composable
 fun OnboardingPageOne() {
+    val colors = PrimeTheme.colors
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -176,10 +175,10 @@ fun OnboardingPageOne() {
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(NeonPurplePrimary.copy(alpha = 0.3f), Color.Transparent)
+                        colors = listOf(colors.accent.copy(alpha = 0.25f), Color.Transparent)
                     )
                 )
-                .border(2.dp, NeonBorderGlow, CircleShape),
+                .border(2.dp, colors.border, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text(text = "👑", fontSize = 64.sp)
@@ -188,8 +187,8 @@ fun OnboardingPageOne() {
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "مرحباً بك في Prime Store",
-            color = Color.White,
+            text = stringResource(R.string.onboarding_title_1),
+            color = colors.textPrimary,
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
@@ -198,8 +197,8 @@ fun OnboardingPageOne() {
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "المتجر العربي الأقوى والأسرع لتحميل التطبيقات والألعاب بروابط مباشرة وسرعة تحميل صاروخية، مع دعم فحص الأمان بالذكاء الاصطناعي وحل تعارض التثبيت.",
-            color = PrimeTextSecondary,
+            text = stringResource(R.string.onboarding_desc_1),
+            color = colors.textSecondary,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
             lineHeight = 22.sp
@@ -213,6 +212,7 @@ fun OnboardingPageTwo(
     onRequestNotifications: () -> Unit
 ) {
     val context = LocalContext.current
+    val colors = PrimeTheme.colors
     val hasInstallPermission = PackageHelper.canRequestPackageInstalls(context)
 
     Column(
@@ -226,14 +226,14 @@ fun OnboardingPageTwo(
             modifier = Modifier
                 .size(100.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF201335))
-                .border(2.dp, NeonPurplePrimary, CircleShape),
+                .background(colors.cardAlt)
+                .border(2.dp, colors.accent, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Filled.Security,
                 contentDescription = null,
-                tint = NeonPurplePrimary,
+                tint = colors.accent,
                 modifier = Modifier.size(50.dp)
             )
         }
@@ -241,8 +241,8 @@ fun OnboardingPageTwo(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "صلاحيات لتجربة متكاملة",
-            color = Color.White,
+            text = stringResource(R.string.onboarding_title_2),
+            color = colors.textPrimary,
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
@@ -251,8 +251,8 @@ fun OnboardingPageTwo(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "يحتاج المتجر إلى بعض الصلاحيات لكي يتمكن من تثبيت التطبيقات بسلاسة وإشعارك بالتحديثات الجديدة.",
-            color = PrimeTextMuted,
+            text = stringResource(R.string.onboarding_desc_2),
+            color = colors.textMuted,
             fontSize = 13.sp,
             textAlign = TextAlign.Center
         )
@@ -264,42 +264,52 @@ fun OnboardingPageTwo(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF1E142D))
-                .border(1.dp, NeonBorder, RoundedCornerShape(16.dp))
+                .background(colors.card)
+                .border(1.dp, colors.border, RoundedCornerShape(16.dp))
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "📦 تثبيت التطبيقات",
-                    color = Color.White,
+                    text = stringResource(R.string.onboarding_perm_install_title),
+                    color = colors.textPrimary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "لتثبيت ملفات APK المحملة مباشرة",
-                    color = PrimeTextMuted,
+                    text = stringResource(R.string.onboarding_perm_install_desc),
+                    color = colors.textMuted,
                     fontSize = 11.sp
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             if (hasInstallPermission) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(AccentGreen.copy(alpha = 0.2f))
+                        .background(colors.success.copy(alpha = 0.16f))
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Text("مفعلة ✓", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.onboarding_perm_enabled),
+                        color = colors.success,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             } else {
                 Button(
                     onClick = onRequestInstall,
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accent,
+                        contentColor = colors.textOnAccent
+                    ),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("تفعيل", color = Color.White, fontSize = 12.sp)
+                    Text(stringResource(R.string.enable), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -311,32 +321,37 @@ fun OnboardingPageTwo(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF1E142D))
-                .border(1.dp, NeonBorder, RoundedCornerShape(16.dp))
+                .background(colors.card)
+                .border(1.dp, colors.border, RoundedCornerShape(16.dp))
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "🔔 الإشعارات",
-                    color = Color.White,
+                    text = stringResource(R.string.onboarding_perm_notif_title),
+                    color = colors.textPrimary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "لتنبيهك باكتمال التحميل وتوفر التحديثات",
-                    color = PrimeTextMuted,
+                    text = stringResource(R.string.onboarding_perm_notif_desc),
+                    color = colors.textMuted,
                     fontSize = 11.sp
                 )
             }
 
+            Spacer(modifier = Modifier.width(8.dp))
+
             Button(
                 onClick = onRequestNotifications,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B2456)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.cardAlt,
+                    contentColor = colors.textPrimary
+                ),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("سماح", color = Color.White, fontSize = 12.sp)
+                Text(stringResource(R.string.allow), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -344,6 +359,7 @@ fun OnboardingPageTwo(
 
 @Composable
 fun OnboardingPageThree() {
+    val colors = PrimeTheme.colors
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -355,7 +371,7 @@ fun OnboardingPageThree() {
             modifier = Modifier
                 .size(100.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF201335))
+                .background(colors.cardAlt)
                 .border(2.dp, AccentGold, CircleShape),
             contentAlignment = Alignment.Center
         ) {
@@ -365,8 +381,8 @@ fun OnboardingPageThree() {
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "أمان وسرعة بلا حدود",
-            color = Color.White,
+            text = stringResource(R.string.onboarding_title_3),
+            color = colors.textPrimary,
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
@@ -375,10 +391,10 @@ fun OnboardingPageThree() {
         Spacer(modifier = Modifier.height(12.dp))
 
         val features = listOf(
-            "⚡ تسريع التحميل بنقرة واحدة وروابط مباشرة",
-            "🛡️ فحص الأمان بالذكاء الاصطناعي قبل التثبيت",
-            "🔄 حل مشكلة تعارض التوقيع وحذف النسخ القديمة",
-            "🌐 ترجمة تلقائية ذكية لوصف وميزات التطبيقات"
+            stringResource(R.string.onboarding_feat_1),
+            stringResource(R.string.onboarding_feat_2),
+            stringResource(R.string.onboarding_feat_3),
+            stringResource(R.string.onboarding_feat_4)
         )
 
         Column(
@@ -392,13 +408,14 @@ fun OnboardingPageThree() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E142D))
+                        .background(colors.card)
+                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = feat,
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )

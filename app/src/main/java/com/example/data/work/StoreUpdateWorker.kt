@@ -14,7 +14,6 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.BuildConfig
 import com.example.MainActivity
 import com.example.R
 import com.example.data.github.StoreSelfUpdater
@@ -62,8 +61,8 @@ class StoreUpdateWorker(
         val storeResult = StoreSelfUpdater.checkForStoreUpdate(context, force = false)
         if (storeResult is StoreUpdateCheckResult.UpdateAvailable) {
             showNotification(
-                title = "تحديث جديد لمتجر Prime Store 🚀",
-                message = "يتوفر الإصدار ${storeResult.info.versionName} بميزات وتحسينات جديدة.",
+                title = context.getString(R.string.worker_store_update_title),
+                message = context.getString(R.string.worker_store_update_msg, storeResult.info.versionName),
                 notificationId = 101
             )
             return Result.success()
@@ -86,16 +85,16 @@ class StoreUpdateWorker(
 
             if (updateCount > 0) {
                 showNotification(
-                    title = "تحديثات متوفرة لتطبيقاتك 📦",
-                    message = "يوجد $updateCount تحديثات جاهزة للتثبيت في متجر Prime Store.",
+                    title = context.getString(R.string.worker_apps_update_title),
+                    message = context.getString(R.string.worker_apps_update_msg, updateCount),
                     notificationId = 102
                 )
             } else if (allApps.isNotEmpty()) {
                 val newest = allApps.first()
                 if (newest.isNew) {
                     showNotification(
-                        title = "تطبيق جديد في Prime Store ✨",
-                        message = "تمت إضافة تطبيق ${newest.nameAr} مؤخراً، تصفحه الآن!",
+                        title = context.getString(R.string.worker_new_app_title),
+                        message = context.getString(R.string.worker_new_app_msg, newest.nameAr.ifBlank { newest.name }),
                         notificationId = 103
                     )
                 }
@@ -111,10 +110,10 @@ class StoreUpdateWorker(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "تحديثات متجر Prime Store",
+                context.getString(R.string.worker_channel_name),
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "إشعارات التحديثات والتطبيقات الجديدة في المتجر"
+                description = context.getString(R.string.worker_channel_desc)
             }
             notificationManager.createNotificationChannel(channel)
         }

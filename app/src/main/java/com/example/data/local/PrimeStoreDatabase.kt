@@ -17,6 +17,7 @@ data class TranslationEntity(
     val appId: String,
     val field: String, // "description", "features", "changelog"
     val targetLang: String,
+    val sourceLang: String = "",
     val textHash: String,
     val translatedText: String,
     val timestamp: Long = System.currentTimeMillis()
@@ -101,7 +102,7 @@ interface ProblemReportDao {
 
 @Database(
     entities = [TranslationEntity::class, CachedAppEntity::class, ProblemReportEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class PrimeStoreDatabase : RoomDatabase() {

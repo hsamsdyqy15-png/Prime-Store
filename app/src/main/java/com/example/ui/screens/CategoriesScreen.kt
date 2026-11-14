@@ -96,7 +96,7 @@ fun CategoriesScreen(
             }
 
             Text(
-                text = selectedCategory?.titleAr ?: stringResource(id = R.string.tab_categories),
+                text = selectedCategory?.let { stringResource(id = it.titleRes) } ?: stringResource(id = R.string.tab_categories),
                 color = colors.textPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
@@ -270,13 +270,13 @@ fun UnifiedCategoryCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.titleAr,
+                    text = stringResource(id = item.titleRes),
                     color = colors.textPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "${item.titleEn} • $appCount",
+                    text = "${stringResource(id = item.groupRes)} • ${stringResource(id = R.string.cat_app_count, appCount)}",
                     color = colors.textSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
@@ -307,7 +307,9 @@ fun CategoryAppsList(
     val colors = PrimeTheme.colors
     var openSourceOnly by remember { mutableStateOf(false) }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     val filteredApps = remember(category, allApps, sortOrder, openSourceOnly) {
+        val catTitle = context.getString(category.titleRes)
         val baseList = when (category) {
             AppCategory.POPULAR -> allApps.sortedByDescending { it.rating }
             AppCategory.OPEN_SOURCE -> allApps.filter { it.isOpenSource }
@@ -315,7 +317,10 @@ fun CategoryAppsList(
             else -> allApps.filter {
                 it.category == category ||
                         it.categoryKey.lowercase() == category.name.lowercase() ||
-                        it.tags.any { tag -> tag.contains(category.titleAr) }
+                        it.tags.any { tag ->
+                            tag.contains(catTitle, ignoreCase = true) ||
+                                tag.contains(category.titleEn, ignoreCase = true)
+                        }
             }
         }
         val sourceFiltered = if (openSourceOnly) {
@@ -386,7 +391,7 @@ fun CategoryAppsList(
                     }
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = category.titleAr,
+                        text = stringResource(id = category.titleRes),
                         color = colors.textPrimary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
@@ -478,7 +483,7 @@ fun CategoryAppsList(
                                     )
                                 }
                                 Text(
-                                    text = app.displayCategoryTitle,
+                                    text = app.localizedCategoryTitle(),
                                     color = colors.accent,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold

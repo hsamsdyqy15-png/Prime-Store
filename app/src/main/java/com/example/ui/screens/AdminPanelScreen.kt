@@ -56,8 +56,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,6 +76,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -84,27 +87,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.example.R
 import com.example.data.github.GitHubStorageHelper
 import com.example.data.github.GitHubUploadService
+import com.example.data.installer.ApkAbiDetector
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
-import com.example.data.model.CategoryItem
 import com.example.data.model.StoreCategories
 import com.example.data.supabase.SupabaseClient
 import com.example.ui.components.NeonCard
-import com.example.ui.theme.AccentGold
-import com.example.ui.theme.AccentGreen
-import com.example.ui.theme.AccentRed
-import com.example.ui.theme.NeonBorder
-import com.example.ui.theme.NeonBorderGlow
-import com.example.ui.theme.NeonPurpleDeep
-import com.example.ui.theme.NeonPurplePrimary
-import com.example.ui.theme.PrimeBackground
-import com.example.ui.theme.PrimeGradientBrush
-import com.example.ui.theme.PrimeTextMuted
-import com.example.ui.theme.PrimeTextSecondary
+import com.example.ui.theme.PrimeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -140,6 +135,7 @@ fun AdminPanelScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val colors = PrimeTheme.colors
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -158,16 +154,13 @@ fun AdminPanelScreen(
     var featuresStr by remember { mutableStateOf("") }
     var directFileUrl by remember { mutableStateOf("") }
 
-    // Uploaded / Existing URLs
     var storedIconUrl by remember { mutableStateOf("") }
     val storedScreenshotUrls = remember { mutableStateListOf<String>() }
 
-    // Open Source & CPU Architecture states
     var isOpenSource by remember { mutableStateOf(false) }
     var sourceCodeUrl by remember { mutableStateOf("") }
-    var detectedAbis by remember { mutableStateOf("Universal (All Architectures)") }
+    var detectedAbis by remember { mutableStateOf(context.getString(R.string.abi_universal_all)) }
 
-    // Picked local files
     var pickedIconUri by remember { mutableStateOf<Uri?>(null) }
     var apkExtractedIconBytes by remember { mutableStateOf<ByteArray?>(null) }
     val pickedShotUris = remember { mutableStateListOf<Uri>() }
@@ -175,7 +168,6 @@ fun AdminPanelScreen(
     var pickedApkFileName by remember { mutableStateOf("") }
     var pickedApkSizeBytes by remember { mutableLongStateOf(0L) }
 
-    // Upload Progress States
     var isUploading by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var uploadStepLabel by remember { mutableStateOf("") }
@@ -184,18 +176,15 @@ fun AdminPanelScreen(
     var uploadProgress by remember { mutableFloatStateOf(0f) }
     var uploadJob by remember { mutableStateOf<Job?>(null) }
 
-    // Category Picker Modal
     var showCategoryModal by remember { mutableStateOf(false) }
     var categorySearchQuery by remember { mutableStateOf("") }
 
-    // Store Update Section State
     var storeUpdateVersionCode by remember { mutableStateOf("1") }
     var storeUpdateVersionName by remember { mutableStateOf("1.0.0") }
     var storeUpdateNotes by remember { mutableStateOf("") }
     var storeUpdateApkUrl by remember { mutableStateOf("") }
     var isPublishingStoreUpdate by remember { mutableStateOf(false) }
 
-    // GitHub Settings State (Loaded from EncryptedSharedPreferences)
     var ghOwner by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_OWNER) }
     var ghRepo by remember { mutableStateOf(GitHubStorageHelper.DEFAULT_REPO) }
     var ghToken by remember { mutableStateOf("") }
@@ -208,7 +197,6 @@ fun AdminPanelScreen(
         ghRepo = cfg.repo
         ghToken = cfg.token
 
-        // Fetch current store update config
         val curUpdate = withContext(Dispatchers.IO) {
             SupabaseClient.fetchStoreUpdate()
         }
@@ -220,12 +208,10 @@ fun AdminPanelScreen(
         }
     }
 
-    // Upload Progress & Size States
     var uploadUploadedMbText by remember { mutableStateOf("0 MB") }
     var uploadTotalMbText by remember { mutableStateOf("0 MB") }
     var isUploadingToGitHub by remember { mutableStateOf(false) }
 
-    // Alerts & Dialogs
     var showOver2GbAlert by remember { mutableStateOf(false) }
     var appToDelete by remember { mutableStateOf<AppItem?>(null) }
     var fullscreenPreviewUrl by remember { mutableStateOf<Any?>(null) }
@@ -238,7 +224,6 @@ fun AdminPanelScreen(
         }
     }
 
-    // 1) File Pickers
     val iconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             pickedIconUri = uri
@@ -257,28 +242,28 @@ fun AdminPanelScreen(
             val (fName, fSize) = getFileNameAndSize(context, uri)
             if (!fName.endsWith(".apk", ignoreCase = true)) {
                 scope.launch {
-                    snackbarHostState.showSnackbar("اختر ملف APK فقط")
+                    snackbarHostState.showSnackbar(context.getString(R.string.github_unsupported_ext, fName))
                 }
             } else {
                 pickedApkUri = uri
                 pickedApkFileName = fName
                 pickedApkSizeBytes = fSize
 
-                val max2GbBytes = 2147483648L // 2 GiB
+                val max2GbBytes = 2147483648L
                 if (fSize > max2GbBytes) {
                     showOver2GbAlert = true
                     pickedApkUri = null
                     pickedApkFileName = ""
                     pickedApkSizeBytes = 0L
                     scope.launch {
-                        snackbarHostState.showSnackbar("❌ الحد الأقصى 2GB لكل ملف")
+                        snackbarHostState.showSnackbar(context.getString(R.string.github_file_over_2gb))
                     }
                     return@rememberLauncherForActivityResult
                 }
 
                 scope.launch(Dispatchers.IO) {
                     val (extractedName, extractedVer, iconBytes) = extractApkMetadata(context, uri)
-                    val abis = com.example.data.installer.ApkAbiDetector.detectAbis(context, uri)
+                    val abis = ApkAbiDetector.detectAbis(context, uri)
                     withContext(Dispatchers.Main) {
                         detectedAbis = abis
                         if (name.isBlank() && !extractedName.isNullOrBlank()) {
@@ -337,7 +322,7 @@ fun AdminPanelScreen(
         directFileUrl = ""
         isOpenSource = false
         sourceCodeUrl = ""
-        detectedAbis = "Universal (All Architectures)"
+        detectedAbis = context.getString(R.string.abi_universal_all)
         storedScreenshotUrls.clear()
 
         pickedIconUri = null
@@ -351,27 +336,25 @@ fun AdminPanelScreen(
     fun startSaveProcess() {
         if (name.isBlank() || isSaving || isUploading) return
 
-        // 1) Verify that icon will be available
         val hasIconSource = pickedIconUri != null || apkExtractedIconBytes != null || storedIconUrl.isNotBlank()
         if (!hasIconSource) {
             scope.launch {
-                snackbarHostState.showSnackbar("❌ يجب توفير أيقونة للتطبيق (رفع صورة من الجهاز أو استخراجها من APK أو كتابة رابط)")
+                snackbarHostState.showSnackbar(context.getString(R.string.admin_pick_icon_btn))
             }
             return
         }
 
-        // 2) Verify that APK or direct link will be available
         val hasApkSource = pickedApkUri != null || directFileUrl.isNotBlank()
         if (!hasApkSource) {
             scope.launch {
-                snackbarHostState.showSnackbar("❌ يجب توفير ملف APK أو رابط تحميل مباشر للتطبيق")
+                snackbarHostState.showSnackbar(context.getString(R.string.error_empty_file))
             }
             return
         }
 
         if (directFileUrl.isNotBlank() && !SupabaseClient.isValidDownloadLink(directFileUrl)) {
             scope.launch {
-                snackbarHostState.showSnackbar("⚠️ الرابط المباشر يجب أن يكون رابط Supabase Storage أو ينتهي بـ .apk أو من GitHub Releases.")
+                snackbarHostState.showSnackbar(context.getString(R.string.toast_invalid_download_link))
             }
             return
         }
@@ -395,11 +378,10 @@ fun AdminPanelScreen(
             try {
                 var finalIconUrl = storedIconUrl
 
-                // 1. Upload Icon
                 val iconToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
                 if (pickedIconUri != null) {
                     uploadCurrentStep++
-                    uploadStepLabel = "جاري رفع الأيقونة ($uploadCurrentStep/$uploadTotalSteps)"
+                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_icon)} ($uploadCurrentStep/$uploadTotalSteps)"
                     val ext = getFileExtension(context, pickedIconUri!!, "png")
                     val path = "icons/${UUID.randomUUID()}.$ext"
                     val mime = context.contentResolver.getType(pickedIconUri!!) ?: "image/png"
@@ -415,12 +397,12 @@ fun AdminPanelScreen(
                     if (uploadResult.isSuccess) {
                         finalIconUrl = uploadResult.getOrThrow()
                     } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
-                        throw Exception("فشل رفع الأيقونة: $errorText")
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: context.getString(R.string.error_unexpected)
+                        throw Exception(errorText)
                     }
                 } else if (apkExtractedIconBytes != null && finalIconUrl.isBlank()) {
                     uploadCurrentStep++
-                    uploadStepLabel = "جاري رفع الأيقونة المستخرجة ($uploadCurrentStep/$uploadTotalSteps)"
+                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_icon)} ($uploadCurrentStep/$uploadTotalSteps)"
                     val path = "icons/${UUID.randomUUID()}.png"
                     val uploadResult = SupabaseClient.uploadStorageBytesDetailed(
                         bytes = apkExtractedIconBytes!!,
@@ -431,17 +413,16 @@ fun AdminPanelScreen(
                     if (uploadResult.isSuccess) {
                         finalIconUrl = uploadResult.getOrThrow()
                     } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
-                        throw Exception("فشل رفع الأيقونة المستخرجة: $errorText")
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: context.getString(R.string.error_unexpected)
+                        throw Exception(errorText)
                     }
                 }
 
-                // 2. Upload Screenshots
                 val shotToken = SupabaseClient.getValidToken(forceRefresh = false) ?: resolvedToken
                 val finalScreenshots = storedScreenshotUrls.toMutableList()
                 for ((idx, sUri) in pickedShotUris.withIndex()) {
                     uploadCurrentStep++
-                    uploadStepLabel = "جاري رفع لقطة الشاشة ${idx + 1}/${pickedShotUris.size} ($uploadCurrentStep/$uploadTotalSteps)"
+                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_screens)} (${idx + 1}/${pickedShotUris.size})"
                     val ext = getFileExtension(context, sUri, "jpg")
                     val path = "shots/${UUID.randomUUID()}.$ext"
                     val mime = context.contentResolver.getType(sUri) ?: "image/jpeg"
@@ -457,12 +438,11 @@ fun AdminPanelScreen(
                     if (uploadResult.isSuccess) {
                         finalScreenshots.add(uploadResult.getOrThrow())
                     } else {
-                        val errorText = uploadResult.exceptionOrNull()?.message ?: "خطأ في السيرفر"
-                        throw Exception("فشل رفع لقطة الشاشة ${idx + 1}: $errorText")
+                        val errorText = uploadResult.exceptionOrNull()?.message ?: context.getString(R.string.error_unexpected)
+                        throw Exception(errorText)
                     }
                 }
 
-                // 3. Upload APK to GitHub Releases
                 var finalFileUrl = directFileUrl
                 var uploadedApkSizeStr = sizeStr
 
@@ -470,17 +450,17 @@ fun AdminPanelScreen(
                     val apkUri = pickedApkUri!!
                     val max2Gb = 2147483648L
                     if (pickedApkSizeBytes > max2Gb) {
-                        throw Exception("حجم الملف يتجاوز 2 جيجابايت")
+                        throw Exception(context.getString(R.string.github_file_over_2gb))
                     }
 
                     val currentGhConfig = GitHubStorageHelper.loadConfig(context)
                     if (currentGhConfig.token.isBlank()) {
-                        throw Exception("يرجى إدخال مفتاح GitHub Token أولاً في قسم \"إعدادات GitHub\"")
+                        throw Exception(context.getString(R.string.github_token_missing))
                     }
 
                     uploadCurrentStep++
                     isUploadingToGitHub = true
-                    uploadStepLabel = "جاري إنشاء Release ورفع الملف إلى GitHub ($uploadCurrentStep/$uploadTotalSteps)"
+                    uploadStepLabel = "${context.getString(R.string.admin_upload_step_apk_gh)} ($uploadCurrentStep/$uploadTotalSteps)"
                     uploadProgress = 0f
 
                     GitHubUploadService.start(context, pickedApkFileName.ifBlank { name })
@@ -508,23 +488,24 @@ fun AdminPanelScreen(
                         }
 
                         if (uploadResult.isFailure) {
-                            throw uploadResult.exceptionOrNull() ?: Exception("فشل رفع الملف إلى GitHub Releases")
+                            throw uploadResult.exceptionOrNull()
+                                ?: Exception(context.getString(R.string.github_upload_asset_fail))
                         }
 
                         val ghAsset = uploadResult.getOrThrow()
                         finalFileUrl = ghAsset.downloadUrl
                         uploadedApkSizeStr = ghAsset.sizeMB
-
                     } finally {
                         GitHubUploadService.stop(context)
                         isUploadingToGitHub = false
                     }
                 }
 
-                if (finalIconUrl.isBlank()) throw Exception("لم يتم توفير رابط أيقونة صحيح")
-                if (finalFileUrl.isBlank()) throw Exception("لم يتم توفير ملف APK أو رابط تحميل")
+                if (finalIconUrl.isBlank()) throw Exception(context.getString(R.string.error_empty_file))
+                if (finalFileUrl.isBlank()) throw Exception(context.getString(R.string.error_empty_file))
 
-                // 4. Save to apps table
+                uploadStepLabel = context.getString(R.string.admin_upload_step_saving)
+
                 val rating = ratingStr.toFloatOrNull() ?: 4.5f
                 val finalCalculatedSize = if (uploadedApkSizeStr.isNotBlank() && uploadedApkSizeStr != "120 MB") {
                     uploadedApkSizeStr
@@ -579,7 +560,7 @@ fun AdminPanelScreen(
 
                 if (!mutationResult.success) {
                     if (SupabaseClient.isTokenExpiredError(mutationResult.httpCode, "${mutationResult.message} ${mutationResult.details}")) {
-                        snackbarHostState.showSnackbar("انتهت الجلسة، سجّل الدخول من جديد")
+                        snackbarHostState.showSnackbar(context.getString(R.string.toast_session_expired))
                         onBackClick()
                     } else {
                         supabaseErrorResult = mutationResult
@@ -612,30 +593,40 @@ fun AdminPanelScreen(
                     categoryKey
                 )
 
-                // 5. Post-save verification
                 var verifiedApp: AppItem? = null
                 withContext(Dispatchers.IO) {
-                    kotlinx.coroutines.delay(800)
+                    delay(800)
                     val allApps = SupabaseClient.fetchApps()
                     verifiedApp = allApps.find { it.name.trim().equals(name.trim(), ignoreCase = true) }
                 }
 
                 if (verifiedApp != null) {
                     verifiedSavedApp = verifiedApp
-                    snackbarHostState.showSnackbar("✔ تم حفظ التطبيق وتأكيد الروابط في السحابة بنجاح!")
+                    snackbarHostState.showSnackbar(
+                        if (editingAppId != null) {
+                            context.getString(R.string.toast_app_updated)
+                        } else {
+                            context.getString(R.string.toast_app_published)
+                        }
+                    )
                 } else {
-                    snackbarHostState.showSnackbar(if (editingAppId != null) "تم إرسال التحديث بنجاح! ✔" else "تم إرسال التطبيق بنجاح! 🎉")
+                    snackbarHostState.showSnackbar(
+                        if (editingAppId != null) {
+                            context.getString(R.string.toast_app_updated)
+                        } else {
+                            context.getString(R.string.toast_app_published)
+                        }
+                    )
                 }
 
                 clearForm()
-
             } catch (e: Exception) {
                 val msg = e.message.orEmpty()
                 if (SupabaseClient.isTokenExpiredError(0, msg)) {
-                    snackbarHostState.showSnackbar("انتهت الجلسة، سجّل الدخول من جديد")
+                    snackbarHostState.showSnackbar(context.getString(R.string.toast_session_expired))
                     onBackClick()
                 } else {
-                    snackbarHostState.showSnackbar("❌ فشل الحفظ: ${e.message ?: "حدث خطأ غير متوقع"}")
+                    snackbarHostState.showSnackbar(msg.ifBlank { context.getString(R.string.error_unexpected) })
                 }
             } finally {
                 isUploading = false
@@ -646,13 +637,14 @@ fun AdminPanelScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = PrimeBackground
+        containerColor = colors.background
     ) { innerPadding ->
         Column(
             modifier = modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(PrimeBackground)
+                .background(colors.background)
+                .testTag("admin_panel_screen")
         ) {
             // Top Header
             Row(
@@ -662,23 +654,26 @@ fun AdminPanelScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = onBackClick) {
+                IconButton(
+                    onClick = onBackClick,
+                    modifier = Modifier.testTag("admin_back_button")
+                ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "رجوع",
-                        tint = Color.White
+                        contentDescription = stringResource(R.string.back),
+                        tint = colors.textPrimary
                     )
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "لوحة تحكم الأدمن 🛠️",
-                        color = Color.White,
+                        text = stringResource(R.string.admin_panel_header),
+                        color = colors.textPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = adminEmail,
-                        color = NeonPurplePrimary,
+                        text = stringResource(R.string.admin_logged_in_as, adminEmail),
+                        color = colors.accent,
                         fontSize = 11.sp
                     )
                 }
@@ -689,9 +684,7 @@ fun AdminPanelScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 40.dp)
             ) {
-                // ========================================================
                 // 1) GITHUB SETTINGS CARD
-                // ========================================================
                 item {
                     NeonCard(
                         modifier = Modifier
@@ -708,28 +701,13 @@ fun AdminPanelScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(text = "🐙 ", fontSize = 16.sp)
                                     Text(
-                                        text = "إعدادات GitHub (مستودع ملفات APK)",
-                                        color = NeonPurplePrimary,
+                                        text = stringResource(R.string.admin_github_storage_section),
+                                        color = colors.accent,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
-                                Text(
-                                    text = "🔒 مشفر محلياً",
-                                    color = AccentGreen,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Text(
-                                text = "يتم رفع ملفات الـ APK تلقائياً إلى GitHub Releases بدعم حتى 2GB للملف الواحد.",
-                                color = PrimeTextMuted,
-                                fontSize = 11.sp,
-                                lineHeight = 16.sp
-                            )
 
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -737,14 +715,14 @@ fun AdminPanelScreen(
                                 AdminTextField(
                                     value = ghOwner,
                                     onValueChange = { ghOwner = it },
-                                    label = "اسم المستخدم (owner)",
+                                    label = stringResource(R.string.admin_gh_owner),
                                     modifier = Modifier.weight(1f)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 AdminTextField(
                                     value = ghRepo,
                                     onValueChange = { ghRepo = it },
-                                    label = "اسم المستودع (repo)",
+                                    label = stringResource(R.string.admin_gh_repo),
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -754,7 +732,7 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = ghToken,
                                 onValueChange = { ghToken = it },
-                                label = "مفتاح GitHub الشخصي (Personal Access Token)",
+                                label = stringResource(R.string.admin_gh_token),
                                 keyboardType = KeyboardType.Password,
                                 visualTransformation = PasswordVisualTransformation()
                             )
@@ -769,22 +747,22 @@ fun AdminPanelScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(PrimeGradientBrush)
-                                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                        .background(colors.buttonGradient)
+                                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                         .clickable(enabled = !isSavingGhSettings) {
                                             isSavingGhSettings = true
                                             GitHubStorageHelper.saveConfig(context, ghOwner, ghRepo, ghToken)
                                             isSavingGhSettings = false
                                             scope.launch {
-                                                snackbarHostState.showSnackbar("✔ تم حفظ إعدادات GitHub بأمان")
+                                                snackbarHostState.showSnackbar(context.getString(R.string.admin_gh_saved_toast))
                                             }
                                         }
                                         .padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "💾 حفظ الإعدادات",
-                                        color = Color.White,
+                                        text = stringResource(R.string.admin_gh_save_btn),
+                                        color = colors.textOnAccent,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
                                     )
@@ -794,17 +772,27 @@ fun AdminPanelScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(Color(0xFF281C38))
-                                        .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                                        .background(colors.cardAlt)
+                                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                         .clickable(enabled = !isTestingGhConnection) {
                                             isTestingGhConnection = true
                                             scope.launch {
-                                                val testRes = GitHubStorageHelper.testConnection(ghOwner, ghRepo, ghToken)
+                                                val testRes = GitHubStorageHelper.testConnection(
+                                                    owner = ghOwner,
+                                                    repo = ghRepo,
+                                                    token = ghToken,
+                                                    context = context
+                                                )
                                                 isTestingGhConnection = false
                                                 if (testRes.isSuccess) {
-                                                    snackbarHostState.showSnackbar(testRes.getOrNull() ?: "تم الاتصال بنجاح!")
+                                                    snackbarHostState.showSnackbar(
+                                                        testRes.getOrNull() ?: context.getString(R.string.admin_gh_saved_toast)
+                                                    )
                                                 } else {
-                                                    snackbarHostState.showSnackbar("❌ فشل الاتصال: ${testRes.exceptionOrNull()?.message}")
+                                                    snackbarHostState.showSnackbar(
+                                                        testRes.exceptionOrNull()?.message
+                                                            ?: context.getString(R.string.github_network_fail)
+                                                    )
                                                 }
                                             }
                                         }
@@ -812,8 +800,12 @@ fun AdminPanelScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = if (isTestingGhConnection) "جاري الفحص..." else "⚡ اختبار الاتصال",
-                                        color = if (isTestingGhConnection) PrimeTextMuted else Color.White,
+                                        text = if (isTestingGhConnection) {
+                                            stringResource(R.string.admin_gh_testing)
+                                        } else {
+                                            stringResource(R.string.admin_gh_test_btn)
+                                        },
+                                        color = if (isTestingGhConnection) colors.textMuted else colors.textPrimary,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
                                     )
@@ -823,9 +815,7 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // ========================================================
-                // 2) STORE UPDATE SECTION (تحديث المتجر store_update)
-                // ========================================================
+                // 2) STORE UPDATE SECTION
                 item {
                     NeonCard(
                         modifier = Modifier
@@ -841,26 +831,17 @@ fun AdminPanelScreen(
                                 Icon(
                                     imageVector = Icons.Filled.SystemUpdate,
                                     contentDescription = null,
-                                    tint = NeonPurplePrimary,
+                                    tint = colors.accent,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "تحديث المتجر (Store Update)",
-                                    color = Color.White,
+                                    text = stringResource(R.string.admin_store_update_section),
+                                    color = colors.textPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Text(
-                                text = "نشر تحديث جديد لمتجر Prime Store ليظهر تلقائياً للمستخدمين في شاشة الإعدادات مع التثبيت المباشر.",
-                                color = PrimeTextMuted,
-                                fontSize = 11.sp,
-                                lineHeight = 16.sp
-                            )
 
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -868,7 +849,7 @@ fun AdminPanelScreen(
                                 AdminTextField(
                                     value = storeUpdateVersionCode,
                                     onValueChange = { storeUpdateVersionCode = it },
-                                    label = "كود الإصدار (version_code رقمي)",
+                                    label = stringResource(R.string.admin_new_version_code),
                                     keyboardType = KeyboardType.Number,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -876,7 +857,7 @@ fun AdminPanelScreen(
                                 AdminTextField(
                                     value = storeUpdateVersionName,
                                     onValueChange = { storeUpdateVersionName = it },
-                                    label = "اسم الإصدار (مثال: 1.0.2)",
+                                    label = stringResource(R.string.admin_new_version_name),
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -886,7 +867,7 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = storeUpdateNotes,
                                 onValueChange = { storeUpdateNotes = it },
-                                label = "ملاحظات التحديث (سجل التغييرات)",
+                                label = stringResource(R.string.admin_update_notes),
                                 singleLine = false,
                                 minLines = 2
                             )
@@ -896,7 +877,7 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = storeUpdateApkUrl,
                                 onValueChange = { storeUpdateApkUrl = it },
-                                label = "رابط ملف APK المباشر للتحديث (أو رابط GitHub Release)"
+                                label = stringResource(R.string.admin_update_apk_url)
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -905,8 +886,8 @@ fun AdminPanelScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(PrimeGradientBrush)
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .background(colors.buttonGradient)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable(enabled = !isPublishingStoreUpdate) {
                                         val code = storeUpdateVersionCode.toIntOrNull() ?: 1
                                         isPublishingStoreUpdate = true
@@ -921,9 +902,17 @@ fun AdminPanelScreen(
                                             }
                                             isPublishingStoreUpdate = false
                                             if (success.success) {
-                                                snackbarHostState.showSnackbar("✔ تم نشر تحديث المتجر بنجاح في جدول store_update!")
+                                                snackbarHostState.showSnackbar(
+                                                    context.getString(R.string.admin_store_update_published)
+                                                )
                                             } else {
-                                                snackbarHostState.showSnackbar("❌ فشل تحديث جدول store_update، تحقق من الاتصال")
+                                                snackbarHostState.showSnackbar(
+                                                    context.getString(
+                                                        R.string.toast_supabase_error,
+                                                        success.code,
+                                                        success.message.ifBlank { context.getString(R.string.error_unexpected) }
+                                                    )
+                                                )
                                             }
                                         }
                                     }
@@ -931,8 +920,12 @@ fun AdminPanelScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (isPublishingStoreUpdate) "جاري النشر..." else "🚀 نشر التحديث للمتجر",
-                                    color = Color.White,
+                                    text = if (isPublishingStoreUpdate) {
+                                        stringResource(R.string.loading)
+                                    } else {
+                                        stringResource(R.string.admin_publish_store_update)
+                                    },
+                                    color = colors.textOnAccent,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp
                                 )
@@ -941,9 +934,7 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // ========================================================
                 // 3) APP ADD/EDIT FORM
-                // ========================================================
                 item {
                     NeonCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -953,16 +944,24 @@ fun AdminPanelScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (editingAppId != null) "تعديل التطبيق ✏️" else "إضافة تطبيق جديد ➕",
-                                    color = NeonPurplePrimary,
+                                    text = if (editingAppId != null) {
+                                        stringResource(R.string.admin_edit_app_header, name.ifBlank { editingAppId.orEmpty() })
+                                    } else {
+                                        stringResource(R.string.admin_add_new_app)
+                                    },
+                                    color = colors.accent,
                                     fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 if (editingAppId != null) {
                                     Text(
-                                        text = "إلغاء التعديل",
-                                        color = AccentRed,
+                                        text = stringResource(R.string.admin_cancel_edit),
+                                        color = colors.danger,
                                         fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
                                         modifier = Modifier.clickable { clearForm() }
                                     )
                                 }
@@ -974,51 +973,49 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = name,
                                 onValueChange = { name = it },
-                                label = "اسم التطبيق"
+                                label = stringResource(R.string.admin_app_name_label)
                             )
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Category Selector with full Modal
-                            Text(
-                                text = "القسم (التصنيف):",
-                                color = PrimeTextSecondary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-
+                            // Category Selector with Modal
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF221538))
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable { showCategoryModal = true }
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
                                     Text(text = selectedCategoryItem.emoji, fontSize = 20.sp)
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text(
-                                            text = selectedCategoryItem.titleAr,
-                                            color = Color.White,
+                                            text = stringResource(
+                                                R.string.admin_select_category_btn,
+                                                stringResource(selectedCategoryItem.titleRes)
+                                            ),
+                                            color = colors.textPrimary,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 13.sp
                                         )
                                         Text(
-                                            text = "${selectedCategoryItem.group} • ${selectedCategoryItem.titleEn}",
-                                            color = PrimeTextMuted,
+                                            text = "${stringResource(selectedCategoryItem.groupRes)} • ${selectedCategoryItem.titleEn}",
+                                            color = colors.textMuted,
                                             fontSize = 11.sp
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "تغيير القسم ›",
-                                    color = NeonPurplePrimary,
+                                    text = stringResource(R.string.edit),
+                                    color = colors.accent,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp
                                 )
@@ -1031,14 +1028,14 @@ fun AdminPanelScreen(
                                 AdminTextField(
                                     value = versionStr,
                                     onValueChange = { versionStr = it },
-                                    label = "رقم الإصدار (مثال: 1.0.0)",
+                                    label = stringResource(R.string.admin_app_version_label),
                                     modifier = Modifier.weight(1f)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 AdminTextField(
                                     value = ratingStr,
                                     onValueChange = { ratingStr = it },
-                                    label = "التقييم (مثال: 4.5)",
+                                    label = stringResource(R.string.admin_app_rating_label),
                                     keyboardType = KeyboardType.Decimal,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -1046,7 +1043,7 @@ fun AdminPanelScreen(
                                 AdminTextField(
                                     value = sizeStr,
                                     onValueChange = { sizeStr = it },
-                                    label = "الحجم (مثال: 120 MB)",
+                                    label = stringResource(R.string.admin_app_size_label),
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -1057,7 +1054,7 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = description,
                                 onValueChange = { description = it },
-                                label = "الوصف الكامل للتطبيق",
+                                label = stringResource(R.string.admin_app_desc_label),
                                 singleLine = false,
                                 minLines = 3
                             )
@@ -1068,7 +1065,7 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = featuresStr,
                                 onValueChange = { featuresStr = it },
-                                label = "المميزات (سطر لكل ميزة)",
+                                label = stringResource(R.string.admin_app_features_label),
                                 singleLine = false,
                                 minLines = 3
                             )
@@ -1079,31 +1076,25 @@ fun AdminPanelScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFF1E142D), RoundedCornerShape(12.dp))
-                                    .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+                                    .background(colors.cardAlt, RoundedCornerShape(12.dp))
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "مشروع مفتوح المصدر (Open Source FOSS)؟",
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "تفعيل عرض شارة المصدر المفتوح ورابط الكود",
-                                        color = PrimeTextMuted,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                                androidx.compose.material3.Switch(
+                                Text(
+                                    text = stringResource(R.string.admin_open_source_toggle),
+                                    color = colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Switch(
                                     checked = isOpenSource,
                                     onCheckedChange = { isOpenSource = it },
-                                    colors = androidx.compose.material3.SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = NeonPurplePrimary
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = colors.textOnAccent,
+                                        checkedTrackColor = colors.accent
                                     )
                                 )
                             }
@@ -1114,7 +1105,7 @@ fun AdminPanelScreen(
                                     AdminTextField(
                                         value = sourceCodeUrl,
                                         onValueChange = { sourceCodeUrl = it },
-                                        label = "رابط الكود المصدر (GitHub / GitLab URL)"
+                                        label = stringResource(R.string.admin_source_code_url)
                                     )
                                 }
                             }
@@ -1122,20 +1113,12 @@ fun AdminPanelScreen(
                             Spacer(modifier = Modifier.height(14.dp))
 
                             // SECTION 1: Icon Picker
-                            Text(
-                                text = "أيقونة التطبيق:",
-                                color = PrimeTextSecondary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(PrimeGradientBrush)
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .background(colors.buttonGradient)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable { iconPicker.launch("image/*") }
                                     .padding(vertical = 10.dp),
                                 contentAlignment = Alignment.Center
@@ -1144,13 +1127,13 @@ fun AdminPanelScreen(
                                     Icon(
                                         imageVector = Icons.Filled.Image,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = colors.textOnAccent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "📷 رفع الأيقونة",
-                                        color = Color.White,
+                                        text = stringResource(R.string.admin_pick_icon_btn),
+                                        color = colors.textOnAccent,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
@@ -1164,36 +1147,36 @@ fun AdminPanelScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFF1E142D), RoundedCornerShape(14.dp))
-                                        .border(1.dp, NeonBorder, RoundedCornerShape(14.dp))
+                                        .background(colors.cardAlt, RoundedCornerShape(14.dp))
+                                        .border(1.dp, colors.border, RoundedCornerShape(14.dp))
                                         .padding(10.dp)
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .size(64.dp)
                                             .clip(RoundedCornerShape(16.dp))
-                                            .background(Color(0xFF281C38))
-                                            .border(1.dp, NeonBorderGlow, RoundedCornerShape(16.dp)),
+                                            .background(colors.surface)
+                                            .border(1.dp, colors.border, RoundedCornerShape(16.dp)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (pickedIconUri != null) {
                                             AsyncImage(
                                                 model = pickedIconUri,
-                                                contentDescription = "أيقونة جديدة",
+                                                contentDescription = stringResource(R.string.admin_pick_icon_btn),
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
                                             )
                                         } else if (apkExtractedIconBytes != null) {
                                             AsyncImage(
                                                 model = apkExtractedIconBytes,
-                                                contentDescription = "أيقونة مستخرجة",
+                                                contentDescription = stringResource(R.string.admin_pick_icon_btn),
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
                                             )
                                         } else if (storedIconUrl.startsWith("http")) {
                                             AsyncImage(
                                                 model = storedIconUrl,
-                                                contentDescription = "الأيقونة الحالية",
+                                                contentDescription = stringResource(R.string.admin_pick_icon_btn),
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
                                             )
@@ -1206,12 +1189,8 @@ fun AdminPanelScreen(
 
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = when {
-                                                pickedIconUri != null -> "أيقونة محددة من الجهاز"
-                                                apkExtractedIconBytes != null -> "أيقونة مستخرجة من APK"
-                                                else -> "الأيقونة الحالية للتطبيق"
-                                            },
-                                            color = Color.White,
+                                            text = name.ifBlank { stringResource(R.string.admin_app_name_label) },
+                                            color = colors.textPrimary,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp
                                         )
@@ -1226,8 +1205,8 @@ fun AdminPanelScreen(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Close,
-                                            contentDescription = "حذف الأيقونة",
-                                            tint = AccentRed,
+                                            contentDescription = stringResource(R.string.delete),
+                                            tint = colors.danger,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
@@ -1236,27 +1215,20 @@ fun AdminPanelScreen(
                                 AdminTextField(
                                     value = storedIconUrl,
                                     onValueChange = { storedIconUrl = it },
-                                    label = "أو أدخل Emoji كأيقونة (مثل 🎮)"
+                                    label = stringResource(R.string.admin_or_icon_url)
                                 )
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // SECTION 2: Screenshots
-                            Text(
-                                text = "لقطات الشاشة:",
-                                color = PrimeTextSecondary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-
+                            val totalShots = storedScreenshotUrls.size + pickedShotUris.size
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(PrimeGradientBrush)
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .background(colors.buttonGradient)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable { shotsPicker.launch("image/*") }
                                     .padding(vertical = 10.dp),
                                 contentAlignment = Alignment.Center
@@ -1265,13 +1237,13 @@ fun AdminPanelScreen(
                                     Icon(
                                         imageVector = Icons.Filled.AddPhotoAlternate,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = colors.textOnAccent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "🖼 رفع لقطات الشاشة (اختيار متعدد)",
-                                        color = Color.White,
+                                        text = stringResource(R.string.admin_add_screenshots_btn, totalShots),
+                                        color = colors.textOnAccent,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
@@ -1280,14 +1252,13 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            val hasShots = storedScreenshotUrls.isNotEmpty() || pickedShotUris.isNotEmpty()
-                            if (hasShots) {
+                            if (totalShots > 0) {
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFF1E142D), RoundedCornerShape(14.dp))
-                                        .border(1.dp, NeonBorder, RoundedCornerShape(14.dp))
+                                        .background(colors.cardAlt, RoundedCornerShape(14.dp))
+                                        .border(1.dp, colors.border, RoundedCornerShape(14.dp))
                                         .padding(8.dp)
                                 ) {
                                     itemsIndexed(storedScreenshotUrls) { index, shotUrl ->
@@ -1310,20 +1281,12 @@ fun AdminPanelScreen(
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // SECTION 3: APK File Picker
-                            Text(
-                                text = "ملف التطبيق أو اللعبة (APK):",
-                                color = PrimeTextSecondary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(PrimeGradientBrush)
-                                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(12.dp))
+                                    .background(colors.buttonGradient)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable { apkPicker.launch("*/*") }
                                     .padding(vertical = 10.dp),
                                 contentAlignment = Alignment.Center
@@ -1332,13 +1295,13 @@ fun AdminPanelScreen(
                                     Icon(
                                         imageVector = Icons.Filled.Android,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = colors.textOnAccent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "📦 رفع التطبيق / اللعبة (APK)",
-                                        color = Color.White,
+                                        text = stringResource(R.string.admin_pick_apk_btn),
+                                        color = colors.textOnAccent,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
@@ -1352,15 +1315,15 @@ fun AdminPanelScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(Color(0xFF1E142D))
-                                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(14.dp))
+                                        .background(colors.cardAlt)
+                                        .border(1.dp, colors.border, RoundedCornerShape(14.dp))
                                         .padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .size(46.dp)
-                                            .background(NeonPurpleDeep, RoundedCornerShape(12.dp)),
+                                            .background(colors.surface, RoundedCornerShape(12.dp)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(text = "📦", fontSize = 22.sp)
@@ -1368,18 +1331,16 @@ fun AdminPanelScreen(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = pickedApkFileName,
-                                            color = Color.White,
-                                            fontSize = 13.sp,
+                                            text = stringResource(
+                                                R.string.admin_picked_file_info,
+                                                pickedApkFileName,
+                                                formatSize(pickedApkSizeBytes)
+                                            ),
+                                            color = colors.textPrimary,
+                                            fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
+                                            maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = formatSize(pickedApkSizeBytes),
-                                            color = NeonPurplePrimary,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                     IconButton(
@@ -1391,8 +1352,8 @@ fun AdminPanelScreen(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Close,
-                                            contentDescription = "إلغاء الملف",
-                                            tint = AccentRed,
+                                            contentDescription = stringResource(R.string.cancel),
+                                            tint = colors.danger,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
@@ -1403,7 +1364,7 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = directFileUrl,
                                 onValueChange = { directFileUrl = it },
-                                label = "أو أدخل رابط ملف APK المباشر"
+                                label = stringResource(R.string.admin_or_direct_apk_url)
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1411,7 +1372,7 @@ fun AdminPanelScreen(
                             AdminTextField(
                                 value = detectedAbis,
                                 onValueChange = { detectedAbis = it },
-                                label = "المعالجات المدعومة (CPU Architecture) - فحص تلقائي من APK"
+                                label = stringResource(R.string.admin_abis_label)
                             )
 
                             Spacer(modifier = Modifier.height(16.dp))
@@ -1426,8 +1387,8 @@ fun AdminPanelScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(16.dp))
-                                        .background(Color(0xFF221538))
-                                        .border(1.dp, NeonBorderGlow, RoundedCornerShape(16.dp))
+                                        .background(colors.cardAlt)
+                                        .border(1.dp, colors.border, RoundedCornerShape(16.dp))
                                         .padding(14.dp)
                                 ) {
                                     Row(
@@ -1437,7 +1398,7 @@ fun AdminPanelScreen(
                                     ) {
                                         Text(
                                             text = uploadStepLabel,
-                                            color = Color.White,
+                                            color = colors.textPrimary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.weight(1f),
@@ -1450,7 +1411,7 @@ fun AdminPanelScreen(
                                             } else {
                                                 "${(uploadProgress * 100).toInt()}%"
                                             },
-                                            color = NeonPurplePrimary,
+                                            color = colors.accent,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -1462,8 +1423,8 @@ fun AdminPanelScreen(
                                             .fillMaxWidth()
                                             .height(8.dp)
                                             .clip(RoundedCornerShape(4.dp)),
-                                        color = NeonPurplePrimary,
-                                        trackColor = Color(0xFF3B2456)
+                                        color = colors.accent,
+                                        trackColor = colors.surface
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(14.dp))
@@ -1475,8 +1436,18 @@ fun AdminPanelScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(if (canSave) PrimeGradientBrush else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF2A2038), Color(0xFF1E172B))))
-                                    .border(1.dp, if (canSave) NeonBorderGlow else Color.Transparent, RoundedCornerShape(14.dp))
+                                    .then(
+                                        if (canSave) {
+                                            Modifier.background(colors.buttonGradient)
+                                        } else {
+                                            Modifier.background(colors.cardAlt)
+                                        }
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (canSave) colors.border else colors.border.copy(alpha = 0.4f),
+                                        RoundedCornerShape(14.dp)
+                                    )
                                     .clickable(enabled = canSave) { startSaveProcess() }
                                     .padding(vertical = 14.dp),
                                 contentAlignment = Alignment.Center
@@ -1485,18 +1456,18 @@ fun AdminPanelScreen(
                                     Icon(
                                         imageVector = if (editingAppId != null) Icons.Filled.CheckCircle else Icons.Filled.Add,
                                         contentDescription = null,
-                                        tint = if (canSave) Color.White else PrimeTextMuted,
+                                        tint = if (canSave) colors.textOnAccent else colors.textMuted,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = when {
-                                            isUploading -> "جاري الرفع إلى السحابة... ☁️"
-                                            isSaving -> "جاري الحفظ... 💾"
-                                            editingAppId != null -> "تحديث التطبيق في المتجر ✔"
-                                            else -> "حفظ التطبيق في المتجر 💾"
+                                            isUploading -> stringResource(R.string.admin_uploading_cloud)
+                                            isSaving -> stringResource(R.string.admin_saving_app)
+                                            editingAppId != null -> stringResource(R.string.admin_update_app_btn)
+                                            else -> stringResource(R.string.admin_save_app_btn)
                                         },
-                                        color = if (canSave) Color.White else PrimeTextMuted,
+                                        color = if (canSave) colors.textOnAccent else colors.textMuted,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp
                                     )
@@ -1506,21 +1477,19 @@ fun AdminPanelScreen(
                     }
                 }
 
-                // ========================================================
                 // 4) APPS LIST
-                // ========================================================
                 item {
                     Spacer(modifier = Modifier.height(20.dp))
                     Text(
-                        text = "التطبيقات المسجلة في المتجر (${apps.size})",
-                        color = Color.White,
+                        text = stringResource(R.string.admin_registered_apps_count, apps.size),
+                        color = colors.textPrimary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                items(apps) { app ->
+                items(apps, key = { it.id }) { app ->
                     NeonCard(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1540,14 +1509,16 @@ fun AdminPanelScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(42.dp)
-                                        .background(Color(0xFF281845), RoundedCornerShape(12.dp)),
+                                        .background(colors.cardAlt, RoundedCornerShape(12.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (!app.iconUrl.isNullOrBlank() && app.iconUrl.startsWith("http")) {
                                         AsyncImage(
                                             model = app.iconUrl,
                                             contentDescription = app.nameAr,
-                                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(RoundedCornerShape(12.dp)),
                                             contentScale = ContentScale.Crop
                                         )
                                     } else {
@@ -1558,14 +1529,18 @@ fun AdminPanelScreen(
                                 Column {
                                     Text(
                                         text = app.nameAr,
-                                        color = Color.White,
+                                        color = colors.textPrimary,
                                         fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = "${app.displayCategoryTitle} • ${app.displayVersionBadge} • ⭐ ${app.rating} • ${app.size}",
-                                        color = PrimeTextSecondary,
-                                        fontSize = 11.sp
+                                        text = "${app.localizedCategoryTitle()} • ${app.displayVersionBadge} • ⭐ ${app.rating} • ${app.size}",
+                                        color = colors.textSecondary,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -1574,16 +1549,16 @@ fun AdminPanelScreen(
                                 IconButton(onClick = { populateForEdit(app) }) {
                                     Icon(
                                         imageVector = Icons.Filled.Edit,
-                                        contentDescription = "تعديل",
-                                        tint = NeonPurplePrimary,
+                                        contentDescription = stringResource(R.string.edit),
+                                        tint = colors.accent,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
                                 IconButton(onClick = { appToDelete = app }) {
                                     Icon(
                                         imageVector = Icons.Filled.Delete,
-                                        contentDescription = "حذف",
-                                        tint = AccentRed,
+                                        contentDescription = stringResource(R.string.delete),
+                                        tint = colors.danger,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -1595,9 +1570,7 @@ fun AdminPanelScreen(
         }
     }
 
-    // =========================================================================
-    // CATEGORY PICKER FULLSCREEN MODAL (Searchable & Grouped by عام, تطبيقات, ألعاب)
-    // =========================================================================
+    // CATEGORY PICKER FULLSCREEN MODAL
     if (showCategoryModal) {
         Dialog(onDismissRequest = { showCategoryModal = false }) {
             Box(
@@ -1605,8 +1578,8 @@ fun AdminPanelScreen(
                     .fillMaxWidth()
                     .height(550.dp)
                     .clip(RoundedCornerShape(22.dp))
-                    .background(Color(0xFF16101F))
-                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(22.dp))
+                    .background(colors.card)
+                    .border(1.dp, colors.border, RoundedCornerShape(22.dp))
                     .padding(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -1616,32 +1589,47 @@ fun AdminPanelScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "اختر قسم التطبيق",
-                            color = Color.White,
+                            text = stringResource(R.string.admin_choose_category_title),
+                            color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         IconButton(onClick = { showCategoryModal = false }) {
-                            Icon(imageVector = Icons.Filled.Close, contentDescription = "إغلاق", tint = Color.White)
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.close),
+                                tint = colors.textPrimary
+                            )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Search field
                     OutlinedTextField(
                         value = categorySearchQuery,
                         onValueChange = { categorySearchQuery = it },
-                        placeholder = { Text("بحث عن قسم...", fontSize = 12.sp, color = PrimeTextMuted) },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = NeonPurplePrimary) },
+                        placeholder = {
+                            Text(
+                                text = stringResource(R.string.admin_search_category_hint),
+                                fontSize = 12.sp,
+                                color = colors.textMuted
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = colors.accent
+                            )
+                        },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = NeonPurplePrimary,
-                            unfocusedBorderColor = NeonBorder,
-                            focusedContainerColor = Color(0xFF1E142D),
-                            unfocusedContainerColor = Color(0xFF1E142D)
+                            focusedTextColor = colors.textPrimary,
+                            unfocusedTextColor = colors.textPrimary,
+                            focusedBorderColor = colors.accent,
+                            unfocusedBorderColor = colors.border,
+                            focusedContainerColor = colors.cardAlt,
+                            unfocusedContainerColor = colors.cardAlt
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -1654,8 +1642,10 @@ fun AdminPanelScreen(
                         if (q.isEmpty()) {
                             StoreCategories.ALL_SELECTIONS
                         } else {
-                            StoreCategories.ALL_SELECTIONS.filter {
-                                it.titleAr.contains(q) || it.titleEn.lowercase().contains(q) || it.key.lowercase().contains(q)
+                            StoreCategories.ALL_SELECTIONS.filter { cat ->
+                                context.getString(cat.titleRes).lowercase().contains(q) ||
+                                    cat.titleEn.lowercase().contains(q) ||
+                                    cat.key.lowercase().contains(q)
                             }
                         }
                     }
@@ -1664,25 +1654,29 @@ fun AdminPanelScreen(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val grouped = filteredCategories.groupBy { it.group }
-                        for ((groupName, items) in grouped) {
+                        val grouped = filteredCategories.groupBy { it.groupRes }
+                        for ((groupRes, groupItems) in grouped) {
                             item {
                                 Text(
-                                    text = groupName,
-                                    color = NeonPurplePrimary,
+                                    text = stringResource(groupRes),
+                                    color = colors.accent,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                                 )
                             }
-                            items(items) { cat ->
+                            items(groupItems) { cat ->
                                 val isSelected = selectedCategoryItem.key.lowercase() == cat.key.lowercase()
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isSelected) Color(0xFF2E1747) else Color(0xFF1E142D))
-                                        .border(1.dp, if (isSelected) NeonBorderGlow else NeonBorder, RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) colors.accent.copy(alpha = 0.16f) else colors.cardAlt)
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) colors.accent else colors.border,
+                                            RoundedCornerShape(10.dp)
+                                        )
                                         .clickable {
                                             selectedCategoryItem = cat
                                             showCategoryModal = false
@@ -1696,14 +1690,14 @@ fun AdminPanelScreen(
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column {
                                             Text(
-                                                text = cat.titleAr,
-                                                color = Color.White,
+                                                text = stringResource(cat.titleRes),
+                                                color = colors.textPrimary,
                                                 fontSize = 13.sp,
                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                             )
                                             Text(
                                                 text = cat.titleEn,
-                                                color = PrimeTextMuted,
+                                                color = colors.textMuted,
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -1711,8 +1705,8 @@ fun AdminPanelScreen(
                                     if (isSelected) {
                                         Icon(
                                             imageVector = Icons.Filled.Check,
-                                            contentDescription = "تم الاختيار",
-                                            tint = NeonPurplePrimary,
+                                            contentDescription = stringResource(R.string.confirm),
+                                            tint = colors.accent,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -1729,19 +1723,30 @@ fun AdminPanelScreen(
     if (showOver2GbAlert) {
         AlertDialog(
             onDismissRequest = { showOver2GbAlert = false },
-            containerColor = Color(0xFF1E142D),
+            containerColor = colors.card,
             title = {
-                Text(text = "تنبيه حجم الملف ⚠️", color = AccentGold, fontWeight = FontWeight.Bold)
+                Text(
+                    text = stringResource(R.string.admin_file_over_2gb_title),
+                    color = colors.warning,
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
-                Text(text = "الحد الأقصى 2GB لكل ملف. يرجى اختيار ملف أصغر حجماً.", color = Color.White, fontSize = 13.sp)
+                Text(
+                    text = stringResource(R.string.admin_file_over_2gb_msg),
+                    color = colors.textSecondary,
+                    fontSize = 13.sp
+                )
             },
             confirmButton = {
                 Button(
                     onClick = { showOver2GbAlert = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accent,
+                        contentColor = colors.textOnAccent
+                    )
                 ) {
-                    Text("حسناً", color = Color.White)
+                    Text(stringResource(R.string.ok), fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -1753,8 +1758,8 @@ fun AdminPanelScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFF120C1D))
-                    .border(1.dp, NeonBorderGlow, RoundedCornerShape(20.dp))
+                    .background(colors.card)
+                    .border(1.dp, colors.border, RoundedCornerShape(20.dp))
                     .padding(14.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -1764,15 +1769,24 @@ fun AdminPanelScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "معاينة لقطة الشاشة", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            text = stringResource(R.string.admin_screenshot_preview),
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
                         IconButton(onClick = { fullscreenPreviewUrl = null }) {
-                            Icon(imageVector = Icons.Filled.Close, contentDescription = "إغلاق", tint = Color.White)
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.close),
+                                tint = colors.textPrimary
+                            )
                         }
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                     AsyncImage(
                         model = fullscreenPreviewUrl,
-                        contentDescription = "معاينة مكبرة",
+                        contentDescription = stringResource(R.string.screenshots),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(380.dp)
@@ -1787,14 +1801,18 @@ fun AdminPanelScreen(
     if (appToDelete != null) {
         AlertDialog(
             onDismissRequest = { appToDelete = null },
-            containerColor = Color(0xFF16101F),
+            containerColor = colors.card,
             title = {
-                Text(text = "تأكيد الحذف 🗑️", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(
+                    text = stringResource(R.string.admin_delete_app_title),
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Text(
-                    text = "هل أنت متأكد من رغبتك في حذف تطبيق \"${appToDelete?.nameAr}\" من المتجر نهائياً؟",
-                    color = PrimeTextSecondary,
+                    text = stringResource(R.string.admin_delete_app_msg, appToDelete?.nameAr.orEmpty()),
+                    color = colors.textSecondary,
                     fontSize = 13.sp
                 )
             },
@@ -1804,20 +1822,23 @@ fun AdminPanelScreen(
                         appToDelete?.let { onDeleteApp(it.id) }
                         appToDelete = null
                         scope.launch {
-                            snackbarHostState.showSnackbar("تم حذف التطبيق بنجاح")
+                            snackbarHostState.showSnackbar(context.getString(R.string.admin_delete_app_done))
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.danger)
                 ) {
-                    Text("حذف", color = Color.White)
+                    Text(stringResource(R.string.delete), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 Button(
                     onClick = { appToDelete = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF281C38))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.cardAlt,
+                        contentColor = colors.textPrimary
+                    )
                 ) {
-                    Text("إلغاء", color = Color.White)
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -1827,13 +1848,13 @@ fun AdminPanelScreen(
         val app = verifiedSavedApp!!
         AlertDialog(
             onDismissRequest = { verifiedSavedApp = null },
-            containerColor = Color(0xFF1E142D),
+            containerColor = colors.card,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = "🎉 ", fontSize = 20.sp)
                     Text(
-                        text = "تم تأكيد الحفظ في Supabase",
-                        color = Color.White,
+                        text = stringResource(R.string.admin_saved_supabase_title),
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
@@ -1841,19 +1862,35 @@ fun AdminPanelScreen(
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "التطبيق: ${app.nameAr}", color = NeonPurplePrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        text = stringResource(R.string.admin_saved_label_app, app.nameAr),
+                        color = colors.accent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "الإصدار: ${app.displayVersionBadge}", color = Color.White, fontSize = 12.sp)
+                    Text(
+                        text = stringResource(R.string.admin_saved_label_version, app.displayVersionBadge),
+                        color = colors.textPrimary,
+                        fontSize = 12.sp
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "القسم: ${app.displayCategoryTitle}", color = Color.White, fontSize = 12.sp)
+                    Text(
+                        text = stringResource(R.string.admin_saved_label_cat, app.localizedCategoryTitle()),
+                        color = colors.textPrimary,
+                        fontSize = 12.sp
+                    )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = { verifiedSavedApp = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurplePrimary)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accent,
+                        contentColor = colors.textOnAccent
+                    )
                 ) {
-                    Text("تم، رائع!", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.admin_done_great), fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -1863,11 +1900,11 @@ fun AdminPanelScreen(
         val err = supabaseErrorResult!!
         AlertDialog(
             onDismissRequest = { supabaseErrorResult = null },
-            containerColor = Color(0xFF1E112E),
+            containerColor = colors.card,
             title = {
                 Text(
-                    text = "⚠️ خطأ في حفظ التطبيق (${err.code})",
-                    color = Color(0xFFFF5252),
+                    text = stringResource(R.string.admin_supabase_error_title, err.code.toString()),
+                    color = colors.danger,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
@@ -1875,22 +1912,25 @@ fun AdminPanelScreen(
             text = {
                 Column {
                     Text(
-                        text = "تفاصيل الخطأ من Supabase:",
-                        color = Color.White,
+                        text = stringResource(R.string.admin_supabase_error_details),
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "الرسالة (message):\n${err.message.ifBlank { "غير محددة" }}",
-                        color = Color(0xFFFFB4AB),
+                        text = stringResource(
+                            R.string.admin_supabase_error_msg_label,
+                            err.message.ifBlank { stringResource(R.string.admin_unspecified) }
+                        ),
+                        color = colors.danger,
                         fontSize = 12.sp
                     )
                     if (err.details.isNotBlank()) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "التفاصيل (details):\n${err.details}",
-                            color = PrimeTextMuted,
+                            text = stringResource(R.string.admin_supabase_error_det_label, err.details),
+                            color = colors.textMuted,
                             fontSize = 11.sp
                         )
                     }
@@ -1899,9 +1939,9 @@ fun AdminPanelScreen(
             confirmButton = {
                 Button(
                     onClick = { supabaseErrorResult = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.danger)
                 ) {
-                    Text("إغلاق", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.close), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -1914,17 +1954,18 @@ private fun ScreenshotPreviewThumb(
     onRemove: () -> Unit,
     onClick: () -> Unit
 ) {
+    val colors = PrimeTheme.colors
     Box(
         modifier = Modifier
             .size(90.dp, 130.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF281C38))
-            .border(1.dp, NeonBorder, RoundedCornerShape(12.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.border, RoundedCornerShape(12.dp))
             .clickable { onClick() }
     ) {
         AsyncImage(
             model = model,
-            contentDescription = "لقطة شاشة",
+            contentDescription = stringResource(R.string.screenshots),
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
@@ -1941,7 +1982,7 @@ private fun ScreenshotPreviewThumb(
         ) {
             Icon(
                 imageVector = Icons.Filled.Close,
-                contentDescription = "حذف اللقطة",
+                contentDescription = stringResource(R.string.delete),
                 tint = Color.White,
                 modifier = Modifier.size(14.dp)
             )
@@ -1960,6 +2001,7 @@ private fun AdminTextField(
     keyboardType: KeyboardType = KeyboardType.Text,
     visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
+    val colors = PrimeTheme.colors
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -1969,14 +2011,15 @@ private fun AdminTextField(
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         visualTransformation = visualTransformation,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            focusedBorderColor = NeonBorderGlow,
-            unfocusedBorderColor = NeonBorder,
-            focusedLabelColor = NeonPurplePrimary,
-            unfocusedLabelColor = PrimeTextMuted,
-            focusedContainerColor = Color(0xFF140D24),
-            unfocusedContainerColor = Color(0xFF140D24)
+            focusedTextColor = colors.textPrimary,
+            unfocusedTextColor = colors.textPrimary,
+            focusedBorderColor = colors.accent,
+            unfocusedBorderColor = colors.border,
+            focusedLabelColor = colors.accent,
+            unfocusedLabelColor = colors.textMuted,
+            focusedContainerColor = colors.cardAlt,
+            unfocusedContainerColor = colors.cardAlt,
+            cursorColor = colors.accent
         ),
         shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth()

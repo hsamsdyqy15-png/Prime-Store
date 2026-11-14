@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.example.R
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
 import kotlinx.coroutines.Dispatchers
@@ -263,11 +264,16 @@ object SupabaseClient {
                 val msg = errJson?.optString("msg")
                     ?: errJson?.optString("message")
                     ?: errJson?.optString("error_description")
-                    ?: "بيانات تسجيل الدخول غير صحيحة"
+                    ?: appContext?.getString(R.string.toast_admin_wrong_creds)
+                    ?: "Invalid login credentials"
                 AuthResponse(success = false, errorMessage = msg)
             }
         } catch (e: Exception) {
-            AuthResponse(success = false, errorMessage = "تعذر الاتصال بالخادم: ${e.localizedMessage}")
+            AuthResponse(
+                success = false,
+                errorMessage = appContext?.getString(R.string.github_connection_error, e.localizedMessage ?: "")
+                    ?: "Connection error: ${e.localizedMessage}"
+            )
         }
     }
 
@@ -308,17 +314,22 @@ object SupabaseClient {
                 val errJson = try { JSONObject(respBody) } catch (_: Exception) { null }
                 val msg = errJson?.optString("msg")
                     ?: errJson?.optString("message")
-                    ?: "تعذر إنشاء الحساب"
+                    ?: appContext?.getString(R.string.error_unexpected)
+                    ?: "Failed to create account"
                 AuthResponse(success = false, errorMessage = msg)
             }
         } catch (e: Exception) {
-            AuthResponse(success = false, errorMessage = "خطأ في الاتصال: ${e.localizedMessage}")
+            AuthResponse(
+                success = false,
+                errorMessage = appContext?.getString(R.string.github_connection_error, e.localizedMessage ?: "")
+                    ?: "Connection error: ${e.localizedMessage}"
+            )
         }
     }
 
     fun parseAppItem(obj: JSONObject, i: Int = 0): AppItem {
         val id = obj.optString("id", "")
-        val name = obj.optString("name", "تطبيق")
+        val name = obj.optString("name", appContext?.getString(R.string.dl_service_default_app) ?: "App")
         val categoryStr = obj.optString("category", "apps").lowercase()
         val rating = obj.optDouble("rating", 4.5).toFloat()
         val downloads = obj.optString("downloads", "+100")
@@ -351,9 +362,12 @@ object SupabaseClient {
         }
 
         val category = if (isOpenSource) AppCategory.OPEN_SOURCE else mapCategory(categoryStr)
-        val categoryTitle = com.example.data.model.StoreCategories.getTitleAr(categoryStr)
+        val categoryTitle = appContext?.let { com.example.data.model.StoreCategories.getTitle(it, categoryStr) }
+            ?: com.example.data.model.StoreCategories.find(categoryStr).titleEn
         val tags = mutableListOf(categoryTitle)
-        if (isOpenSource) tags.add("مفتوح المصدر")
+        if (isOpenSource) {
+            tags.add(appContext?.getString(R.string.cat_open_source) ?: "FOSS")
+        }
         if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
 
         return AppItem(
@@ -370,9 +384,9 @@ object SupabaseClient {
             iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else com.example.data.model.StoreCategories.getEmoji(categoryStr),
             accentColor = category.accentHex,
             bannerRes = null,
-            descriptionAr = desc.ifBlank { "تطبيق رائع متاح للتحميل المجاني." },
+            descriptionAr = desc,
             descriptionEn = desc,
-            featuresAr = featuresList.ifEmpty { listOf("تحديثات مستمرة", "دعم كامل للغة العربية") },
+            featuresAr = featuresList,
             screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
             isFeatured = i < 2,
             isTrending = i % 2 == 0,
@@ -535,7 +549,7 @@ object SupabaseClient {
         } catch (e: Exception) {
             SupabaseMutationResult(
                 success = false,
-                message = e.message ?: "فشل الاتصال بخادم Supabase",
+                message = e.message ?: appContext?.getString(R.string.error_unexpected) ?: "Supabase connection failed",
                 details = e.stackTraceToString().take(200),
                 code = "EXCEPTION",
                 httpCode = 0
@@ -671,7 +685,7 @@ object SupabaseClient {
         } catch (e: Exception) {
             SupabaseMutationResult(
                 success = false,
-                message = e.message ?: "فشل الاتصال بخادم Supabase",
+                message = e.message ?: appContext?.getString(R.string.error_unexpected) ?: "Supabase connection failed",
                 details = e.stackTraceToString().take(200),
                 code = "EXCEPTION",
                 httpCode = 0
@@ -925,7 +939,7 @@ object SupabaseClient {
             } else {
                 SupabaseMutationResult(
                     success = false,
-                    message = "فشل تحديث بيانات التحديث: HTTP ${response.code}",
+                    message = "HTTP ${response.code}",
                     details = respBody,
                     httpCode = response.code
                 )
@@ -933,7 +947,7 @@ object SupabaseClient {
         } catch (e: Exception) {
             SupabaseMutationResult(
                 success = false,
-                message = e.localizedMessage ?: "فشل الاتصال بتحديث المتجر",
+                message = e.localizedMessage ?: appContext?.getString(R.string.error_unexpected) ?: "Update error",
                 httpCode = 0
             )
         }
@@ -1091,27 +1105,27 @@ object SupabaseClient {
 
     private fun mapCategory(cat: String): AppCategory {
         return when (cat.lowercase()) {
-            "games", "ألعاب" -> AppCategory.GAMES
-            "apps", "تطبيقات" -> AppCategory.APPS
-            "trending", "popular", "الأكثر تحميلاً" -> AppCategory.POPULAR
-            "entertainment", "الترفيه" -> AppCategory.ENTERTAINMENT
-            "sports", "الرياضة" -> AppCategory.SPORTS
-            "business", "الإنتاجية والعمل" -> AppCategory.BUSINESS
-            "education", "التعليم" -> AppCategory.EDUCATION
-            "music", "موسيقى وصوتيات" -> AppCategory.MUSIC
-            "tools", "أدوات النظام" -> AppCategory.TOOLS
-            "productivity", "الإنتاجية" -> AppCategory.PRODUCTIVITY
-            "personalization", "التخصيص" -> AppCategory.PERSONALIZATION
-            "media", "الوسائط" -> AppCategory.MEDIA
-            "social", "التواصل الاجتماعي" -> AppCategory.SOCIAL
-            "action", "أكشن ومغامرات" -> AppCategory.ACTION
-            "rpg", "تقمص الأدوار rpg" -> AppCategory.RPG
-            "simulation", "محاكاة" -> AppCategory.SIMULATION
-            "emulators", "المحاكيات" -> AppCategory.EMULATORS
-            "retro", "ريترو وكلاسيك" -> AppCategory.RETRO
-            "root_tools", "أدوات الروت" -> AppCategory.ROOT_TOOLS
-            "open_source", "مفتوح المصدر" -> AppCategory.OPEN_SOURCE
-            "video", "فيديو" -> AppCategory.VIDEO
+            "games" -> AppCategory.GAMES
+            "apps" -> AppCategory.APPS
+            "trending", "popular" -> AppCategory.POPULAR
+            "entertainment" -> AppCategory.ENTERTAINMENT
+            "sports" -> AppCategory.SPORTS
+            "business" -> AppCategory.BUSINESS
+            "education" -> AppCategory.EDUCATION
+            "music", "music_audio" -> AppCategory.MUSIC
+            "tools" -> AppCategory.TOOLS
+            "productivity" -> AppCategory.PRODUCTIVITY
+            "personalization" -> AppCategory.PERSONALIZATION
+            "media" -> AppCategory.MEDIA
+            "social", "communication" -> AppCategory.SOCIAL
+            "action", "game_action" -> AppCategory.ACTION
+            "rpg", "game_role_playing" -> AppCategory.RPG
+            "simulation", "game_simulation" -> AppCategory.SIMULATION
+            "emulators" -> AppCategory.EMULATORS
+            "retro" -> AppCategory.RETRO
+            "root_tools" -> AppCategory.ROOT_TOOLS
+            "open_source" -> AppCategory.OPEN_SOURCE
+            "video", "video_players_editors" -> AppCategory.VIDEO
             else -> AppCategory.APPS
         }
     }

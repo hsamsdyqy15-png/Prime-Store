@@ -7,6 +7,7 @@ import android.os.StatFs
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
+import com.example.R
 import com.example.data.github.StoreReleaseInfo
 import com.example.data.github.StoreSelfUpdater
 import com.example.data.github.StoreUpdateCheckResult
@@ -85,15 +86,16 @@ data class UiState(
     val isSearching: Boolean = false,
     val searchQuery: String = "",
     val isDrawerOpen: Boolean = false,
-    val currentLanguage: String = "ar",
-    val themeMode: String = "dark", // "dark", "amoled", "light"
+    val selectedLanguageTag: String = "auto",
+    val currentLanguage: String = "en",
+    val themeMode: String = "dark", // "system", "dark", "amoled", "light"
     val themeAccent: Long = 0xFFA855F7, // Neon purple
     val autoTranslateEnabled: Boolean = true,
     val wifiOnlyTranslation: Boolean = false,
     val isDarkMode: Boolean = true,
     val notificationsEnabled: Boolean = true,
     val cacheSize: String = "42.8 MB",
-    val downloadFilterTab: Int = 0, // 0 = جاري التحميل, 1 = تم التحميل
+    val downloadFilterTab: Int = 0,
     val categorySortOrder: SortOrder = SortOrder.POPULAR,
     val homeFilterType: HomeFilterType = HomeFilterType.ALL,
     val showScreenshotIndex: Int? = null,
@@ -194,13 +196,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         if (q.isEmpty()) {
             emptyList()
         } else {
+            val appCtx = getApplication<Application>()
             allApps.filter {
                 it.name.lowercase().contains(q) ||
                         it.nameAr.contains(q) ||
-                        it.category.titleAr.contains(q) ||
-                        it.category.titleEn.lowercase().contains(q) ||
-                        it.displayCategoryTitle.contains(q) ||
-                        it.tags.any { tag -> tag.contains(q) }
+                        StoreCategories.getTitle(appCtx, it.categoryKey).lowercase().contains(q) ||
+                        StoreCategories.find(it.categoryKey).titleEn.lowercase().contains(q) ||
+                        it.displayCategoryTitle.lowercase().contains(q) ||
+                        it.tags.any { tag -> tag.lowercase().contains(q) }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -213,9 +216,11 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
         restoreSession()
 
-        // Language setup
+        // Language & translation setup
         val savedLang = settingsRepo.languageTag.value
-        val activeLang = if (savedLang == "auto") detectDeviceLanguage() else savedLang
+        val activeLang = settingsRepo.getEffectiveLanguageCode()
+        val autoTranslate = settingsRepo.autoTranslateEnabled.value
+        val wifiOnly = settingsRepo.wifiOnlyTranslation.value
 
         // Theme setup
         val currentThemeMode = settingsRepo.themeMode.value
@@ -223,7 +228,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         val isFirstRun = !authPrefs.getBoolean("has_completed_onboarding", false)
 
         _uiState.value = _uiState.value.copy(
+            selectedLanguageTag = savedLang,
             currentLanguage = activeLang,
+            autoTranslateEnabled = autoTranslate,
+            wifiOnlyTranslation = wifiOnly,
             themeMode = currentThemeMode.name.lowercase(),
             themeAccent = currentAccent,
             isDarkMode = currentThemeMode != com.example.ui.theme.ThemeMode.LIGHT,
@@ -280,7 +288,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun completeOnboarding() {
         authPrefs.edit().putBoolean("has_completed_onboarding", true).apply()
         _uiState.value = _uiState.value.copy(showOnboarding = false)
-        emitToast("أهلاً بك في متجر Prime Store! استمتع بالتجربة 🚀")
+        emitToast(getApplication<Application>().getString(R.string.toast_onboarding_done))
     }
 
     fun setThemeMode(mode: String) {
@@ -296,26 +304,35 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             themeMode = targetMode.name.lowercase(),
             isDarkMode = targetMode != com.example.ui.theme.ThemeMode.LIGHT
         )
-        emitToast("تم تغيير مظهر التطبيق إلى ${targetMode.name.lowercase()}")
+        val ctx = getApplication<Application>()
+        emitToast(ctx.getString(R.string.toast_theme_changed, ctx.getString(targetMode.labelRes)))
     }
 
     fun setThemeAccent(accentColor: Long) {
         settingsRepo.setAccentHex(accentColor)
         authPrefs.edit().putLong("ps_theme_accent", accentColor).apply()
         _uiState.value = _uiState.value.copy(themeAccent = accentColor)
-        emitToast("تم تحديث اللون المميز للمتجر ✨")
+        emitToast(getApplication<Application>().getString(R.string.toast_accent_updated))
     }
 
     fun toggleAutoTranslate() {
         val next = !_uiState.value.autoTranslateEnabled
+        settingsRepo.setAutoTranslateEnabled(next)
         _uiState.value = _uiState.value.copy(autoTranslateEnabled = next)
         authPrefs.edit().putBoolean("ps_auto_translate", next).apply()
     }
 
     fun toggleWifiOnlyTranslation() {
         val next = !_uiState.value.wifiOnlyTranslation
+        settingsRepo.setWifiOnlyTranslation(next)
         _uiState.value = _uiState.value.copy(wifiOnlyTranslation = next)
         authPrefs.edit().putBoolean("ps_wifi_only_translate", next).apply()
+    }
+
+    fun disableWifiOnlyTranslation() {
+        settingsRepo.setWifiOnlyTranslation(false)
+        _uiState.value = _uiState.value.copy(wifiOnlyTranslation = false)
+        authPrefs.edit().putBoolean("ps_wifi_only_translate", false).apply()
     }
 
     fun setHomeFilter(filter: HomeFilterType) {
@@ -367,7 +384,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             } catch (e: Exception) {
                 paginationMutex.withLock {
                     _isInitialLoading.value = false
-                    _pagedError.value = e.message ?: "تعذر جلب التطبيقات"
+                    _pagedError.value = e.message ?: getApplication<Application>().getString(R.string.error_fetch_apps)
                 }
             }
         }
@@ -423,7 +440,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         repository.refreshFromSupabase()
         refreshPagedApps()
         refreshInstalledApps()
-        emitToast("تم تحديث التطبيقات والمنشورات بنجاح 🔄")
+        emitToast(getApplication<Application>().getString(R.string.toast_catalog_refreshed))
     }
 
     private fun refreshPagedApps() {
@@ -495,12 +512,13 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateAllAppsSequentially() {
+        val ctx = getApplication<Application>()
         val pending = _installedAppsState.value.filter { it.hasUpdate }
         if (pending.isEmpty()) {
-            emitToast("جميع التطبيقات محدثة بالفعل!")
+            emitToast(ctx.getString(R.string.app_updates_all_up_to_date))
             return
         }
-        emitToast("جاري بدء تحديث ${pending.size} تطبيقات...")
+        emitToast(ctx.getString(R.string.toast_updating_apps_count, pending.size))
         pending.forEach {
             startDownload(it.app.id)
         }
@@ -509,13 +527,13 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun uninstallPackage(packageName: String, context: Context) {
         val success = PackageHelper.uninstall(context, packageName)
         if (success) {
-            emitToast("تم فتح نافذة إلغاء التثبيت 🗑️")
+            emitToast(context.getString(R.string.toast_uninstalling_app))
             viewModelScope.launch {
                 delay(3000)
                 refreshInstalledApps()
             }
         } else {
-            emitToast("تعذر بدء إلغاء تثبيت الحزمة")
+            emitToast(context.getString(R.string.toast_uninstall_failed))
         }
     }
 
@@ -525,7 +543,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(launchIntent)
         } else {
-            emitToast("تعذر فتح التطبيق مباشرة")
+            emitToast(context.getString(R.string.toast_cannot_open_app))
         }
     }
 
@@ -536,7 +554,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun installDownloadedApk(appId: String, context: Context) {
         val file = ApkInstaller.getApkFile(context, appId)
         if (!file.exists() || file.length() == 0L) {
-            emitToast("الملف غير متوفر حالياً، جاري بدء التحميل")
+            emitToast(context.getString(R.string.toast_apk_not_found))
             startDownload(appId)
             return
         }
@@ -584,7 +602,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         if (data != null) {
             pendingConflictPackageName = data.packageName
             PackageHelper.uninstall(context, data.packageName)
-            emitToast("جاري إلغاء تثبيت النسخة القديمة، ثم سيتم تثبيت الجديدة 🔄")
+            emitToast(context.getString(R.string.toast_please_uninstall_first))
         }
     }
 
@@ -639,7 +657,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 // Successfully uninstalled! Now proceed with install
                 pendingConflictPackageName = null
                 pendingConflictApkFile = null
-                emitToast("تم حذف النسخة القديمة بنجاح! جاري تثبيت النسخة الجديدة...")
+                emitToast(context.getString(R.string.toast_starting_install))
                 PackageHelper.installApk(context, pendingFile) { msg -> emitToast(msg) }
                 return
             }
@@ -728,6 +746,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     // =========================================================================
 
     fun submitProblemReport(appId: String, appName: String, reason: String, details: String) {
+        val ctx = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val report = ProblemReportEntity(
@@ -738,9 +757,9 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                     userEmail = _uiState.value.userProfile?.email
                 )
                 database.problemReportDao().insertReport(report)
-                emitToast("شكراً لك! تم إرسال البلاغ وسيتم مراجعته 🛡️")
+                emitToast(ctx.getString(R.string.toast_report_submitted))
             } catch (_: Exception) {
-                emitToast("تم حفظ البلاغ محلياً وسيتم إرساله لاحقاً")
+                emitToast(ctx.getString(R.string.toast_report_submitted))
             }
         }
     }
@@ -810,7 +829,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             _isDownloadingStoreUpdate.value = true
             _storeUpdateDownloadProgress.value = 0f
-            emitToast("جاري تحميل تحديث متجر Prime Store من GitHub...")
+            emitToast(context.getString(R.string.store_update_downloading))
 
             val result = StoreSelfUpdater.downloadStoreUpdateApk(context, release) { progress, _, _ ->
                 _storeUpdateDownloadProgress.value = progress
@@ -818,10 +837,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
             _isDownloadingStoreUpdate.value = false
             result.onSuccess { apkFile ->
-                emitToast("تم تحميل التحديث بنجاح! جاري التثبيت...")
+                emitToast(context.getString(R.string.store_update_ready_install))
                 PackageHelper.installApk(context, apkFile) { msg -> emitToast(msg) }
             }.onFailure { err ->
-                emitToast(err.message ?: "فشل تحميل التحديث")
+                emitToast(context.getString(R.string.store_update_download_failed, err.message ?: ""))
             }
         }
     }
@@ -830,14 +849,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         if (_isDownloadingStoreUpdate.value) return
         val apkUrl = info.apkUrl.trim()
         if (apkUrl.isBlank() || !apkUrl.startsWith("http")) {
-            emitToast("رابط تحديث المتجر غير متوفر")
+            emitToast(context.getString(R.string.toast_invalid_download_link))
             return
         }
 
         viewModelScope.launch {
             _isDownloadingStoreUpdate.value = true
             _storeUpdateDownloadProgress.value = 0f
-            emitToast("جاري تحميل تحديث متجر Prime Store...")
+            emitToast(context.getString(R.string.store_update_downloading))
 
             val updateFile = File(context.getExternalFilesDir("apks") ?: context.filesDir, "prime_store_update_${info.versionCode}.apk")
             val success = withContext(Dispatchers.IO) {
@@ -875,10 +894,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
             _isDownloadingStoreUpdate.value = false
             if (success && updateFile.exists() && updateFile.length() > 0) {
-                emitToast("تم تحميل التحديث بنجاح! جاري التثبيت...")
+                emitToast(context.getString(R.string.store_update_ready_install))
                 PackageHelper.installApk(context, updateFile) { msg -> emitToast(msg) }
             } else {
-                emitToast("فشل تحميل التحديث، تحقق من اتصال الإنترنت")
+                emitToast(context.getString(R.string.store_update_download_failed, ""))
             }
         }
     }
@@ -895,9 +914,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         val email = SupabaseClient.getSavedUserEmail() ?: authPrefs.getString("ps_email", null)
         if (!email.isNullOrBlank()) {
             val isUserAdmin = SupabaseClient.isAdmin(email)
+            val adminName = getApplication<Application>().getString(R.string.admin_badge)
             _uiState.value = _uiState.value.copy(
                 userProfile = UserProfile(
-                    name = if (isUserAdmin) "مدير المتجر (Admin)" else email.substringBefore("@"),
+                    name = if (isUserAdmin) adminName else email.substringBefore("@"),
                     email = email,
                     isPrimeMember = isUserAdmin
                 ),
@@ -912,14 +932,15 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun onSessionExpired() {
         SupabaseClient.clearSession()
         authPrefs.edit().clear().apply()
+        val msg = getApplication<Application>().getString(R.string.toast_session_expired)
         _uiState.value = _uiState.value.copy(
             userProfile = null,
             isAdmin = false,
             showAdminPanel = false,
             showLoginDialog = true,
-            authErrorMessage = "انتهت الجلسة، سجّل الدخول من جديد"
+            authErrorMessage = msg
         )
-        emitToast("انتهت الجلسة، سجّل الدخول من جديد")
+        emitToast(msg)
     }
 
     fun dismissSplash() {
@@ -1010,32 +1031,41 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun toggleLanguage() {
-        val nextLang = if (_uiState.value.currentLanguage == "ar") "en" else "ar"
+        val effective = settingsRepo.getEffectiveLanguageCode()
+        val nextLang = if (effective == "ar") "en" else "ar"
         setLanguage(nextLang)
     }
 
     fun setLanguage(lang: String) {
         settingsRepo.setLanguage(lang)
-        val effectiveLang = if (lang == "auto") detectDeviceLanguage() else lang
-        _uiState.value = _uiState.value.copy(currentLanguage = effectiveLang)
-        authPrefs.edit().putString("ps_language", lang).apply()
-        val langName = when (lang) {
-            "auto" -> "تلقائي (لغة الجهاز)"
-            "ar" -> "العربية"
-            "en" -> "English"
-            "fr" -> "Français"
-            "es" -> "Español"
-            "de" -> "Deutsch"
-            "tr" -> "Türkçe"
-            "ru" -> "Русский"
-            "fa" -> "فارسی"
-            "ur" -> "اردو"
-            "hi" -> "हिन्दी"
-            "id" -> "Bahasa Indonesia"
-            "pt" -> "Português"
-            else -> lang
+        val savedTag = settingsRepo.languageTag.value
+        val effectiveLang = settingsRepo.getEffectiveLanguageCode()
+        _uiState.value = _uiState.value.copy(
+            selectedLanguageTag = savedTag,
+            currentLanguage = effectiveLang
+        )
+        authPrefs.edit().putString("ps_language", savedTag).apply()
+        val ctx = getApplication<Application>()
+        if (savedTag == "auto") {
+            emitToast(ctx.getString(R.string.toast_lang_auto))
+        } else {
+            val langName = when (savedTag) {
+                "ar" -> ctx.getString(R.string.lang_ar)
+                "en" -> ctx.getString(R.string.lang_en)
+                "tr" -> ctx.getString(R.string.lang_tr)
+                "fr" -> ctx.getString(R.string.lang_fr)
+                "es" -> ctx.getString(R.string.lang_es)
+                "de" -> ctx.getString(R.string.lang_de)
+                "ru" -> ctx.getString(R.string.lang_ru)
+                "fa" -> ctx.getString(R.string.lang_fa)
+                "ur" -> ctx.getString(R.string.lang_ur)
+                "hi" -> ctx.getString(R.string.lang_hi)
+                "id" -> ctx.getString(R.string.lang_id)
+                "pt" -> ctx.getString(R.string.lang_pt)
+                else -> savedTag
+            }
+            emitToast(ctx.getString(R.string.toast_lang_changed, langName))
         }
-        emitToast("تم ضبط لغة التطبيق: $langName 🌐")
     }
 
     fun toggleDarkMode() {
@@ -1048,8 +1078,9 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun clearCache() {
+        val oldSize = _uiState.value.cacheSize
         _uiState.value = _uiState.value.copy(cacheSize = "0 KB")
-        emitToast("تم مسح الذاكرة المؤقتة بنجاح 🧹")
+        emitToast(getApplication<Application>().getString(R.string.toast_cache_cleared, oldSize))
     }
 
     fun openScreenshot(index: Int) {
@@ -1172,9 +1203,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun signIn(email: String, pass: String) {
+        val ctx = getApplication<Application>()
         val trimmedEmail = email.trim()
         if (trimmedEmail.isBlank() || pass.isBlank()) {
-            _uiState.value = _uiState.value.copy(authErrorMessage = "يرجى إدخال البريد الإلكتروني وكلمة المرور")
+            _uiState.value = _uiState.value.copy(authErrorMessage = ctx.getString(R.string.toast_enter_email_pass))
             return
         }
         viewModelScope.launch {
@@ -1193,24 +1225,25 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
                 _uiState.value = _uiState.value.copy(
                     userProfile = UserProfile(
-                        name = if (isUserAdmin) "مدير المتجر (Admin)" else userEmail.substringBefore("@"),
+                        name = if (isUserAdmin) ctx.getString(R.string.admin_badge) else userEmail.substringBefore("@"),
                         email = userEmail,
                         isPrimeMember = isUserAdmin
                     ),
                     isAdmin = isUserAdmin,
                     showLoginDialog = false
                 )
-                emitToast(if (isUserAdmin) "مرحباً بالأدمن! تم تفعيل لوحة التحكم 🛠️" else "تم تسجيل الدخول بنجاح! 👑")
+                emitToast(ctx.getString(if (isUserAdmin) R.string.toast_login_welcome_admin else R.string.toast_login_success))
             } else {
-                _uiState.value = _uiState.value.copy(authErrorMessage = result.errorMessage ?: "خطأ في تسجيل الدخول")
+                _uiState.value = _uiState.value.copy(authErrorMessage = result.errorMessage ?: ctx.getString(R.string.toast_admin_wrong_creds))
             }
         }
     }
 
     fun signUp(email: String, pass: String) {
+        val ctx = getApplication<Application>()
         val trimmedEmail = email.trim()
         if (trimmedEmail.isBlank() || pass.isBlank()) {
-            _uiState.value = _uiState.value.copy(authErrorMessage = "يرجى إدخال البريد الإلكتروني وكلمة المرور")
+            _uiState.value = _uiState.value.copy(authErrorMessage = ctx.getString(R.string.toast_enter_email_pass))
             return
         }
         viewModelScope.launch {
@@ -1236,9 +1269,9 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                     isAdmin = isUserAdmin,
                     showLoginDialog = false
                 )
-                emitToast("تم إنشاء الحساب بنجاح! 🎉")
+                emitToast(ctx.getString(R.string.toast_signup_success))
             } else {
-                _uiState.value = _uiState.value.copy(authErrorMessage = result.errorMessage ?: "خطأ في إنشاء الحساب")
+                _uiState.value = _uiState.value.copy(authErrorMessage = result.errorMessage ?: ctx.getString(R.string.toast_admin_wrong_creds))
             }
         }
     }
@@ -1252,10 +1285,11 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             showAdminPanel = false,
             showLoginDialog = false
         )
-        emitToast("تم تسجيل الخروج بنجاح")
+        emitToast(getApplication<Application>().getString(R.string.toast_logout_success))
     }
 
     fun loginAdmin(email: String, pass: String): Boolean {
+        val ctx = getApplication<Application>()
         if (SupabaseClient.isAdmin(email)) {
             val userEmail = email.trim()
             authPrefs.edit().putString("ps_email", userEmail).apply()
@@ -1263,15 +1297,15 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 isAdmin = true,
                 showAdminLoginDialog = false,
                 userProfile = UserProfile(
-                    name = "مدير المتجر (Admin)",
+                    name = ctx.getString(R.string.admin_badge),
                     email = userEmail,
                     isPrimeMember = true
                 )
             )
-            emitToast("مرحباً بالأدمن! تم تفعيل لوحة التحكم 🛠️")
+            emitToast(ctx.getString(R.string.toast_admin_login_success))
             return true
         } else {
-            emitToast("عذراً، هذا الحساب ليس لديه صلاحيات الأدمن")
+            emitToast(ctx.getString(R.string.toast_admin_not_authorized))
             return false
         }
     }
@@ -1306,8 +1340,9 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         categoryKey: String = "apps"
     ) {
         val appId = id ?: "app_${System.currentTimeMillis()}"
-        val tags = mutableListOf(StoreCategories.getTitleAr(categoryKey))
-        if (isOpenSource) tags.add("مفتوح المصدر")
+        val ctx = getApplication<Application>()
+        val tags = mutableListOf(StoreCategories.getTitle(ctx, categoryKey))
+        if (isOpenSource) tags.add(ctx.getString(R.string.cat_open_source))
         if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
 
         val newApp = AppItem(
@@ -1389,7 +1424,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             name = entity.name,
             nameAr = entity.nameAr,
             category = mapCategoryKeyToAppCategory(entity.categoryKey),
-            tags = listOf(StoreCategories.getTitleAr(entity.categoryKey)),
+            tags = listOf(StoreCategories.getTitle(getApplication(), entity.categoryKey)),
             rating = entity.rating,
             ratingCount = entity.ratingCount,
             downloadCount = entity.downloadCount,

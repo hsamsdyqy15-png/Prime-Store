@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -10,20 +11,21 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.example.R
 
-enum class ThemeMode {
-    SYSTEM,
-    DARK,
-    AMOLED,
-    LIGHT
+enum class ThemeMode(@StringRes val labelRes: Int) {
+    SYSTEM(R.string.theme_mode_system),
+    DARK(R.string.theme_mode_dark),
+    AMOLED(R.string.theme_mode_amoled),
+    LIGHT(R.string.theme_mode_light)
 }
 
-enum class AccentOption(val hex: Long, val displayNameAr: String, val displayNameEn: String) {
-    PURPLE(0xFFA855F7, "بنفسجي", "Purple"),
-    CYAN(0xFF22D3EE, "سماوي", "Cyan"),
-    GREEN(0xFF10B981, "أخضر", "Emerald"),
-    RED(0xFFF43F5E, "أحمر", "Rose"),
-    ORANGE(0xFFF59E0B, "برتقالي", "Amber");
+enum class AccentOption(val hex: Long, @StringRes val labelRes: Int) {
+    PURPLE(0xFFA855F7, R.string.accent_purple),
+    CYAN(0xFF22D3EE, R.string.accent_cyan),
+    GREEN(0xFF10B981, R.string.accent_green),
+    RED(0xFFF43F5E, R.string.accent_red),
+    ORANGE(0xFFF59E0B, R.string.accent_orange);
 
     companion object {
         fun fromHex(value: Long): AccentOption {
@@ -68,7 +70,7 @@ data class PrimeColors(
         get() = border
 
     val accentGlow: Color
-        get() = accent.copy(alpha = if (isDark) 0.35f else 0.20f)
+        get() = accent.copy(alpha = if (isDark) 0.35f else 0.18f)
 }
 
 val LocalPrimeColors = staticCompositionLocalOf<PrimeColors> {
@@ -91,6 +93,11 @@ fun darkenColor(color: Color, factor: Float = 0.25f): Color {
     )
 }
 
+private fun computeOnAccentColor(accent: Color): Color {
+    val luminance = 0.2126f * accent.red + 0.7152f * accent.green + 0.0722f * accent.blue
+    return if (luminance > 0.45f) Color(0xFF11071F) else Color.White
+}
+
 fun buildPrimeColors(mode: ThemeMode, accentHex: Long, isSystemDark: Boolean): PrimeColors {
     val isDark = when (mode) {
         ThemeMode.SYSTEM -> isSystemDark
@@ -99,55 +106,56 @@ fun buildPrimeColors(mode: ThemeMode, accentHex: Long, isSystemDark: Boolean): P
     }
 
     val accentColor = Color(accentHex)
-    val accentDarkColor = darkenColor(accentColor, 0.25f)
+    val accentDarkColor = darkenColor(accentColor, 0.24f)
+    val onAccentColor = computeOnAccentColor(accentColor)
 
     return when {
         !isDark -> {
-            val borderCol = accentColor.copy(alpha = 0.35f)
             PrimeColors(
-                background = Color(0xFFF3EEFC),
-                surface = Color(0xFFFFFFFF),
+                background = Color(0xFFF6F4FC),
+                surface = Color(0xFFEDE8FA),
                 card = Color(0xFFFFFFFF),
-                cardAlt = Color(0xFFE9DFFA),
-                border = borderCol,
+                cardAlt = Color(0xFFE4DDF7),
+                border = accentColor.copy(alpha = 0.30f),
                 textPrimary = Color(0xFF11071F),
-                textSecondary = Color(0xFF5B4C76),
-                textMuted = Color(0xFF7A6B94),
-                textOnAccent = Color.White,
+                textSecondary = Color(0xFF4C3D66),
+                textMuted = Color(0xFF6E5F8A),
+                textOnAccent = onAccentColor,
                 accent = accentColor,
                 accentDark = accentDarkColor,
+                success = Color(0xFF059669),
+                danger = Color(0xFFDC2626),
+                warning = Color(0xFFD97706),
                 isDark = false
             )
         }
         mode == ThemeMode.AMOLED -> {
-            val borderCol = accentColor.copy(alpha = 0.35f)
             PrimeColors(
                 background = Color(0xFF000000),
-                surface = Color(0xFF0A0A0A),
+                surface = Color(0xFF050505),
                 card = Color(0xFF0A0A0A),
                 cardAlt = Color(0xFF121212),
-                border = borderCol,
+                border = accentColor.copy(alpha = 0.40f),
                 textPrimary = Color(0xFFFFFFFF),
-                textSecondary = Color(0xFFB4A8C8),
-                textMuted = Color(0xFF7E7392),
-                textOnAccent = Color.White,
+                textSecondary = Color(0xFFC4BAD8),
+                textMuted = Color(0xFF887E9C),
+                textOnAccent = onAccentColor,
                 accent = accentColor,
                 accentDark = accentDarkColor,
                 isDark = true
             )
         }
         else -> {
-            val borderCol = accentColor.copy(alpha = 0.35f)
             PrimeColors(
                 background = Color(0xFF0B0614),
-                surface = Color(0xFF16101F),
+                surface = Color(0xFF130C21),
                 card = Color(0xFF16101F),
-                cardAlt = Color(0xFF1D1530),
-                border = borderCol,
+                cardAlt = Color(0xFF1F1630),
+                border = accentColor.copy(alpha = 0.35f),
                 textPrimary = Color(0xFFFFFFFF),
                 textSecondary = Color(0xFFB4A8C8),
-                textMuted = Color(0xFF7E7392),
-                textOnAccent = Color.White,
+                textMuted = Color(0xFF817696),
+                textOnAccent = onAccentColor,
                 accent = accentColor,
                 accentDark = accentDarkColor,
                 isDark = true

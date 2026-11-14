@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.example.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -41,7 +42,6 @@ object GitHubStorageHelper {
     const val DEFAULT_OWNER = "hsamsdyqy15-png"
     const val DEFAULT_REPO = "prime-store-files"
 
-    // OkHttpClient with zero timeouts for large streaming chunk uploads (up to 2GB)
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
@@ -108,17 +108,21 @@ object GitHubStorageHelper {
         }
     }
 
-    /**
-     * Test connection to GitHub API for owner/repo
-     */
-    suspend fun testConnection(owner: String, repo: String, token: String): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun testConnection(
+        owner: String,
+        repo: String,
+        token: String,
+        context: Context? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val cleanOwner = owner.trim().ifBlank { DEFAULT_OWNER }
             val cleanRepo = repo.trim().ifBlank { DEFAULT_REPO }
             val cleanToken = token.trim()
 
             if (cleanToken.isBlank()) {
-                return@withContext Result.failure(Exception("يرجى إدخال مفتاح GitHub Token أولاً"))
+                return@withContext Result.failure(
+                    Exception(context?.getString(R.string.github_token_missing) ?: "Please enter GitHub Token first")
+                )
             }
 
             val request = Request.Builder()
@@ -134,44 +138,56 @@ object GitHubStorageHelper {
                 val body = response.body?.string().orEmpty()
                 val json = JSONObject(body)
                 val repoFullName = json.optString("full_name", "$cleanOwner/$cleanRepo")
-                Result.success("تم الاتصال بنجاح بمستودع $repoFullName ✔")
+                Result.success(
+                    context?.getString(R.string.github_repo_connected, repoFullName)
+                        ?: "Connected to $repoFullName"
+                )
             } else {
                 val code = response.code
                 val errBody = response.body?.string().orEmpty()
-                Result.failure(Exception(parseErrorMessage(code, errBody)))
+                Result.failure(Exception(parseErrorMessage(code, errBody, context)))
             }
         } catch (e: Exception) {
-            Result.failure(Exception(e.message ?: "فشل الاتصال بالإنترنت أو بخوادم GitHub"))
+            Result.failure(
+                Exception(
+                    e.message ?: context?.getString(R.string.github_network_fail)
+                    ?: "Failed to connect to GitHub servers"
+                )
+            )
         }
     }
 
-    /**
-     * Validates file size (max 2GB) and allowed extensions (apk, obb, zip, xapk, apks)
-     */
-    fun validateFileForUpload(fileName: String, fileSizeBytes: Long): Result<Unit> {
+    fun validateFileForUpload(
+        fileName: String,
+        fileSizeBytes: Long,
+        context: Context? = null
+    ): Result<Unit> {
         val max2Gb = 2147483648L // 2 GiB
         if (fileSizeBytes > max2Gb) {
-            return Result.failure(Exception("حجم الملف يتجاوز 2 جيجابايت، يرجى تقسيم الملف قبل الرفع"))
+            return Result.failure(
+                Exception(context?.getString(R.string.github_file_over_2gb) ?: "File exceeds 2GB limit.")
+            )
         }
         val ext = fileName.substringAfterLast(".", "").lowercase()
         val allowedExtensions = setOf("apk", "obb", "zip", "xapk", "apks", "png", "jpg", "jpeg")
         if (ext.isNotBlank() && ext !in allowedExtensions) {
-            return Result.failure(Exception("نوع الملف غير مدعوم ($ext)، لا يمكن رفع إلا ملفات apk أو obb أو zip وما شابهها"))
+            return Result.failure(
+                Exception(
+                    context?.getString(R.string.github_unsupported_ext, ext)
+                        ?: "Unsupported file type ($ext)"
+                )
+            )
         }
         return Result.success(Unit)
     }
 
-    /**
-     * Creates a new Release for a specific app:
-     * POST https://api.github.com/repos/{owner}/{repo}/releases
-     * body: { tag_name: "app-{appId}-{timestamp}", name: "{appName}", draft: false, prerelease: false }
-     */
     suspend fun createRelease(
         owner: String,
         repo: String,
         token: String,
         appId: String,
-        appName: String
+        appName: String,
+        context: Context? = null
     ): Result<Pair<Long, String>> = withContext(Dispatchers.IO) {
         try {
             val cleanOwner = owner.trim().ifBlank { DEFAULT_OWNER }
@@ -179,7 +195,9 @@ object GitHubStorageHelper {
             val cleanToken = token.trim()
 
             if (cleanToken.isBlank()) {
-                return@withContext Result.failure(Exception("مفتاح GitHub Token غير محدد في إعدادات GitHub"))
+                return@withContext Result.failure(
+                    Exception(context?.getString(R.string.github_token_missing) ?: "GitHub Token missing")
+                )
             }
 
             val timestamp = System.currentTimeMillis()
@@ -212,17 +230,18 @@ object GitHubStorageHelper {
             } else {
                 val code = response.code
                 val errBody = response.body?.string().orEmpty()
-                Result.failure(Exception(parseErrorMessage(code, errBody)))
+                Result.failure(Exception(parseErrorMessage(code, errBody, context)))
             }
         } catch (e: Exception) {
-            Result.failure(Exception(e.message ?: "فشل إنشاء إصدار GitHub"))
+            Result.failure(
+                Exception(
+                    e.message ?: context?.getString(R.string.github_create_release_fail)
+                    ?: "Failed to create GitHub release"
+                )
+            )
         }
     }
 
-    /**
-     * Deletes a release if upload was cancelled or interrupted
-     * DELETE https://api.github.com/repos/{owner}/{repo}/releases/{release_id}
-     */
     suspend fun deleteRelease(
         owner: String,
         repo: String,
@@ -246,13 +265,9 @@ object GitHubStorageHelper {
 
             client.newCall(request).execute()
         } catch (_: Exception) {
-            // Silently ignore cleanup error
         }
     }
 
-    /**
-     * Sanitizes file name: keeps only English letters, digits, _, -, and .
-     */
     fun sanitizeFileName(originalName: String): String {
         val base = originalName.substringBeforeLast(".")
         val ext = originalName.substringAfterLast(".", "apk")
@@ -261,16 +276,6 @@ object GitHubStorageHelper {
         return "${cleanBase}.$cleanExt"
     }
 
-    /**
-     * Full Release Upload workflow:
-     * 1. Validates file size & type (< 2GB, apk/obb/zip)
-     * 2. Creates dedicated release: POST /repos/{owner}/{repo}/releases
-     * 3. Streams raw binary file directly without loading in memory or base64:
-     *    POST https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets?name={fileName}
-     * 4. If status 422 (duplicate asset name), automatically retries with numbered suffix
-     * 5. If network disconnects or upload fails, automatically deletes the incomplete release
-     * 6. Returns browser_download_url and sizeMB
-     */
     suspend fun uploadAppRelease(
         context: Context,
         owner: String,
@@ -288,24 +293,25 @@ object GitHubStorageHelper {
         val cleanToken = token.trim()
 
         if (cleanToken.isBlank()) {
-            return@withContext Result.failure(Exception("مفتاح GitHub Token غير محدد في إعدادات GitHub"))
+            return@withContext Result.failure(Exception(context.getString(R.string.github_token_missing)))
         }
 
-        // 1. Validation
-        val validation = validateFileForUpload(originalFileName, fileSizeBytes)
+        val validation = validateFileForUpload(originalFileName, fileSizeBytes, context)
         if (validation.isFailure) {
-            return@withContext Result.failure(validation.exceptionOrNull() ?: Exception("ملف غير صالح"))
+            return@withContext Result.failure(
+                validation.exceptionOrNull() ?: Exception(context.getString(R.string.github_invalid_file))
+            )
         }
 
-        // 2. Create Release
-        val releaseResult = createRelease(cleanOwner, cleanRepo, cleanToken, appId, appName)
+        val releaseResult = createRelease(cleanOwner, cleanRepo, cleanToken, appId, appName, context)
         if (releaseResult.isFailure) {
-            return@withContext Result.failure(releaseResult.exceptionOrNull() ?: Exception("فشل إنشاء إصدار GitHub"))
+            return@withContext Result.failure(
+                releaseResult.exceptionOrNull() ?: Exception(context.getString(R.string.github_create_release_fail))
+            )
         }
 
         val (releaseId, uploadBaseUrl) = releaseResult.getOrThrow()
 
-        // 3. Upload raw binary asset with real-time streaming progress
         var currentFileName = sanitizeFileName(originalFileName)
         var attempt = 1
         var lastError: Exception? = null
@@ -324,10 +330,10 @@ object GitHubStorageHelper {
 
                 override fun writeTo(sink: BufferedSink) {
                     val inputStream = contentResolver.openInputStream(uri)
-                        ?: throw IOException("تعذر فتح ملف التطبيق للقراءة من ذاكرة الجهاز")
+                        ?: throw IOException(context.getString(R.string.github_open_file_fail))
 
                     inputStream.use { stream ->
-                        val buffer = ByteArray(64 * 1024) // 64KB buffer
+                        val buffer = ByteArray(64 * 1024)
                         var bytesWritten = 0L
                         var bytesRead: Int
 
@@ -368,7 +374,6 @@ object GitHubStorageHelper {
                         )
                     )
                 } else if (response.code == 422) {
-                    // 422: Duplicate asset name in this release - auto rename and retry
                     val base = originalFileName.substringBeforeLast(".")
                     val ext = originalFileName.substringAfterLast(".", "apk")
                     currentFileName = "${sanitizeFileName(base)}_$attempt.$ext"
@@ -377,18 +382,21 @@ object GitHubStorageHelper {
                 } else {
                     val code = response.code
                     val errBody = response.body?.string().orEmpty()
-                    lastError = Exception(parseErrorMessage(code, errBody))
+                    lastError = Exception(parseErrorMessage(code, errBody, context))
                     break
                 }
             } catch (e: Exception) {
-                lastError = Exception("انقطاع في الاتصال بالإنترنت أثناء الرفع (${e.message ?: "Network error"})")
+                lastError = Exception(
+                    context.getString(R.string.github_upload_interrupted, e.message ?: "Network error")
+                )
                 break
             }
         }
 
-        // Automatic cleanup: if asset upload fails after creating release, delete the incomplete release
         deleteRelease(cleanOwner, cleanRepo, cleanToken, releaseId)
-        return@withContext Result.failure(lastError ?: Exception("فشل رفع الملف كـ asset إلى إصدار GitHub"))
+        return@withContext Result.failure(
+            lastError ?: Exception(context.getString(R.string.github_upload_asset_fail))
+        )
     }
 
     fun formatSize(bytes: Long): String {
@@ -401,20 +409,25 @@ object GitHubStorageHelper {
         }
     }
 
-    fun parseErrorMessage(code: Int, body: String): String {
+    fun parseErrorMessage(code: Int, body: String, context: Context? = null): String {
         return when (code) {
-            401 -> "401: المفتاح غير صالح أو منتهي الصلاحية (Bad credentials / Token expired)"
-            403 -> "403: لا توجد صلاحية كتابة في هذا المستودع، أو تم تجاوز حد الطلبات"
-            404 -> "404: اسم المستودع أو المالك غير صحيح، تأكد من صحة إعدادات GitHub"
-            422 -> "422: اسم الملف مكرر في نفس الـ Release أو الملف غير صالح"
+            401 -> context?.getString(R.string.github_err_401) ?: "401: Invalid or expired GitHub Token"
+            403 -> context?.getString(R.string.github_err_403) ?: "403: No write permission or rate limit exceeded"
+            404 -> context?.getString(R.string.github_err_404) ?: "404: Repository owner or name not found"
+            422 -> context?.getString(R.string.github_err_422) ?: "422: Duplicate asset name or invalid file"
             else -> {
                 val serverMsg = try {
                     JSONObject(body).optString("message", "")
                 } catch (_: Exception) {
                     ""
                 }
-                if (serverMsg.isNotBlank()) "خطأ $code من GitHub: $serverMsg"
-                else "فشل طلب GitHub برمز الحالة: $code"
+                if (serverMsg.isNotBlank()) {
+                    context?.getString(R.string.github_err_server, code, serverMsg)
+                        ?: "GitHub error $code: $serverMsg"
+                } else {
+                    context?.getString(R.string.github_err_generic, code)
+                        ?: "GitHub request failed (HTTP $code)"
+                }
             }
         }
     }

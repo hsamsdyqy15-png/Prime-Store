@@ -57,10 +57,11 @@ class DownloadService : Service() {
     }
 
     private lateinit var notificationManager: NotificationManager
-    private var currentAppName: String = "تطبيق"
+    private var currentAppName: String = ""
 
     override fun onCreate() {
         super.onCreate()
+        currentAppName = getString(R.string.dl_service_default_app)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
     }
@@ -70,7 +71,8 @@ class DownloadService : Service() {
 
         when (action) {
             ACTION_START -> {
-                currentAppName = intent.getStringExtra(EXTRA_APP_NAME) ?: "تطبيق"
+                currentAppName = intent.getStringExtra(EXTRA_APP_NAME)
+                    ?: getString(R.string.dl_service_default_app)
                 val notification = buildNotification(0, "0 MB/s")
                 startForeground(NOTIFICATION_ID, notification)
             }
@@ -100,12 +102,10 @@ class DownloadService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val contentText = if (progress in 1..99) {
-            "جاري التحميل: $progress% ($speed)"
-        } else if (progress >= 100) {
-            "اكتمل التحميل بنجاح!"
-        } else {
-            "جاري بدء التحميل..."
+        val contentText = when {
+            progress in 1..99 -> getString(R.string.dl_service_progress, progress, speed)
+            progress >= 100 -> getString(R.string.dl_service_done)
+            else -> getString(R.string.dl_service_starting)
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -124,10 +124,10 @@ class DownloadService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "تحميلات Prime Store",
+                getString(R.string.dl_service_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "إشعارات تقدم تحميل ملفات وتطبيقات المتجر"
+                description = getString(R.string.dl_service_channel_desc)
                 setShowBadge(false)
             }
             notificationManager.createNotificationChannel(channel)

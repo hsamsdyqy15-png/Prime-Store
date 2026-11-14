@@ -2,6 +2,7 @@ package com.example.data.installer
 
 import android.content.Context
 import android.net.Uri
+import com.example.R
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -15,17 +16,17 @@ object ApkAbiDetector {
                     input.copyTo(output)
                 }
             }
-            return detectAbisFromFile(tempFile)
+            return detectAbisFromFile(tempFile, context)
         } catch (e: Exception) {
-            return "Universal (All Architectures)"
+            return context.getString(R.string.abi_universal_all)
         } finally {
             try {
                 tempFile?.delete()
-            } catch (ignored: Exception) {}
+            } catch (_: Exception) {}
         }
     }
 
-    fun detectAbisFromFile(apkFile: File): String {
+    fun detectAbisFromFile(apkFile: File, context: Context? = null): String {
         try {
             ZipFile(apkFile).use { zip ->
                 val entries = zip.entries()
@@ -44,23 +45,21 @@ object ApkAbiDetector {
                     }
                 }
                 if (foundAbis.isEmpty()) {
-                    return "Universal (Pure Java/Kotlin)"
+                    return context?.getString(R.string.abi_universal_java) ?: "Universal (Pure Java/Kotlin)"
                 }
                 val hasArm64 = foundAbis.contains("arm64-v8a")
                 val hasArmeabi = foundAbis.contains("armeabi-v7a")
-                val hasX86 = foundAbis.contains("x86")
-                val hasX86_64 = foundAbis.contains("x86_64")
 
                 return when {
-                    foundAbis.size >= 4 -> "Universal / All Architectures (arm64, armv7, x86, x64)"
-                    hasArm64 && hasArmeabi -> "arm64-v8a + armeabi-v7a (Universal Mobile)"
-                    hasArm64 -> "arm64-v8a only (Modern 64-bit)"
-                    hasArmeabi -> "armeabi-v7a only (32-bit ARM)"
+                    foundAbis.size >= 4 -> context?.getString(R.string.abi_universal_all) ?: "Universal (All Architectures)"
+                    hasArm64 && hasArmeabi -> context?.getString(R.string.abi_arm64_armv7) ?: "arm64-v8a + armeabi-v7a (Universal Mobile)"
+                    hasArm64 -> context?.getString(R.string.abi_arm64_only) ?: "arm64-v8a only (64-bit)"
+                    hasArmeabi -> context?.getString(R.string.abi_armeabi_only) ?: "armeabi-v7a only (32-bit ARM)"
                     else -> foundAbis.joinToString(", ")
                 }
             }
         } catch (e: Exception) {
-            return "Universal (All Architectures)"
+            return context?.getString(R.string.abi_universal_all) ?: "Universal (All Architectures)"
         }
     }
 }

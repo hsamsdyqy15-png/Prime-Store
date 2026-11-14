@@ -102,7 +102,7 @@ fun SignatureConflictDialog(
                         .padding(10.dp)
                 ) {
                     Text(
-                        text = "Android OS Security: Signature mismatch cannot be upgraded directly without clean uninstall.",
+                        text = stringResource(id = R.string.android_sig_security_note),
                         color = colors.danger,
                         fontSize = 12.sp,
                         lineHeight = 18.sp
@@ -241,15 +241,15 @@ fun ProblemReportDialog(
     onDismiss: () -> Unit
 ) {
     val colors = PrimeTheme.colors
-    var selectedReason by remember { mutableStateOf("توقف مفاجئ للتطبيق") }
-    var detailsText by remember { mutableStateOf("") }
     val reasons = listOf(
-        "توقف مفاجئ للتطبيق",
-        "لا يمكن تثبيت ملف APK",
-        "رابط التحميل لا يعمل",
-        "محتوى غير لائق أو مخالف",
-        "مشكلة أخرى"
+        stringResource(id = R.string.report_reason_crash),
+        stringResource(id = R.string.report_reason_install),
+        stringResource(id = R.string.report_reason_link),
+        stringResource(id = R.string.report_reason_inappropriate),
+        stringResource(id = R.string.report_reason_other)
     )
+    var selectedReasonIndex by remember { mutableStateOf(0) }
+    var detailsText by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -270,15 +270,15 @@ fun ProblemReportDialog(
                     fontSize = 13.sp
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                reasons.forEach { reason ->
-                    val isSelected = selectedReason == reason
+                reasons.forEachIndexed { idx, reason ->
+                    val isSelected = selectedReasonIndex == idx
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (isSelected) colors.cardAlt else colors.surface)
                             .border(1.dp, if (isSelected) colors.accent else colors.border, RoundedCornerShape(8.dp))
-                            .clickable { selectedReason = reason }
+                            .clickable { selectedReasonIndex = idx }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -300,7 +300,7 @@ fun ProblemReportDialog(
                 OutlinedTextField(
                     value = detailsText,
                     onValueChange = { detailsText = it },
-                    placeholder = { Text("تفاصيل المشكلة...", color = colors.textSecondary, fontSize = 12.sp) },
+                    placeholder = { Text(stringResource(id = R.string.report_details_hint), color = colors.textSecondary, fontSize = 12.sp) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(85.dp),
@@ -319,7 +319,7 @@ fun ProblemReportDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onSubmit(selectedReason, detailsText)
+                    onSubmit(reasons.getOrElse(selectedReasonIndex) { "" }, detailsText)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = colors.accent),

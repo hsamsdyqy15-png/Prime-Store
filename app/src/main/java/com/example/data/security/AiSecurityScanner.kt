@@ -2,6 +2,7 @@ package com.example.data.security
 
 import android.content.Context
 import android.content.pm.PackageManager
+import com.example.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -23,7 +24,7 @@ object AiSecurityScanner {
         try {
             val pm = context.packageManager
             val info = pm.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.GET_PERMISSIONS)
-            
+
             val pkgName = info?.packageName ?: "com.unknown.app"
             val versionName = info?.versionName ?: "1.0.0"
             val permissions = info?.requestedPermissions?.toList() ?: emptyList()
@@ -38,15 +39,17 @@ object AiSecurityScanner {
                 "android.permission.WRITE_EXTERNAL_STORAGE"
             )
 
-            val foundDangerous = permissions.filter { perm -> dangerousList.any { perm.contains(it, ignoreCase = true) } }
-            
+            val foundDangerous = permissions.filter { perm ->
+                dangerousList.any { perm.contains(it, ignoreCase = true) }
+            }
+
             val riskScore = if (foundDangerous.size > 3) 15 else if (foundDangerous.isNotEmpty()) 5 else 0
             val isSafe = riskScore < 20
 
             val summary = if (isSafe) {
-                "فحص الذكاء الاصطناعي: التطبيق نظيف وآمن 100%. لا توجد برمجيات خبيثة أو طلبات خطيرة غير مبررة. متوافق مع معايير الأمان."
+                context.getString(R.string.ai_summary_safe)
             } else {
-                "فحص الذكاء الاصطناعي: التطبيق يتطلب صلاحيات حساسة (${foundDangerous.size}), يرجى التأكد من موثوقية المصدر قبل التثبيت."
+                context.getString(R.string.ai_summary_warning, foundDangerous.size)
             }
 
             SecurityReport(
@@ -67,7 +70,7 @@ object AiSecurityScanner {
                 riskScore = 0,
                 permissionsCount = 4,
                 dangerousPermissions = emptyList(),
-                aiSummaryAr = "فحص الذكاء الاصطناعي: تم فحص ملف APK بنجاح، التطبيق جاهز وآمن للتثبيت.",
+                aiSummaryAr = context.getString(R.string.ai_summary_ready),
                 isAiVerified = true
             )
         }

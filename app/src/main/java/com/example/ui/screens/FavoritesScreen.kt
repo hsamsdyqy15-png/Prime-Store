@@ -88,7 +88,7 @@ fun FavoritesScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "اضغط على أيقونة القلب في أي تطبيق لإضافته إلى قائمة المفضلة الخاصة بك.",
+                        text = stringResource(id = R.string.favorites_empty_desc),
                         color = colors.textSecondary,
                         fontSize = 13.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
