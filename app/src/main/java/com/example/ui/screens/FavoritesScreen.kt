@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -28,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -41,6 +45,7 @@ import com.example.ui.theme.PrimeTheme
 fun FavoritesScreen(
     favoriteIds: Set<String>,
     allApps: List<AppItem>,
+    listState: LazyListState = rememberLazyListState(),
     onAppClick: (String) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -55,7 +60,7 @@ fun FavoritesScreen(
             .fillMaxSize()
             .testTag("favorites_screen")
     ) {
-        // Title: المفضلة
+        // Title
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -97,18 +102,24 @@ fun FavoritesScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(favoriteApps) { app ->
+                items(
+                    items = favoriteApps,
+                    key = { it.id },
+                    contentType = { "fav_item" }
+                ) { app ->
                     FavoriteCardItem(
                         app = app,
                         onClick = { onAppClick(app.id) },
-                        onRemove = { onRemoveFavorite(app.id) }
+                        onRemove = { onRemoveFavorite(app.id) },
+                        modifier = Modifier.animateItem()
                     )
                 }
-                item {
+                item(key = "fav_spacer", contentType = "spacer") {
                     Spacer(modifier = Modifier.height(80.dp))
                 }
             }
@@ -120,14 +131,15 @@ fun FavoritesScreen(
 fun FavoriteCardItem(
     app: AppItem,
     onClick: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val colors = PrimeTheme.colors
 
     NeonCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        hasGlow = true,
+        hasGlow = false,
         onClick = onClick
     ) {
         Row(
@@ -152,10 +164,12 @@ fun FavoriteCardItem(
 
                 Column {
                     Text(
-                        text = app.name,
+                        text = app.nameAr.ifBlank { app.name },
                         color = colors.textPrimary,
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(3.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -167,7 +181,7 @@ fun FavoriteCardItem(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = String.format("%.1f", app.rating),
+                            text = String.format(java.util.Locale.US, "%.1f", app.rating),
                             color = colors.textPrimary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
@@ -183,7 +197,7 @@ fun FavoriteCardItem(
 
             IconButton(
                 onClick = onRemove,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.minimumInteractiveComponentSize()
             ) {
                 Icon(
                     imageVector = Icons.Filled.Delete,

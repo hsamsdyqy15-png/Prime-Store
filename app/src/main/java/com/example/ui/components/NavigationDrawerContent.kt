@@ -103,15 +103,13 @@ fun NavigationDrawerContent(
         Spacer(modifier = Modifier.height(18.dp))
 
         // User Profile Card
-        val profileElevation = if (colors.isDark) 8.dp else 2.dp
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(profileElevation, RoundedCornerShape(18.dp), ambientColor = colors.accentDark, spotColor = colors.accent)
                 .clip(RoundedCornerShape(18.dp))
                 .background(colors.card)
                 .border(1.dp, colors.border, RoundedCornerShape(18.dp))
-                .clickable {
+                .pressScaleClickable(withHaptic = true) {
                     if (userProfile == null) {
                         onCloseDrawer()
                         onLoginClick()

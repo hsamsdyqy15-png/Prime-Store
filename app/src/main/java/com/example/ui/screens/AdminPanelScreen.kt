@@ -37,16 +37,22 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +67,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -93,11 +101,16 @@ import com.example.data.github.AdminPublishDraft
 import com.example.data.github.GitHubStorageHelper
 import com.example.data.github.GitHubTokenProvider
 import com.example.data.installer.ApkAbiDetector
+import com.example.data.local.CategoryEntity
 import com.example.data.model.AppItem
+import com.example.data.model.CategoryItem
 import com.example.data.model.StoreCategories
+import com.example.data.repository.CategoriesRepository
+import com.example.data.repository.SettingsRepository
 import com.example.data.supabase.SecureLogger
 import com.example.data.supabase.SupabaseClient
 import com.example.ui.components.NeonCard
+import com.example.ui.components.StoreImageLoader
 import com.example.ui.theme.PrimeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -111,6 +124,12 @@ import java.util.Locale
 fun AdminPanelScreen(
     adminEmail: String,
     apps: List<AppItem>,
+    allGameCategories: List<CategoryEntity> = emptyList(),
+    allAppCategories: List<CategoryEntity> = emptyList(),
+    onAddCategory: (nameEn: String, nameAr: String, emoji: String, type: String) -> Unit = { _, _, _, _ -> },
+    onUpdateCategory: (key: String, nameEn: String, nameAr: String, emoji: String) -> Unit = { _, _, _, _ -> },
+    onToggleCategoryHidden: (key: String, hidden: Boolean) -> Unit = { _, _ -> },
+    onMoveCategory: (key: String, type: String, moveUp: Boolean) -> Unit = { _, _, _ -> },
     onCatalogChanged: () -> Unit,
     onDeleteApp: (String) -> Unit,
     onSessionExpired: () -> Unit,
@@ -121,20 +140,28 @@ fun AdminPanelScreen(
     val colors = PrimeTheme.colors
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val imageLoader = remember(context) { StoreImageLoader.get(context) }
 
     val isOwner = remember(adminEmail) { SupabaseClient.isOwner(adminEmail) }
     val tokenStatus by GitHubTokenProvider.status.collectAsState()
     val publishState by AdminPublishCoordinator.state.collectAsState()
 
+    val categoriesRepo = remember(context) { CategoriesRepository.getInstance(context) }
+
     var editingAppId by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
-    var selectedCategoryItem by remember { mutableStateOf(StoreCategories.find("apps")) }
+    var itemType by remember { mutableStateOf(StoreCategories.ITEM_TYPE_APP) }
+    var selectedCategoryItem by remember { mutableStateOf(StoreCategories.find("tools", StoreCategories.ITEM_TYPE_APP)) }
     var versionStr by remember { mutableStateOf("1.0.0") }
     var ratingStr by remember { mutableStateOf("4.5") }
     var sizeStr by remember { mutableStateOf("120 MB") }
     var description by remember { mutableStateOf("") }
     var featuresStr by remember { mutableStateOf("") }
     var directFileUrl by remember { mutableStateOf("") }
+    var sha256Input by remember { mutableStateOf("") }
+    var splitApkUrlsText by remember { mutableStateOf("") }
+    var obbUrl by remember { mutableStateOf("") }
+    var showAdvancedInstallerFields by remember { mutableStateOf(false) }
 
     var storedIconUrl by remember { mutableStateOf("") }
     val storedScreenshotUrls = remember { mutableStateListOf<String>() }
@@ -153,6 +180,15 @@ fun AdminPanelScreen(
 
     var showCategoryModal by remember { mutableStateOf(false) }
     var categorySearchQuery by remember { mutableStateOf("") }
+
+    // Category Manager State
+    var showCategoryManagerSection by remember { mutableStateOf(false) }
+    var catManagerTypeTab by remember { mutableStateOf(StoreCategories.ITEM_TYPE_GAME) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var editingCategoryEntity by remember { mutableStateOf<CategoryEntity?>(null) }
+    var catDialogNameEn by remember { mutableStateOf("") }
+    var catDialogNameAr by remember { mutableStateOf("") }
+    var catDialogEmoji by remember { mutableStateOf("🎮") }
 
     var storeUpdateVersionCode by remember { mutableStateOf("1") }
     var storeUpdateVersionName by remember { mutableStateOf("1.0.0") }
@@ -203,13 +239,18 @@ fun AdminPanelScreen(
         pickedShotUriStrs = pickedShotUris.map { it.toString() },
         pickedApkUriStr = pickedApkUri?.toString(),
         pickedApkFileName = pickedApkFileName,
-        pickedApkSizeBytes = pickedApkSizeBytes
+        pickedApkSizeBytes = pickedApkSizeBytes,
+        itemType = itemType,
+        sha256 = sha256Input,
+        splitApkUrlsText = splitApkUrlsText,
+        obbUrl = obbUrl
     )
 
     fun clearForm(clearPersistedDraft: Boolean = true) {
         editingAppId = null
         name = ""
-        selectedCategoryItem = StoreCategories.find("apps")
+        itemType = StoreCategories.ITEM_TYPE_APP
+        selectedCategoryItem = StoreCategories.find("tools", StoreCategories.ITEM_TYPE_APP)
         versionStr = "1.0.0"
         ratingStr = "4.5"
         sizeStr = "120 MB"
@@ -217,6 +258,10 @@ fun AdminPanelScreen(
         featuresStr = ""
         storedIconUrl = ""
         directFileUrl = ""
+        sha256Input = ""
+        splitApkUrlsText = ""
+        obbUrl = ""
+        showAdvancedInstallerFields = false
         isOpenSource = false
         sourceCodeUrl = ""
         detectedAbis = context.getString(R.string.abi_universal_all)
@@ -247,13 +292,18 @@ fun AdminPanelScreen(
         if (draft != null && !draftInitialized) {
             editingAppId = draft.editingAppId
             name = draft.name
-            selectedCategoryItem = StoreCategories.find(draft.categoryKey)
+            itemType = StoreCategories.inferItemType(draft.categoryKey, draft.itemType)
+            selectedCategoryItem = StoreCategories.find(draft.categoryKey, itemType)
             versionStr = draft.versionStr
             ratingStr = draft.ratingStr
             sizeStr = draft.sizeStr
             description = draft.description
             featuresStr = draft.featuresStr
             directFileUrl = draft.directFileUrl
+            sha256Input = draft.sha256
+            splitApkUrlsText = draft.splitApkUrlsText
+            obbUrl = draft.obbUrl
+            showAdvancedInstallerFields = draft.sha256.isNotBlank() || draft.splitApkUrlsText.isNotBlank() || draft.obbUrl.isNotBlank()
             storedIconUrl = draft.storedIconUrl
             storedScreenshotUrls.clear()
             storedScreenshotUrls.addAll(draft.storedScreenshotUrls)
@@ -282,9 +332,9 @@ fun AdminPanelScreen(
         }
         if (curUpdate != null) {
             storeUpdateVersionCode = curUpdate.versionCode.toString()
-            storeUpdateVersionName = curUpdate.versionName
-            storeUpdateNotes = curUpdate.notes
-            storeUpdateApkUrl = curUpdate.apkUrl
+            storeUpdateVersionName = curUpdate.versionName.takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) } ?: "1.0.0"
+            storeUpdateNotes = curUpdate.notes.takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) }.orEmpty()
+            storeUpdateApkUrl = curUpdate.apkUrl.takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) }.orEmpty()
         }
     }
 
@@ -293,6 +343,7 @@ fun AdminPanelScreen(
         draftInitialized,
         editingAppId,
         name,
+        itemType,
         selectedCategoryItem,
         versionStr,
         ratingStr,
@@ -300,6 +351,9 @@ fun AdminPanelScreen(
         description,
         featuresStr,
         directFileUrl,
+        sha256Input,
+        splitApkUrlsText,
+        obbUrl,
         storedIconUrl,
         storedScreenshotUrls.size,
         isOpenSource,
@@ -314,7 +368,8 @@ fun AdminPanelScreen(
         if (!draftInitialized || publishState.isRunning) return@LaunchedEffect
         val hasContent = name.isNotBlank() || description.isNotBlank() || directFileUrl.isNotBlank() ||
             pickedApkUri != null || pickedIconUri != null || storedIconUrl.isNotBlank() ||
-            pickedShotUris.isNotEmpty() || storedScreenshotUrls.isNotEmpty()
+            pickedShotUris.isNotEmpty() || storedScreenshotUrls.isNotEmpty() ||
+            sha256Input.isNotBlank() || splitApkUrlsText.isNotBlank() || obbUrl.isNotBlank()
         if (hasContent) {
             AdminPublishCoordinator.saveDraft(context, buildCurrentDraft())
         }
@@ -450,7 +505,10 @@ fun AdminPanelScreen(
     val apkPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val (fName, fSize) = getFileNameAndSize(context, uri)
-            if (!fName.endsWith(".apk", ignoreCase = true)) {
+            val isSupportedBundle = listOf(".apk", ".apks", ".xapk", ".zip").any {
+                fName.endsWith(it, ignoreCase = true)
+            }
+            if (!isSupportedBundle) {
                 scope.launch {
                     snackbarHostState.showSnackbar(context.getString(R.string.github_unsupported_ext, fName))
                 }
@@ -472,23 +530,29 @@ fun AdminPanelScreen(
                     return@rememberLauncherForActivityResult
                 }
 
-                scope.launch(Dispatchers.IO) {
-                    val (extractedName, extractedVer, iconBytes) = extractApkMetadata(context, uri)
-                    val abis = ApkAbiDetector.detectAbis(context, uri)
-                    withContext(Dispatchers.Main) {
-                        detectedAbis = abis
-                        if (name.isBlank() && !extractedName.isNullOrBlank()) {
-                            name = extractedName
+                if (fName.endsWith(".apk", ignoreCase = true)) {
+                    scope.launch(Dispatchers.IO) {
+                        val (extractedName, extractedVer, iconBytes) = extractApkMetadata(context, uri)
+                        val abis = ApkAbiDetector.detectAbis(context, uri)
+                        withContext(Dispatchers.Main) {
+                            detectedAbis = abis
+                            if (name.isBlank() && !extractedName.isNullOrBlank()) {
+                                name = extractedName
+                            }
+                            if (!extractedVer.isNullOrBlank()) {
+                                versionStr = extractedVer
+                            }
+                            if (sizeStr.isBlank() || sizeStr == "120 MB") {
+                                sizeStr = formatSize(fSize)
+                            }
+                            if (iconBytes != null && pickedIconUri == null && storedIconUrl.isBlank()) {
+                                apkExtractedIconBytes = iconBytes
+                            }
                         }
-                        if (!extractedVer.isNullOrBlank()) {
-                            versionStr = extractedVer
-                        }
-                        if (sizeStr.isBlank() || sizeStr == "120 MB") {
-                            sizeStr = formatSize(fSize)
-                        }
-                        if (iconBytes != null && pickedIconUri == null && storedIconUrl.isBlank()) {
-                            apkExtractedIconBytes = iconBytes
-                        }
+                    }
+                } else {
+                    if (sizeStr.isBlank() || sizeStr == "120 MB") {
+                        sizeStr = formatSize(fSize)
                     }
                 }
             }
@@ -498,7 +562,8 @@ fun AdminPanelScreen(
     fun populateForEdit(app: AppItem) {
         editingAppId = app.id
         name = app.nameAr
-        selectedCategoryItem = StoreCategories.find(app.categoryKey.ifBlank { app.category.name.lowercase() })
+        itemType = StoreCategories.inferItemType(app.categoryKey, app.itemType, app.category)
+        selectedCategoryItem = StoreCategories.find(app.categoryKey.ifBlank { app.category.name.lowercase() }, itemType)
         versionStr = app.version.ifBlank { "1.0.0" }
         ratingStr = app.rating.toString()
         sizeStr = app.size
@@ -506,6 +571,10 @@ fun AdminPanelScreen(
         featuresStr = app.featuresAr.joinToString("\n")
         storedIconUrl = app.iconUrl ?: (if (app.iconEmoji.length <= 4 && !app.iconEmoji.startsWith("http")) app.iconEmoji else "")
         directFileUrl = app.fileUrl.orEmpty()
+        sha256Input = app.sha256.orEmpty()
+        splitApkUrlsText = app.splitApkUrls.joinToString("\n")
+        obbUrl = app.obbUrl.orEmpty()
+        showAdvancedInstallerFields = sha256Input.isNotBlank() || splitApkUrlsText.isNotBlank() || obbUrl.isNotBlank()
         isOpenSource = app.isOpenSource
         sourceCodeUrl = app.sourceCodeUrl.orEmpty()
         detectedAbis = app.supportedAbis
@@ -771,15 +840,24 @@ fun AdminPanelScreen(
                                     .background(colors.buttonGradient)
                                     .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable(enabled = !isPublishingStoreUpdate) {
-                                        val code = storeUpdateVersionCode.toIntOrNull() ?: 1
+                                        val cleanUrl = storeUpdateApkUrl.trim()
+                                        if (!cleanUrl.startsWith("http://", ignoreCase = true) && !cleanUrl.startsWith("https://", ignoreCase = true)) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(context.getString(R.string.error_unexpected))
+                                            }
+                                            return@clickable
+                                        }
+                                        val code = (storeUpdateVersionCode.trim().toIntOrNull() ?: 1).coerceAtLeast(1)
+                                        val cleanVer = storeUpdateVersionName.trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "1.0.0"
+                                        val cleanNotes = storeUpdateNotes.trim().takeUnless { it.equals("null", ignoreCase = true) }.orEmpty()
                                         isPublishingStoreUpdate = true
                                         scope.launch {
                                             val res = withContext(Dispatchers.IO) {
                                                 SupabaseClient.updateStoreUpdate(
                                                     versionCode = code,
-                                                    versionName = storeUpdateVersionName.ifBlank { "1.0.0" },
-                                                    notes = storeUpdateNotes,
-                                                    apkUrl = storeUpdateApkUrl
+                                                    versionName = cleanVer,
+                                                    notes = cleanNotes,
+                                                    apkUrl = cleanUrl
                                                 )
                                             }
                                             isPublishingStoreUpdate = false
@@ -867,7 +945,88 @@ fun AdminPanelScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Category Selector with Modal
+                            // Mandatory Item Type Selector (Game vs App) BEFORE Category Picker
+                            Text(
+                                text = stringResource(R.string.admin_item_type_label),
+                                color = colors.textSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val isGameSelected = itemType == StoreCategories.ITEM_TYPE_GAME
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .minimumInteractiveComponentSize()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isGameSelected) colors.accent else colors.cardAlt)
+                                        .border(1.dp, if (isGameSelected) colors.accent else colors.border, RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            itemType = StoreCategories.ITEM_TYPE_GAME
+                                            if (selectedCategoryItem.type != StoreCategories.ITEM_TYPE_GAME) {
+                                                val fallback = allGameCategories.firstOrNull { !it.isHidden }?.let { categoriesRepo.toCategoryItem(it) }
+                                                    ?: StoreCategories.GAMES.first()
+                                                selectedCategoryItem = fallback
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp)
+                                        .testTag("admin_type_game"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "🎮 ${stringResource(R.string.admin_type_game)}",
+                                        color = if (isGameSelected) colors.textOnAccent else colors.textPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                val isAppSelected = itemType == StoreCategories.ITEM_TYPE_APP
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .minimumInteractiveComponentSize()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isAppSelected) colors.accent else colors.cardAlt)
+                                        .border(1.dp, if (isAppSelected) colors.accent else colors.border, RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            itemType = StoreCategories.ITEM_TYPE_APP
+                                            if (selectedCategoryItem.type != StoreCategories.ITEM_TYPE_APP) {
+                                                val fallback = allAppCategories.firstOrNull { !it.isHidden }?.let { categoriesRepo.toCategoryItem(it) }
+                                                    ?: StoreCategories.APPS.first()
+                                                selectedCategoryItem = fallback
+                                            }
+                                        }
+                                        .padding(vertical = 10.dp)
+                                        .testTag("admin_type_app"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "📱 ${stringResource(R.string.admin_type_app)}",
+                                        color = if (isAppSelected) colors.textOnAccent else colors.textPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Category Selector with Modal (filtered to selected Item Type)
+                            val selectedCategoryLabel = if (selectedCategoryItem.isCustomName) {
+                                val lang = SettingsRepository.getInstance(context).getEffectiveLanguageCode()
+                                if (lang == "ar" || lang == "fa" || lang == "ur") {
+                                    selectedCategoryItem.titleAr.ifBlank { selectedCategoryItem.titleEn }
+                                } else {
+                                    selectedCategoryItem.titleEn.ifBlank { selectedCategoryItem.titleAr }
+                                }
+                            } else {
+                                stringResource(selectedCategoryItem.titleRes)
+                            }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -875,7 +1034,8 @@ fun AdminPanelScreen(
                                     .background(colors.cardAlt)
                                     .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                                     .clickable { showCategoryModal = true }
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                                    .testTag("admin_category_selector"),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -889,7 +1049,7 @@ fun AdminPanelScreen(
                                         Text(
                                             text = stringResource(
                                                 R.string.admin_select_category_btn,
-                                                stringResource(selectedCategoryItem.titleRes)
+                                                selectedCategoryLabel
                                             ),
                                             color = colors.textPrimary,
                                             fontWeight = FontWeight.Bold,
@@ -1051,6 +1211,7 @@ fun AdminPanelScreen(
                                         if (pickedIconUri != null) {
                                             AsyncImage(
                                                 model = pickedIconUri,
+                                                imageLoader = imageLoader,
                                                 contentDescription = stringResource(R.string.admin_pick_icon_btn),
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
@@ -1058,6 +1219,7 @@ fun AdminPanelScreen(
                                         } else if (apkExtractedIconBytes != null) {
                                             AsyncImage(
                                                 model = apkExtractedIconBytes,
+                                                imageLoader = imageLoader,
                                                 contentDescription = stringResource(R.string.admin_pick_icon_btn),
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
@@ -1065,6 +1227,7 @@ fun AdminPanelScreen(
                                         } else if (storedIconUrl.startsWith("http")) {
                                             AsyncImage(
                                                 model = storedIconUrl,
+                                                imageLoader = imageLoader,
                                                 contentDescription = stringResource(R.string.admin_pick_icon_btn),
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop
@@ -1264,6 +1427,60 @@ fun AdminPanelScreen(
                                 label = stringResource(R.string.admin_abis_label)
                             )
 
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Collapsible Advanced Bundle & Verification Fields
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
+                                    .clickable { showAdvancedInstallerFields = !showAdvancedInstallerFields }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                                    .testTag("admin_advanced_installer_toggle"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "🧩 ${stringResource(R.string.admin_advanced_installer_fields)}",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = if (showAdvancedInstallerFields) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = null,
+                                    tint = colors.accent
+                                )
+                            }
+
+                            AnimatedVisibility(visible = showAdvancedInstallerFields) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    AdminTextField(
+                                        value = sha256Input,
+                                        onValueChange = { sha256Input = it },
+                                        label = stringResource(R.string.admin_sha256_optional)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    AdminTextField(
+                                        value = splitApkUrlsText,
+                                        onValueChange = { splitApkUrlsText = it },
+                                        label = stringResource(R.string.admin_split_urls_optional),
+                                        singleLine = false,
+                                        minLines = 2
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    AdminTextField(
+                                        value = obbUrl,
+                                        onValueChange = { obbUrl = it },
+                                        label = stringResource(R.string.admin_obb_url_optional)
+                                    )
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // UPLOAD PROGRESS (App-scoped Coordinator state)
@@ -1440,6 +1657,236 @@ fun AdminPanelScreen(
                     }
                 }
 
+                // 3.5) CATEGORY MANAGER (Room-backed Add / Rename / Emoji / Reorder / Hide)
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    NeonCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showCategoryManagerSection = !showCategoryManagerSection }
+                                    .testTag("admin_category_manager_toggle"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "🗂️ ${stringResource(R.string.admin_category_manager)}",
+                                        color = colors.textPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.admin_cat_manage_desc),
+                                        color = colors.textSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (showCategoryManagerSection) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = null,
+                                    tint = colors.accent
+                                )
+                            }
+
+                            if (showCategoryManagerSection) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val gamesTabSelected = catManagerTypeTab == StoreCategories.ITEM_TYPE_GAME
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .minimumInteractiveComponentSize()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (gamesTabSelected) colors.accent else colors.cardAlt)
+                                            .border(1.dp, if (gamesTabSelected) colors.accent else colors.border, RoundedCornerShape(10.dp))
+                                            .clickable { catManagerTypeTab = StoreCategories.ITEM_TYPE_GAME }
+                                            .padding(vertical = 8.dp)
+                                            .testTag("admin_catmgr_tab_games"),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "🎮 ${stringResource(R.string.tab_games)} (${allGameCategories.size})",
+                                            color = if (gamesTabSelected) colors.textOnAccent else colors.textPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    val appsTabSelected = catManagerTypeTab == StoreCategories.ITEM_TYPE_APP
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .minimumInteractiveComponentSize()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (appsTabSelected) colors.accent else colors.cardAlt)
+                                            .border(1.dp, if (appsTabSelected) colors.accent else colors.border, RoundedCornerShape(10.dp))
+                                            .clickable { catManagerTypeTab = StoreCategories.ITEM_TYPE_APP }
+                                            .padding(vertical = 8.dp)
+                                            .testTag("admin_catmgr_tab_apps"),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "📱 ${stringResource(R.string.tab_apps_only)} (${allAppCategories.size})",
+                                            color = if (appsTabSelected) colors.textOnAccent else colors.textPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colors.buttonGradient)
+                                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            catDialogNameEn = ""
+                                            catDialogNameAr = ""
+                                            catDialogEmoji = if (catManagerTypeTab == StoreCategories.ITEM_TYPE_GAME) "🎮" else "📱"
+                                            showAddCategoryDialog = true
+                                        }
+                                        .padding(vertical = 10.dp)
+                                        .testTag("admin_add_category_button"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Add,
+                                            contentDescription = null,
+                                            tint = colors.textOnAccent,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = stringResource(R.string.admin_add_category),
+                                            color = colors.textOnAccent,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (showCategoryManagerSection) {
+                    val managedList = if (catManagerTypeTab == StoreCategories.ITEM_TYPE_GAME) {
+                        allGameCategories
+                    } else {
+                        allAppCategories
+                    }
+                    itemsIndexed(
+                        items = managedList,
+                        key = { _, entity -> "mgr_${entity.key}" },
+                        contentType = { _, _ -> "admin_cat_mgr_row" }
+                    ) { idx, entity ->
+                        val titleText = CategoriesRepository.resolveDisplayTitle(context, entity)
+                        NeonCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = entity.emoji, fontSize = 20.sp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = titleText,
+                                            color = colors.textPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (entity.isHidden) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = stringResource(R.string.admin_cat_hidden_badge),
+                                                color = colors.warning,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = "${entity.nameEn} • #${idx + 1}",
+                                        color = colors.textMuted,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { onMoveCategory(entity.key, entity.type, true) },
+                                    enabled = idx > 0
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ArrowUpward,
+                                        contentDescription = stringResource(R.string.admin_move_up),
+                                        tint = if (idx > 0) colors.accent else colors.textMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onMoveCategory(entity.key, entity.type, false) },
+                                    enabled = idx < managedList.lastIndex
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ArrowDownward,
+                                        contentDescription = stringResource(R.string.admin_move_down),
+                                        tint = if (idx < managedList.lastIndex) colors.accent else colors.textMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        catDialogNameEn = entity.nameEn
+                                        catDialogNameAr = entity.nameAr
+                                        catDialogEmoji = entity.emoji
+                                        editingCategoryEntity = entity
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = stringResource(R.string.admin_rename_category),
+                                        tint = colors.accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onToggleCategoryHidden(entity.key, !entity.isHidden) }
+                                ) {
+                                    Icon(
+                                        imageVector = if (entity.isHidden) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = stringResource(
+                                            if (entity.isHidden) R.string.admin_cat_show else R.string.admin_cat_hide
+                                        ),
+                                        tint = if (entity.isHidden) colors.warning else colors.textSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // 4) APPS LIST
                 item {
                     Spacer(modifier = Modifier.height(20.dp))
@@ -1452,7 +1899,11 @@ fun AdminPanelScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                items(apps, key = { it.id }) { app ->
+                items(
+                    items = apps,
+                    key = { it.id },
+                    contentType = { "admin_app_row" }
+                ) { app ->
                     NeonCard(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1478,6 +1929,7 @@ fun AdminPanelScreen(
                                     if (!app.iconUrl.isNullOrBlank() && app.iconUrl.startsWith("http")) {
                                         AsyncImage(
                                             model = app.iconUrl,
+                                            imageLoader = imageLoader,
                                             contentDescription = app.nameAr,
                                             modifier = Modifier
                                                 .fillMaxSize()
@@ -1601,13 +2053,26 @@ fun AdminPanelScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     val q = categorySearchQuery.trim().lowercase()
-                    val filteredCategories = remember(q) {
-                        if (q.isEmpty()) {
-                            StoreCategories.ALL_SELECTIONS
+                    val typeSourceCategories = remember(itemType, allGameCategories, allAppCategories) {
+                        val roomVisible = if (itemType == StoreCategories.ITEM_TYPE_GAME) {
+                            allGameCategories.filter { !it.isHidden }
                         } else {
-                            StoreCategories.ALL_SELECTIONS.filter { cat ->
+                            allAppCategories.filter { !it.isHidden }
+                        }
+                        if (roomVisible.isNotEmpty()) {
+                            roomVisible.map { categoriesRepo.toCategoryItem(it) }
+                        } else {
+                            if (itemType == StoreCategories.ITEM_TYPE_GAME) StoreCategories.GAMES else StoreCategories.APPS
+                        }
+                    }
+                    val filteredCategories = remember(q, typeSourceCategories) {
+                        if (q.isEmpty()) {
+                            typeSourceCategories
+                        } else {
+                            typeSourceCategories.filter { cat ->
                                 context.getString(cat.titleRes).lowercase().contains(q) ||
                                     cat.titleEn.lowercase().contains(q) ||
+                                    cat.titleAr.lowercase().contains(q) ||
                                     cat.key.lowercase().contains(q)
                             }
                         }
@@ -1628,8 +2093,22 @@ fun AdminPanelScreen(
                                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                                 )
                             }
-                            items(groupItems) { cat ->
+                            items(
+                                items = groupItems,
+                                key = { it.key },
+                                contentType = { "admin_cat_pick" }
+                            ) { cat ->
                                 val isSelected = selectedCategoryItem.key.lowercase() == cat.key.lowercase()
+                                val catTitleText = if (cat.isCustomName) {
+                                    val lang = SettingsRepository.getInstance(context).getEffectiveLanguageCode()
+                                    if (lang == "ar" || lang == "fa" || lang == "ur") {
+                                        cat.titleAr.ifBlank { cat.titleEn }
+                                    } else {
+                                        cat.titleEn.ifBlank { cat.titleAr }
+                                    }
+                                } else {
+                                    stringResource(cat.titleRes)
+                                }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1653,7 +2132,7 @@ fun AdminPanelScreen(
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column {
                                             Text(
-                                                text = stringResource(cat.titleRes),
+                                                text = catTitleText,
                                                 color = colors.textPrimary,
                                                 fontSize = 13.sp,
                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
@@ -1680,6 +2159,111 @@ fun AdminPanelScreen(
                 }
             }
         }
+    }
+
+    // Add Custom Category Dialog
+    if (showAddCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            containerColor = colors.card,
+            title = {
+                Text(
+                    text = stringResource(R.string.admin_add_category),
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AdminTextField(
+                        value = catDialogNameEn,
+                        onValueChange = { catDialogNameEn = it },
+                        label = stringResource(R.string.admin_cat_name_en)
+                    )
+                    AdminTextField(
+                        value = catDialogNameAr,
+                        onValueChange = { catDialogNameAr = it },
+                        label = stringResource(R.string.admin_cat_name_ar)
+                    )
+                    AdminTextField(
+                        value = catDialogEmoji,
+                        onValueChange = { catDialogEmoji = it },
+                        label = stringResource(R.string.admin_cat_emoji)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (catDialogNameEn.isNotBlank() || catDialogNameAr.isNotBlank()) {
+                            onAddCategory(catDialogNameEn, catDialogNameAr, catDialogEmoji, catManagerTypeTab)
+                            showAddCategoryDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                ) {
+                    Text(stringResource(R.string.confirm), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) {
+                    Text(stringResource(R.string.cancel), color = colors.textMuted)
+                }
+            }
+        )
+    }
+
+    // Rename / Edit Emoji Category Dialog
+    val catToEdit = editingCategoryEntity
+    if (catToEdit != null) {
+        AlertDialog(
+            onDismissRequest = { editingCategoryEntity = null },
+            containerColor = colors.card,
+            title = {
+                Text(
+                    text = stringResource(R.string.admin_rename_category),
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AdminTextField(
+                        value = catDialogNameEn,
+                        onValueChange = { catDialogNameEn = it },
+                        label = stringResource(R.string.admin_cat_name_en)
+                    )
+                    AdminTextField(
+                        value = catDialogNameAr,
+                        onValueChange = { catDialogNameAr = it },
+                        label = stringResource(R.string.admin_cat_name_ar)
+                    )
+                    AdminTextField(
+                        value = catDialogEmoji,
+                        onValueChange = { catDialogEmoji = it },
+                        label = stringResource(R.string.admin_cat_emoji)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (catDialogNameEn.isNotBlank() || catDialogNameAr.isNotBlank()) {
+                            onUpdateCategory(catToEdit.key, catDialogNameEn, catDialogNameAr, catDialogEmoji)
+                            editingCategoryEntity = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                ) {
+                    Text(stringResource(R.string.confirm), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingCategoryEntity = null }) {
+                    Text(stringResource(R.string.cancel), color = colors.textMuted)
+                }
+            }
+        )
     }
 
     // Alerts
@@ -1749,6 +2333,7 @@ fun AdminPanelScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                     AsyncImage(
                         model = fullscreenPreviewUrl,
+                        imageLoader = imageLoader,
                         contentDescription = stringResource(R.string.screenshots),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1918,6 +2503,8 @@ private fun ScreenshotPreviewThumb(
     onClick: () -> Unit
 ) {
     val colors = PrimeTheme.colors
+    val context = LocalContext.current
+    val imageLoader = remember(context) { StoreImageLoader.get(context) }
     Box(
         modifier = Modifier
             .size(90.dp, 130.dp)
@@ -1928,6 +2515,7 @@ private fun ScreenshotPreviewThumb(
     ) {
         AsyncImage(
             model = model,
+            imageLoader = imageLoader,
             contentDescription = stringResource(R.string.screenshots),
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop

@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,10 +35,13 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -58,6 +63,7 @@ import com.example.R
 import com.example.data.model.AppItem
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
+import com.example.ui.components.pressScaleClickable
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.PrimeTheme
 
@@ -70,11 +76,14 @@ data class InstalledAppItemState(
     val hasUpdate: Boolean
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdatesAndInstalledScreen(
     initialTab: Int = 0,
     installedApps: List<InstalledAppItemState>,
     isRefreshing: Boolean = false,
+    updatesListState: LazyListState = rememberLazyListState(),
+    installedListState: LazyListState = rememberLazyListState(),
     onRefresh: () -> Unit,
     onAppClick: (String) -> Unit,
     onUpdateApp: (String) -> Unit,
@@ -85,7 +94,7 @@ fun UpdatesAndInstalledScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = PrimeTheme.colors
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
     var appToUninstall by remember { mutableStateOf<InstalledAppItemState?>(null) }
     val updatesList = remember(installedApps) { installedApps.filter { it.hasUpdate } }
 
@@ -109,7 +118,9 @@ fun UpdatesAndInstalledScreen(
             ) {
                 IconButton(
                     onClick = onBackClick,
-                    modifier = Modifier.testTag("updates_back_button")
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("updates_back_button")
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -134,7 +145,9 @@ fun UpdatesAndInstalledScreen(
 
             IconButton(
                 onClick = onRefresh,
-                modifier = Modifier.testTag("updates_refresh_button")
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .testTag("updates_refresh_button")
             ) {
                 Icon(
                     imageVector = Icons.Filled.Refresh,
@@ -164,6 +177,7 @@ fun UpdatesAndInstalledScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
+                            .minimumInteractiveComponentSize()
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (selectedTab == 0) colors.accent else Color.Transparent)
                             .clickable { selectedTab = 0 }
@@ -174,7 +188,7 @@ fun UpdatesAndInstalledScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = stringResource(R.string.updates_tab_title),
-                                color = if (selectedTab == 0) colors.textOnAccent else colors.textMuted,
+                                color = if (selectedTab == 0) colors.textOnAccent else colors.textSecondary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -201,6 +215,7 @@ fun UpdatesAndInstalledScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
+                            .minimumInteractiveComponentSize()
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (selectedTab == 1) colors.accent else Color.Transparent)
                             .clickable { selectedTab = 1 }
@@ -210,7 +225,7 @@ fun UpdatesAndInstalledScreen(
                     ) {
                         Text(
                             text = stringResource(R.string.installed_tab_title, installedApps.size),
-                            color = if (selectedTab == 1) colors.textOnAccent else colors.textMuted,
+                            color = if (selectedTab == 1) colors.textOnAccent else colors.textSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -221,138 +236,153 @@ fun UpdatesAndInstalledScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // TAB 0: Updates
-        if (selectedTab == 0) {
-            if (updatesList.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "✨", fontSize = 54.sp)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = stringResource(R.string.app_updates_all_up_to_date),
-                            color = colors.textPrimary,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = stringResource(R.string.no_updates_subtitle),
-                            color = colors.textMuted,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Update All Header
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(colors.cardAlt)
-                                .border(1.dp, colors.border, RoundedCornerShape(14.dp))
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.updates_count_header, updatesList.size),
-                                    color = colors.textPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = stringResource(R.string.update_all_desc),
-                                    color = colors.textMuted,
-                                    fontSize = 12.sp
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .testTag("update_all_button")
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(colors.buttonGradient)
-                                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                                    .clickable { onUpdateAll() }
-                                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.update_all_btn),
-                                    color = colors.textOnAccent,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            if (selectedTab == 0) {
+                if (updatesList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "✨", fontSize = 54.sp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = stringResource(R.string.app_updates_all_up_to_date),
+                                color = colors.textPrimary,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = stringResource(R.string.no_updates_subtitle),
+                                color = colors.textSecondary,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
+                } else {
+                    LazyColumn(
+                        state = updatesListState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item(key = "update_all_header", contentType = "header") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.border, RoundedCornerShape(14.dp))
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.updates_count_header, updatesList.size),
+                                        color = colors.textPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.update_all_desc),
+                                        color = colors.textSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .minimumInteractiveComponentSize()
+                                        .testTag("update_all_button")
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colors.buttonGradient)
+                                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
+                                        .pressScaleClickable(withHaptic = true) { onUpdateAll() }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.update_all_btn),
+                                        color = colors.textOnAccent,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
 
-                    items(updatesList, key = { it.app.id }) { item ->
-                        UpdateAppCard(
-                            item = item,
-                            onClick = { onAppClick(item.app.id) },
-                            onUpdate = { onUpdateApp(item.app.id) },
-                            onUninstall = { appToUninstall = item }
-                        )
-                    }
-                }
-            }
-        }
-        // TAB 1: Installed Apps
-        else {
-            if (installedApps.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "📦", fontSize = 54.sp)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = stringResource(R.string.no_installed_apps_title),
-                            color = colors.textPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = stringResource(R.string.no_installed_apps_desc),
-                            color = colors.textMuted,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
-                        )
+                        items(
+                            items = updatesList,
+                            key = { "upd_${it.app.id}" },
+                            contentType = { "update_card" }
+                        ) { item ->
+                            UpdateAppCard(
+                                item = item,
+                                onClick = { onAppClick(item.app.id) },
+                                onUpdate = { onUpdateApp(item.app.id) },
+                                onUninstall = { appToUninstall = item },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(installedApps, key = { it.app.id }) { item ->
-                        InstalledAppCard(
-                            item = item,
-                            onClick = { onAppClick(item.app.id) },
-                            onOpen = { onOpenApp(item.installedPackageName) },
-                            onUninstall = { appToUninstall = item }
-                        )
+                if (installedApps.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "📦", fontSize = 54.sp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = stringResource(R.string.no_installed_apps_title),
+                                color = colors.textPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = stringResource(R.string.no_installed_apps_desc),
+                                color = colors.textSecondary,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        state = installedListState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(
+                            items = installedApps,
+                            key = { "inst_${it.app.id}" },
+                            contentType = { "installed_card" }
+                        ) { item ->
+                            InstalledAppCard(
+                                item = item,
+                                onClick = { onAppClick(item.app.id) },
+                                onOpen = { onOpenApp(item.installedPackageName) },
+                                onUninstall = { appToUninstall = item },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
                     }
                 }
             }
@@ -410,13 +440,21 @@ fun UpdateAppCard(
     item: InstalledAppItemState,
     onClick: () -> Unit,
     onUpdate: () -> Unit,
-    onUninstall: () -> Unit
+    onUninstall: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val colors = PrimeTheme.colors
     var expandedChangelog by remember { mutableStateOf(false) }
 
+    val safeVersion = remember(item.app.version) {
+        item.app.version.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "1.0.0"
+    }
+    val safeChangelog = remember(item.app.changelog) {
+        item.app.changelog?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+    }
+
     NeonCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         hasGlow = true,
         onClick = onClick
@@ -456,7 +494,7 @@ fun UpdateAppCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "v${item.installedVersionName}",
-                                color = colors.textMuted,
+                                color = colors.textSecondary,
                                 fontSize = 12.sp
                             )
                             Text(
@@ -466,7 +504,7 @@ fun UpdateAppCard(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "v${item.app.version}",
+                                text = "v$safeVersion",
                                 color = colors.success,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -478,7 +516,7 @@ fun UpdateAppCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = onUninstall,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.minimumInteractiveComponentSize()
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
@@ -492,10 +530,12 @@ fun UpdateAppCard(
 
                     Box(
                         modifier = Modifier
+                            .minimumInteractiveComponentSize()
                             .clip(RoundedCornerShape(12.dp))
                             .background(colors.buttonGradient)
-                            .clickable { onUpdate() }
-                            .padding(horizontal = 14.dp, vertical = 7.dp)
+                            .pressScaleClickable(withHaptic = true) { onUpdate() }
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -517,8 +557,7 @@ fun UpdateAppCard(
             }
 
             // Changelog toggle
-            val changelogText = item.app.changelog?.ifBlank { null }
-                ?: stringResource(R.string.whats_new_default)
+            val changelogText = safeChangelog ?: stringResource(R.string.whats_new_default)
 
             Spacer(modifier = Modifier.height(8.dp))
             Row(
@@ -570,11 +609,12 @@ fun InstalledAppCard(
     item: InstalledAppItemState,
     onClick: () -> Unit,
     onOpen: () -> Unit,
-    onUninstall: () -> Unit
+    onUninstall: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val colors = PrimeTheme.colors
     NeonCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         hasGlow = false,
         onClick = onClick
@@ -609,17 +649,16 @@ fun InstalledAppCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = stringResource(R.string.installed_version_label, item.installedVersionName),
-                        color = colors.textMuted,
+                        color = colors.textSecondary,
                         fontSize = 11.sp
                     )
                 }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Uninstall button
                 IconButton(
                     onClick = onUninstall,
-                    modifier = Modifier.size(34.dp)
+                    modifier = Modifier.minimumInteractiveComponentSize()
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Delete,
@@ -629,16 +668,17 @@ fun InstalledAppCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
-                // Open App button
                 Box(
                     modifier = Modifier
+                        .minimumInteractiveComponentSize()
                         .clip(RoundedCornerShape(10.dp))
                         .background(colors.cardAlt)
                         .border(1.dp, colors.border, RoundedCornerShape(10.dp))
-                        .clickable { onOpen() }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .pressScaleClickable(withHaptic = true) { onOpen() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(

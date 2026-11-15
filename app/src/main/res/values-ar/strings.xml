@@ -577,4 +577,154 @@
     <string name="self_check_gh_repo">4. الاتصال بمستودع GitHub</string>
     <string name="self_check_apps_write">5. صلاحية الكتابة على apps</string>
     <string name="admin_publish_success_draft_cleared">تم النشر والحفظ في المتجر بنجاح ✔</string>
+
+    <!-- Live Sync & Unified Category Hubs -->
+    <string name="new_apps_added_banner">تمت إضافة تطبيقات جديدة</string>
+    <string name="new_apps_added_count">تمت إضافة %1$d تطبيقات جديدة</string>
+    <string name="new_apps_added_tap">اضغط للعرض</string>
+    <string name="hub_all_apps_title">كل التطبيقات</string>
+    <string name="hub_all_games_title">كل الألعاب</string>
+    <string name="chip_all_with_count">الكل (%1$d)</string>
+    <string name="category_chip_with_count">%1$s (%2$d)</string>
+    <string name="sync_updating_label">جاري مزامنة المتجر…</string>
+
+    <!-- Action State, Storage, Notifications, Share & Diagnostics -->
+    <string name="installing_dots">جاري التثبيت…</string>
+    <string name="install_anyway_reinstall">تثبيت على أي حال / إعادة التثبيت</string>
+    <string name="app_no_launch_screen">هذا التطبيق لا يحتوي على شاشة تشغيل</string>
+    <string name="uninstall_cancelled">تم إلغاء إلغاء التثبيت</string>
+    <string name="delete_apk_after_install">حذف ملف APK بعد التثبيت</string>
+    <string name="delete_apk_after_install_desc">حذف حزمة التثبيت تلقائياً بعد التثبيت لتوفير المساحة</string>
+    <string name="manage_storage">إدارة التخزين</string>
+    <string name="storage_breakdown_subtitle">المؤقتة: %1$s • ملفات APK: %2$s</string>
+    <string name="clear_temp_cache">مسح الذاكرة المؤقتة</string>
+    <string name="clear_temp_cache_desc">حذف الملفات المؤقتة وذاكرة الصور (%1$s)</string>
+    <string name="delete_downloaded_apks">حذف ملفات APK المحملة</string>
+    <string name="delete_downloaded_apks_desc">إزالة حزم التثبيت المخزنة (%1$s)</string>
+    <string name="delete_downloaded_apks_confirm">هل تريد حذف جميع ملفات APK المحملة (%1$s)؟</string>
+    <string name="apks_deleted_toast">تم حذف %1$s من ملفات APK المحملة 🗑️</string>
+    <string name="notifications_perm_denied">تم رفض إذن الإشعارات. يمكنك تفعيله من إعدادات النظام.</string>
+    <string name="open_notification_settings">إعدادات الإشعارات</string>
+    <string name="downloading_translation_model">جاري تنزيل حزمة الترجمة (%1$s ← %2$s)…</string>
+    <string name="share_store_text">جرّب متجر %1$s — تطبيقات وألعاب مميزة مع تحديثات فورية وترجمة ذكية!</string>
+    <string name="share_app_text">اكتشف %1$s (%2$s) على متجر Prime Store!</string>
+    <string name="diagnostics_title">التشخيص والتقارير</string>
+    <string name="diagnostics_subtitle">فحص المزامنة ومعلومات الجهاز وسجل الأخطاء</string>
+    <string name="copy_report">نسخ التقرير</string>
+    <string name="report_copied">تم نسخ تقرير التشخيص ✔</string>
+    <string name="diag_store_version">إصدار المتجر</string>
+    <string name="diag_android_version">إصدار أندرويد</string>
+    <string name="diag_device_lang">لغة الجهاز</string>
+    <string name="diag_app_lang">لغة التطبيق</string>
+    <string name="diag_abis">المعماريات المدعومة</string>
+    <string name="diag_room_count">التطبيقات المخزنة محلياً</string>
+    <string name="diag_last_sync">آخر مزامنة</string>
+    <string name="diag_gh_token">حالة مفتاح GitHub</string>
+    <string name="diag_recent_errors">الأخطاء الأخيرة</string>
+    <string name="diag_yes">مضبوط</string>
+    <string name="diag_no">غير مضبوط</string>
+    <string name="diag_never">لم تتم بعد</string>
+    <string name="diag_none">لا توجد أخطاء</string>
+
+    <!-- Smooth Installer, Badges, Notifications & Split/OBB -->
+    <string name="badge_installed">مثبّت</string>
+    <string name="toast_app_installed_fmt">%1$s — تم التثبيت ✔</string>
+    <string name="notif_installed_channel_name">تثبيت التطبيقات</string>
+    <string name="notif_installed_channel_desc">إشعارات عند اكتمال تثبيت التطبيقات والألعاب</string>
+    <string name="notif_installed_title">تم التثبيت</string>
+    <string name="notif_installed_tap_open">اضغط لفتح %1$s</string>
+    <string name="install_perm_why_title">السماح بتثبيت التطبيقات</string>
+    <string name="install_perm_why_1">1. يقوم Prime Store بتنزيل الحزمة الرسمية والتحقق من سلامتها عبر SHA-256.</string>
+    <string name="install_perm_why_2">2. يتطلب نظام أندرويد موافقتك مرة واحدة ليتمكن المتجر من تشغيل مثبّت النظام تلقائياً.</string>
+    <string name="install_perm_why_3">3. تبقى المتحكم دائماً — يطلب أندرويد تأكيدك عند التثبيت لأول مرة.</string>
+    <string name="install_perm_open_settings">السماح والمتابعة</string>
+    <string name="verifying_sha256">جاري التحقق من سلامة الملف…</string>
+    <string name="sha256_mismatch_error">بصمة SHA-256 غير مطابقة! قد يكون الملف تالفاً.</string>
+    <string name="downloading_split_part">جاري تحميل الجزء %1$d/%2$d…</string>
+    <string name="downloading_obb_progress">جاري تحميل بيانات اللعبة (OBB) %1$d%%…</string>
+    <string name="obb_scoped_storage_hint">تم حفظ بيانات اللعبة في مجلد التطبيق (قيود التخزين المقيد في أندرويد 11+).</string>
+    <string name="silent_install_mode_title">وضع التثبيت الصامت (Shizuku / Root)</string>
+    <string name="silent_install_mode_desc">محاولة التثبيت الصامت عبر Shizuku أو صلاحية الروت عند توفرها (مع الرجوع للمثبت القياسي)</string>
+    <string name="silent_install_unavailable">خدمة Shizuku أو الروت غير متوفرة — سيتم استخدام المثبت القياسي</string>
+
+    <!-- Home Tabs & Scoped Search -->
+    <string name="tab_games">ألعاب</string>
+    <string name="tab_apps_only">تطبيقات</string>
+    <string name="search_scope_games">البحث في الألعاب</string>
+    <string name="search_scope_apps">البحث في التطبيقات</string>
+    <string name="search_scope_all">البحث في الكل</string>
+
+    <!-- Admin Item Type, Category Manager & Advanced Installer Fields -->
+    <string name="admin_item_type_label">النوع (لعبة / تطبيق) *</string>
+    <string name="admin_type_game">لعبة</string>
+    <string name="admin_type_app">تطبيق</string>
+    <string name="admin_category_manager">إدارة التصنيفات</string>
+    <string name="admin_cat_manage_desc">إضافة أو تعديل أو ترتيب أو تغيير أيقونة أو إخفاء تصنيفات الألعاب والتطبيقات</string>
+    <string name="admin_add_category">إضافة تصنيف</string>
+    <string name="admin_rename_category">تعديل التصنيف</string>
+    <string name="admin_cat_name_en">الاسم بالإنجليزية</string>
+    <string name="admin_cat_name_ar">الاسم بالعربية</string>
+    <string name="admin_cat_emoji">الأيقونة / الإيموجي</string>
+    <string name="admin_cat_hide">إخفاء</string>
+    <string name="admin_cat_show">إظهار</string>
+    <string name="admin_cat_hidden_badge">مخفي</string>
+    <string name="admin_move_up">تحريك لأعلى</string>
+    <string name="admin_move_down">تحريك لأسفل</string>
+    <string name="admin_sha256_optional">بصمة SHA-256 (اختياري)</string>
+    <string name="admin_split_urls_optional">روابط حزم Split APK (مفصولة بفاصلة أو سطر، اختياري)</string>
+    <string name="admin_obb_url_optional">رابط ملف OBB (اختياري)</string>
+    <string name="admin_advanced_installer_fields">خيارات الحزم المتقدمة والتحقق (اختياري)</string>
+
+    <!-- Expanded Games Categories (40) -->
+    <string name="cat_game_football">كرة القدم</string>
+    <string name="cat_game_shooter">إطلاق نار</string>
+    <string name="cat_game_battle_royale">باتل رويال</string>
+    <string name="cat_game_survival">البقاء على قيد الحياة</string>
+    <string name="cat_game_war">حرب ومعارك</string>
+    <string name="cat_game_mmorpg">تقمص أدوار جماعي (MMORPG)</string>
+    <string name="cat_game_fighting">قتال</string>
+    <string name="cat_game_horror">رعب</string>
+    <string name="cat_game_platformer">منصات</string>
+    <string name="cat_game_open_world">عالم مفتوح</string>
+    <string name="cat_game_idle">ألعاب خاملة ونقر</string>
+    <string name="cat_game_tower_defense">دفاع عن البرج</string>
+    <string name="cat_game_stealth">تسلل</string>
+    <string name="cat_game_sandbox">صندوق الرمل وبناء</string>
+    <string name="cat_game_fishing">صيد الأسماك</string>
+    <string name="cat_game_hunting">صيد</string>
+    <string name="cat_game_cooking">طبخ</string>
+    <string name="cat_game_dress_up">تلبيس وأزياء</string>
+    <string name="cat_game_kids">ألعاب أطفال</string>
+    <string name="cat_game_offline">بدون إنترنت</string>
+    <string name="cat_game_multiplayer">لعب جماعي</string>
+    <string name="cat_mods">تعديلات الألعاب (Mods)</string>
+
+    <!-- Expanded Apps Categories (54) -->
+    <string name="cat_photo_editors">محررات الصور</string>
+    <string name="cat_browsers">متصفحات الويب</string>
+    <string name="cat_screen_recorders">مسجلات الشاشة</string>
+    <string name="cat_wallpapers">خلفيات الشاشة</string>
+    <string name="cat_themes_launchers">السمات واللانشرات</string>
+    <string name="cat_icon_packs">حزم الأيقونات</string>
+    <string name="cat_keyboards">لوحات المفاتيح</string>
+    <string name="cat_fonts">الخطوط</string>
+    <string name="cat_file_managers">مديرو الملفات</string>
+    <string name="cat_cleaners_boosters">التنظيف وتسريع الجهاز</string>
+    <string name="cat_security_antivirus">الحماية ومكافحة الفيروسات</string>
+    <string name="cat_vpn">VPN والخصوصية</string>
+    <string name="cat_battery_savers">توفير البطارية</string>
+    <string name="cat_office_documents">المكتب والمستندات</string>
+    <string name="cat_notes">الملاحظات والقوائم</string>
+    <string name="cat_calendar">التقويم والمهام</string>
+    <string name="cat_languages_translators">اللغات والترجمة</string>
+    <string name="cat_live_tv_streaming">البث المباشر والتلفاز</string>
+    <string name="cat_developer_tools">أدوات المطورين</string>
+    <string name="cat_widgets">الويدجت</string>
+    <string name="cat_qr_scanners">ماسح QR والباركود</string>
+    <string name="cat_pdf_tools">أدوات PDF</string>
+    <string name="cat_downloaders">مديرو التحميل</string>
+    <string name="cat_gallery">المعرض والألبومات</string>
+    <string name="cat_clock_alarm">الساعة والمنبه</string>
+    <string name="cat_calculators">الآلات الحاسبة</string>
+    <string name="cat_social_media_tools">أدوات التواصل الاجتماعي</string>
 </resources>

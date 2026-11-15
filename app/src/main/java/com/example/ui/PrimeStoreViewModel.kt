@@ -1,9 +1,14 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.StatFs
+import androidx.activity.result.ActivityResultLauncher
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
@@ -18,19 +23,26 @@ import com.example.data.github.StoreSelfUpdater
 import com.example.data.github.StoreUpdateCheckResult
 import com.example.data.installer.ApkInstaller
 import com.example.data.installer.InstallPrecheckResult
+import com.example.data.installer.PackageEventBus
 import com.example.data.installer.PackageHelper
-import com.example.data.local.CachedAppEntity
+import com.example.data.installer.PackageInstallEvent
+import com.example.data.local.CategoryEntity
 import com.example.data.local.PrimeStoreDatabase
 import com.example.data.local.ProblemReportEntity
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
 import com.example.data.model.CategoryItem
 import com.example.data.model.DownloadItem
+import com.example.data.model.InstalledPackageSummary
 import com.example.data.model.ReviewItem
 import com.example.data.model.StoreCategories
 import com.example.data.model.StoreUpdateInfo
+import com.example.data.repository.AppsRepository
+import com.example.data.repository.CategoriesRepository
 import com.example.data.repository.PrimeStoreRepository
+import com.example.data.supabase.SecureLogger
 import com.example.data.supabase.SupabaseClient
+import com.example.data.sync.SyncManager
 import com.example.ui.components.DowngradeData
 import com.example.ui.components.SignatureConflictData
 import com.example.ui.screens.InstalledAppItemState
@@ -43,13 +55,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 enum class MainTab {
     HOME,
@@ -70,6 +83,20 @@ enum class HomeFilterType {
     SMALL_SIZE,
     TOP_RATED,
     NEWEST
+}
+
+enum class HomeSection {
+    GAMES,
+    APPS
+}
+
+sealed interface CategoryDestination {
+    data object AllAppsHub : CategoryDestination
+    data object AllGamesHub : CategoryDestination
+    data class SingleCategory(
+        val category: AppCategory,
+        val categoryItem: CategoryItem? = null
+    ) : CategoryDestination
 }
 
 data class UserProfile(
@@ -99,7 +126,9 @@ data class UiState(
     val wifiOnlyTranslation: Boolean = false,
     val isDarkMode: Boolean = true,
     val notificationsEnabled: Boolean = true,
-    val cacheSize: String = "42.8 MB",
+    val deleteApkAfterInstall: Boolean = true,
+    val cacheSize: String = "0 KB",
+    val apksSize: String = "0 KB",
     val downloadFilterTab: Int = 0,
     val categorySortOrder: SortOrder = SortOrder.POPULAR,
     val homeFilterType: HomeFilterType = HomeFilterType.ALL,
@@ -124,6 +153,8 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
     val repository = PrimeStoreRepository(application)
     private val database = PrimeStoreDatabase.getInstance(application)
+    private val syncManager = SyncManager.getInstance(application)
+    private val categoriesRepository = CategoriesRepository.getInstance(application)
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -136,45 +167,148 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     val toastEvents = repository.toastEvents
     val githubTokenStatus: StateFlow<GitHubTokenStatusSnapshot> = GitHubTokenProvider.status
     val adminPublishState: StateFlow<AdminPublishState> = AdminPublishCoordinator.state
+    val isSyncing: StateFlow<Boolean> = syncManager.isSyncing
+    val newAppsAddedCount: StateFlow<Int> = syncManager.newAppsAddedCount
+    val lastSyncTimeMillis: StateFlow<Long> = syncManager.lastSyncTimeMillis
+    val lastSyncResult: StateFlow<String> = syncManager.lastSyncResult
+
+    val visibleGameCategories: StateFlow<List<CategoryEntity>> = categoriesRepository.visibleGameCategories
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val visibleAppCategories: StateFlow<List<CategoryEntity>> = categoriesRepository.visibleAppCategories
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allGameCategories: StateFlow<List<CategoryEntity>> = categoriesRepository.allGameCategories
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allAppCategories: StateFlow<List<CategoryEntity>> = categoriesRepository.allAppCategories
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _homeSection = MutableStateFlow(HomeSection.GAMES)
+    val homeSection: StateFlow<HomeSection> = _homeSection.asStateFlow()
+
+    private val _searchAllTabs = MutableStateFlow(false)
+    val searchAllTabs: StateFlow<Boolean> = _searchAllTabs.asStateFlow()
 
     private var pendingReturnToAdminAfterLogin: Boolean = false
 
     // =========================================================================
-    // 1) Installed Apps & Updates State
+    // 1) Installed Apps, Downloaded APKs & Updates State (Precomputed on IO)
     // =========================================================================
     private val _installedAppsState = MutableStateFlow<List<InstalledAppItemState>>(emptyList())
     val installedAppsState: StateFlow<List<InstalledAppItemState>> = _installedAppsState.asStateFlow()
 
+    private val _installedPkgByAppId = MutableStateFlow<Map<String, InstalledPackageSummary>>(emptyMap())
+    val installedPkgByAppId: StateFlow<Map<String, InstalledPackageSummary>> = _installedPkgByAppId.asStateFlow()
+
+    private val _downloadedReadyIds = MutableStateFlow<Set<String>>(emptySet())
+    val downloadedReadyIds: StateFlow<Set<String>> = _downloadedReadyIds.asStateFlow()
+
+    private val _installingAppIds = MutableStateFlow<Set<String>>(emptySet())
+    val installingAppIds: StateFlow<Set<String>> = _installingAppIds.asStateFlow()
+
+    private val _signatureConflictAppIds = MutableStateFlow<Set<String>>(emptySet())
+    val signatureConflictAppIds: StateFlow<Set<String>> = _signatureConflictAppIds.asStateFlow()
+
     private val _isRefreshingInstalledApps = MutableStateFlow(false)
     val isRefreshingInstalledApps: StateFlow<Boolean> = _isRefreshingInstalledApps.asStateFlow()
+
+    private val _isPullRefreshing = MutableStateFlow(false)
+    val isPullRefreshing: StateFlow<Boolean> = _isPullRefreshing.asStateFlow()
+
+    // Category Hub navigation & filter state
+    private val _categoryDestination = MutableStateFlow<CategoryDestination?>(null)
+    val categoryDestination: StateFlow<CategoryDestination?> = _categoryDestination.asStateFlow()
+
+    private val _selectedHubFilterKey = MutableStateFlow("all")
+    val selectedHubFilterKey: StateFlow<String> = _selectedHubFilterKey.asStateFlow()
 
     // Conflict post-uninstall install continuation
     private var pendingConflictApkFile: File? = null
     private var pendingConflictPackageName: String? = null
+    private var pendingConflictAppId: String? = null
+    private val resolvedPkgWriteCache = HashSet<String>()
+    private var isPackageReceiverRegistered = false
+
+    private val packageBroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val pkg = intent?.data?.schemeSpecificPart?.trim()
+            if (!pkg.isNullOrBlank()) {
+                val matchingIds = apps.value
+                    .filter {
+                        it.packageName.equals(pkg, ignoreCase = true) ||
+                            _installedPkgByAppId.value[it.id]?.packageName.equals(pkg, ignoreCase = true)
+                    }
+                    .map { it.id }
+                    .toSet()
+                if (matchingIds.isNotEmpty()) {
+                    _installingAppIds.value = _installingAppIds.value - matchingIds
+                    _signatureConflictAppIds.value = _signatureConflictAppIds.value - matchingIds
+                }
+            }
+            refreshInstalledApps()
+            refreshDownloadedReadyIds()
+            refreshStorageStats()
+            context?.let { checkAndResumePendingInstallAfterResume(it) }
+        }
+    }
 
     // =========================================================================
-    // 2) Paged Apps & Infinite Scroll State for "كل التطبيقات"
+    // 2) Unified Room-backed Home Feed & Infinite Display Window
     // =========================================================================
-    private val _pagedApps = MutableStateFlow<List<AppItem>>(emptyList())
-    val pagedApps: StateFlow<List<AppItem>> = _pagedApps.asStateFlow()
-
+    private val pageSize = 20
     private val _selectedCategoryKey = MutableStateFlow("all")
     val selectedCategoryKey: StateFlow<String> = _selectedCategoryKey.asStateFlow()
 
-    private val _isInitialLoading = MutableStateFlow(false)
-    val isInitialLoading: StateFlow<Boolean> = _isInitialLoading.asStateFlow()
+    private val _homeDisplayLimit = MutableStateFlow(pageSize)
+
+    private val filteredHomeCatalog = combine(apps, _homeSection, _selectedCategoryKey, _uiState) { allApps, section, catKey, state ->
+        val requiredType = if (section == HomeSection.GAMES) {
+            StoreCategories.ITEM_TYPE_GAME
+        } else {
+            StoreCategories.ITEM_TYPE_APP
+        }
+        val sectionFiltered = if (section == HomeSection.GAMES) {
+            allApps.filter { StoreCategories.isGameApp(it) }
+        } else {
+            allApps.filter { StoreCategories.isNonGameApp(it) }
+        }
+        val categoryFiltered = if (catKey.equals("all", ignoreCase = true)) {
+            sectionFiltered
+        } else {
+            sectionFiltered.filter { StoreCategories.matchesCategoryFilter(it, catKey, requiredType) }
+        }
+        when (state.homeFilterType) {
+            HomeFilterType.ALL -> categoryFiltered
+            HomeFilterType.SMALL_SIZE -> categoryFiltered.filter { app ->
+                if (app.sizeBytes > 0L) {
+                    app.sizeBytes < 35L * 1024L * 1024L
+                } else {
+                    val sizeClean = app.size.trim().lowercase()
+                    sizeClean.contains("kb") || (sizeClean.contains("mb") && (sizeClean.filter { c -> c.isDigit() || c == '.' }.toDoubleOrNull() ?: 100.0) < 35.0)
+                }
+            }
+            HomeFilterType.TOP_RATED -> categoryFiltered.sortedByDescending { it.rating }
+            HomeFilterType.NEWEST -> categoryFiltered.sortedByDescending {
+                maxOf(it.updatedAtMillis, it.createdAtMillis)
+            }
+        }
+    }
+
+    val pagedApps: StateFlow<List<AppItem>> = combine(filteredHomeCatalog, _homeDisplayLimit) { filtered, limit ->
+        filtered.take(limit)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val isInitialLoading: StateFlow<Boolean> = combine(syncManager.isSyncing, apps) { syncing, allApps ->
+        syncing && allApps.isEmpty()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _isLoadingNextPage = MutableStateFlow(false)
     val isLoadingNextPage: StateFlow<Boolean> = _isLoadingNextPage.asStateFlow()
 
-    private val _hasMoreApps = MutableStateFlow(true)
-    val hasMoreApps: StateFlow<Boolean> = _hasMoreApps.asStateFlow()
+    val hasMoreApps: StateFlow<Boolean> = combine(filteredHomeCatalog, _homeDisplayLimit) { filtered, limit ->
+        filtered.size > limit
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _pagedError = MutableStateFlow<String?>(null)
     val pagedError: StateFlow<String?> = _pagedError.asStateFlow()
-
-    private val paginationMutex = Mutex()
-    private val pageSize = 20
 
     // =========================================================================
     // 3) Store Self-Update (GitHub & Supabase)
@@ -198,19 +332,24 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     val storeUpdateDownloadProgress: StateFlow<Float> = _storeUpdateDownloadProgress.asStateFlow()
 
     // =========================================================================
-    // Search
+    // Search (scoped to active Home tab unless "Search All" is toggled)
     // =========================================================================
-    val searchResults: StateFlow<List<AppItem>> = combine(apps, _uiState) { allApps, state ->
+    val searchResults: StateFlow<List<AppItem>> = combine(apps, _uiState, _homeSection, _searchAllTabs) { allApps, state, section, searchAll ->
         val q = state.searchQuery.trim().lowercase()
         if (q.isEmpty()) {
             emptyList()
         } else {
             val appCtx = getApplication<Application>()
-            allApps.filter {
+            val scopedApps = when {
+                searchAll -> allApps
+                section == HomeSection.GAMES -> allApps.filter { StoreCategories.isGameApp(it) }
+                else -> allApps.filter { StoreCategories.isNonGameApp(it) }
+            }
+            scopedApps.filter {
                 it.name.lowercase().contains(q) ||
                         it.nameAr.contains(q) ||
                         StoreCategories.getTitle(appCtx, it.categoryKey).lowercase().contains(q) ||
-                        StoreCategories.find(it.categoryKey).titleEn.lowercase().contains(q) ||
+                        StoreCategories.find(it.categoryKey, it.itemType).titleEn.lowercase().contains(q) ||
                         it.displayCategoryTitle.lowercase().contains(q) ||
                         it.tags.any { tag -> tag.lowercase().contains(q) }
             }
@@ -219,8 +358,13 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
     private val authPrefs = application.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)
     private val settingsRepo = com.example.data.repository.SettingsRepository.getInstance(application)
+    val shizukuRootInstallEnabled: StateFlow<Boolean> = settingsRepo.shizukuRootInstallEnabled
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            categoriesRepository.ensureSeeded()
+        }
+        syncManager.attachToApplication(application)
         GitHubStorageHelper.purgeLegacyLocalToken(application.applicationContext)
         SupabaseClient.init(application.applicationContext)
         SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
@@ -245,31 +389,140 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             themeMode = currentThemeMode.name.lowercase(),
             themeAccent = currentAccent,
             isDarkMode = currentThemeMode != com.example.ui.theme.ThemeMode.LIGHT,
+            notificationsEnabled = settingsRepo.notificationsEnabled.value,
+            deleteApkAfterInstall = settingsRepo.deleteApkAfterInstall.value,
             showOnboarding = isFirstRun
         )
+        refreshStorageStats()
 
-        // Install callback when download finishes
+        // Register dynamic system broadcast receiver for instant install/uninstall updates
+        try {
+            val pkgFilter = IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REPLACED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addDataScheme("package")
+            }
+            ContextCompat.registerReceiver(
+                application,
+                packageBroadcastReceiver,
+                pkgFilter,
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            isPackageReceiverRegistered = true
+        } catch (e: Exception) {
+            SecureLogger.w("PrimeStoreVM", "PKG_RECEIVER", "Failed to register package receiver: ${e.message}")
+        }
+
+        // Collect PackageEventBus install session outcomes
+        viewModelScope.launch {
+            PackageEventBus.events.collect { event ->
+                val appCtx = getApplication<Application>()
+                when (event) {
+                    is PackageInstallEvent.Installing -> {
+                        val ids = buildSet {
+                            if (event.appId.isNotBlank()) add(event.appId)
+                            apps.value.filter { it.packageName.equals(event.packageName, ignoreCase = true) }
+                                .forEach { add(it.id) }
+                        }
+                        if (ids.isNotEmpty()) {
+                            _installingAppIds.value = _installingAppIds.value + ids
+                        }
+                    }
+
+                    is PackageInstallEvent.Success -> {
+                        val ids = buildSet {
+                            if (event.appId.isNotBlank()) add(event.appId)
+                            apps.value.filter { it.packageName.equals(event.packageName, ignoreCase = true) }
+                                .forEach { add(it.id) }
+                        }
+                        _installingAppIds.value = _installingAppIds.value - ids
+                        _signatureConflictAppIds.value = _signatureConflictAppIds.value - ids
+
+                        val matchedApp = apps.value.find {
+                            it.id == event.appId ||
+                                (event.packageName.isNotBlank() && it.packageName.equals(event.packageName, ignoreCase = true))
+                        }
+                        val displayName = matchedApp?.nameAr?.ifBlank { matchedApp.name }
+                            ?: event.packageName.ifBlank { appCtx.getString(R.string.dl_service_default_app) }
+                        emitToast(appCtx.getString(R.string.toast_app_installed_fmt, displayName))
+
+                        if (settingsRepo.deleteApkAfterInstall.value && event.appId.isNotBlank()) {
+                            withContext(Dispatchers.IO) {
+                                ApkInstaller.cleanupAppInstallFiles(appCtx, event.appId)
+                            }
+                        }
+                        refreshInstalledApps()
+                        refreshDownloadedReadyIds()
+                        refreshStorageStats()
+                    }
+
+                    is PackageInstallEvent.SignatureConflict -> {
+                        val ids = buildSet {
+                            if (event.appId.isNotBlank()) add(event.appId)
+                            apps.value.filter { it.packageName.equals(event.packageName, ignoreCase = true) }
+                                .forEach { add(it.id) }
+                        }
+                        _installingAppIds.value = _installingAppIds.value - ids
+                        if (ids.isNotEmpty()) {
+                            _signatureConflictAppIds.value = _signatureConflictAppIds.value + ids
+                        }
+
+                        if (event.appId.isNotBlank()) {
+                            val apkFile = ApkInstaller.findExistingPrimaryInstallFile(appCtx, event.appId)
+                                ?: ApkInstaller.getApkFile(appCtx, event.appId)
+                            if (apkFile.exists() && _uiState.value.conflictDialogData == null) {
+                                val archive = PackageHelper.getArchiveInfo(appCtx, apkFile)
+                                val pkg = event.packageName.ifBlank { archive?.packageName.orEmpty() }
+                                val installed = if (pkg.isNotBlank()) PackageHelper.getInstalledInfo(appCtx, pkg) else null
+                                if (pkg.isNotBlank()) {
+                                    pendingConflictApkFile = apkFile
+                                    pendingConflictPackageName = pkg
+                                    pendingConflictAppId = event.appId
+                                    _uiState.value = _uiState.value.copy(
+                                        conflictDialogData = SignatureConflictData(
+                                            packageName = pkg,
+                                            installedVersionName = installed?.versionName ?: "—",
+                                            newVersionName = archive?.versionName ?: "—",
+                                            apkFilePath = apkFile.absolutePath
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        refreshInstalledApps()
+                    }
+
+                    is PackageInstallEvent.Failure -> {
+                        val ids = buildSet {
+                            if (event.appId.isNotBlank()) add(event.appId)
+                            apps.value.filter { it.packageName.equals(event.packageName, ignoreCase = true) }
+                                .forEach { add(it.id) }
+                        }
+                        _installingAppIds.value = _installingAppIds.value - ids
+                        if (event.message.isNotBlank()) {
+                            emitToast(event.message)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Install callback & local APK cache refresh when download finishes
         repository.onApkDownloadCompleted = { appId, apkFile ->
             val app = getApplication<Application>()
+            refreshDownloadedReadyIds()
+            refreshStorageStats()
             handlePreInstall(appId, apkFile, app)
+        }
+        repository.onLocalApkFilesChanged = {
+            refreshDownloadedReadyIds()
+            refreshStorageStats()
         }
 
         viewModelScope.launch {
-            delay(2000)
+            delay(1400)
             _uiState.value = _uiState.value.copy(showSplash = false)
-        }
-
-        // Offline Room cache loading for instant start
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val cached = database.cachedAppDao().getAllCachedAppsDirect()
-                if (cached.isNotEmpty() && _pagedApps.value.isEmpty()) {
-                    val converted = cached.map { mapCachedToAppItem(it) }
-                    withContext(Dispatchers.Main) {
-                        _pagedApps.value = converted
-                    }
-                }
-            } catch (_: Exception) {}
         }
 
         // Welcome toast if updated
@@ -277,17 +530,33 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             emitToast(msg)
         }
 
-        // Initial fetch for Home infinite scroll
-        loadInitialApps("all")
+        // Start foreground live sync (delta metadata + 20s polling + Realtime WebSocket)
+        syncManager.onForegroundStarted()
 
         // Auto-check store update on startup (max once every 6 hours)
         checkStoreUpdateSilentlyOnStartup()
 
-        // Monitor apps for installed state
+        // Monitor apps & downloads on IO for installed packages & local APKs
         viewModelScope.launch {
             apps.collect {
                 refreshInstalledApps()
+                refreshDownloadedReadyIds()
             }
+        }
+        viewModelScope.launch {
+            downloads.collect {
+                refreshDownloadedReadyIds()
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        if (isPackageReceiverRegistered) {
+            runCatching {
+                getApplication<Application>().unregisterReceiver(packageBroadcastReceiver)
+            }
+            isPackageReceiverRegistered = false
         }
     }
 
@@ -350,126 +619,131 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     // =========================================================================
-    // Infinite Scroll & Pagination Methods
+    // Sync, Display Window & Refresh Methods
     // =========================================================================
 
+    fun setHomeSection(section: HomeSection) {
+        if (_homeSection.value == section) return
+        _homeSection.value = section
+        _selectedCategoryKey.value = "all"
+        _homeDisplayLimit.value = pageSize
+    }
+
     fun selectHomeCategory(categoryKey: String) {
-        if (_selectedCategoryKey.value == categoryKey && _pagedApps.value.isNotEmpty()) return
+        if (_selectedCategoryKey.value.equals(categoryKey, ignoreCase = true)) return
         _selectedCategoryKey.value = categoryKey
-        loadInitialApps(categoryKey)
+        _homeDisplayLimit.value = pageSize
     }
 
     fun loadInitialApps(categoryKey: String = _selectedCategoryKey.value) {
+        _selectedCategoryKey.value = categoryKey
+        _homeDisplayLimit.value = pageSize
         viewModelScope.launch {
-            paginationMutex.withLock {
-                _isInitialLoading.value = true
-                _pagedError.value = null
-                _hasMoreApps.value = true
-            }
-
-            try {
-                val fetched = withContext(Dispatchers.IO) {
-                    SupabaseClient.fetchAppsPaged(
-                        limit = pageSize,
-                        offset = 0,
-                        categoryKey = if (categoryKey == "all") null else categoryKey
-                    )
-                }
-
-                paginationMutex.withLock {
-                    _pagedApps.value = fetched
-                    _hasMoreApps.value = fetched.size >= pageSize
-                    _isInitialLoading.value = false
-                }
-
-                // Cache newly fetched apps in Room database for offline use
-                withContext(Dispatchers.IO) {
-                    try {
-                        val entities = fetched.map { mapAppItemToCached(it) }
-                        database.cachedAppDao().insertApps(entities)
-                    } catch (_: Exception) {}
-                }
-
-                refreshInstalledApps()
-            } catch (e: Exception) {
-                paginationMutex.withLock {
-                    _isInitialLoading.value = false
-                    _pagedError.value = e.message ?: getApplication<Application>().getString(R.string.error_fetch_apps)
-                }
+            _pagedError.value = null
+            val ok = syncManager.syncNow(forceFull = false, suppressNewBanner = true)
+            if (!ok && apps.value.isEmpty()) {
+                _pagedError.value = getApplication<Application>().getString(R.string.error_fetch_apps)
             }
         }
     }
 
     fun loadNextAppsPage() {
-        if (!_hasMoreApps.value || _isLoadingNextPage.value || _isInitialLoading.value) return
+        if (!hasMoreApps.value || _isLoadingNextPage.value) return
+        _isLoadingNextPage.value = true
+        _homeDisplayLimit.value = _homeDisplayLimit.value + pageSize
+        _isLoadingNextPage.value = false
+    }
 
+    fun consumeNewAppsBanner() {
+        syncManager.consumeNewAppsBanner()
+    }
+
+    fun onAppResumed(context: Context) {
+        val savedTag = settingsRepo.languageTag.value
+        val activeLang = settingsRepo.getEffectiveLanguageCode()
+        if (_uiState.value.selectedLanguageTag != savedTag || _uiState.value.currentLanguage != activeLang) {
+            _uiState.value = _uiState.value.copy(
+                selectedLanguageTag = savedTag,
+                currentLanguage = activeLang
+            )
+        }
+        syncManager.onForegroundResumed()
+        checkAndResumePendingInstallAfterResume(context)
+        refreshInstalledApps()
+        refreshDownloadedReadyIds()
+        refreshStorageStats()
+    }
+
+    fun pullToRefresh(silent: Boolean = false) {
+        if (_isPullRefreshing.value) return
         viewModelScope.launch {
-            val offset: Int
-            paginationMutex.withLock {
-                if (!_hasMoreApps.value || _isLoadingNextPage.value) return@launch
-                _isLoadingNextPage.value = true
-                offset = _pagedApps.value.size
-            }
-
-            try {
-                val categoryKey = _selectedCategoryKey.value
-                val fetched = withContext(Dispatchers.IO) {
-                    SupabaseClient.fetchAppsPaged(
-                        limit = pageSize,
-                        offset = offset,
-                        categoryKey = if (categoryKey == "all") null else categoryKey
-                    )
-                }
-
-                paginationMutex.withLock {
-                    val currentList = _pagedApps.value.toMutableList()
-                    val existingIds = currentList.map { it.id }.toSet()
-                    val newUnique = fetched.filter { it.id !in existingIds }
-                    currentList.addAll(newUnique)
-                    _pagedApps.value = currentList
-                    _hasMoreApps.value = fetched.size >= pageSize
-                    _isLoadingNextPage.value = false
-                }
-
-                // Update Room cache
-                withContext(Dispatchers.IO) {
-                    try {
-                        val entities = fetched.map { mapAppItemToCached(it) }
-                        database.cachedAppDao().insertApps(entities)
-                    } catch (_: Exception) {}
-                }
-            } catch (e: Exception) {
-                paginationMutex.withLock {
-                    _isLoadingNextPage.value = false
-                }
+            _isPullRefreshing.value = true
+            _pagedError.value = null
+            syncManager.invalidateEtag()
+            val ok = syncManager.syncNow(forceFull = false, suppressNewBanner = true)
+            _isPullRefreshing.value = false
+            refreshInstalledApps()
+            refreshDownloadedReadyIds()
+            if (!ok && apps.value.isEmpty()) {
+                _pagedError.value = getApplication<Application>().getString(R.string.error_fetch_apps)
+            } else if (!silent && ok) {
+                emitToast(getApplication<Application>().getString(R.string.toast_catalog_refreshed))
             }
         }
     }
 
     fun refreshData() {
-        repository.refreshFromSupabase()
-        refreshPagedApps()
-        refreshInstalledApps()
-        emitToast(getApplication<Application>().getString(R.string.toast_catalog_refreshed))
-    }
-
-    private fun refreshPagedApps() {
-        loadInitialApps(_selectedCategoryKey.value)
+        pullToRefresh(silent = false)
     }
 
     // =========================================================================
-    // Installed Apps & Updates Detection
+    // Installed Apps, Downloaded APKs & Updates Detection
     // =========================================================================
+
+    fun refreshDownloadedReadyIds() {
+        val context = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = HashSet<String>()
+            val catalog = apps.value
+            val appsRepo = AppsRepository.getInstance(context)
+            for (app in catalog) {
+                val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, app.id)
+                if (apkFile != null && apkFile.exists() && apkFile.length() > 0L) {
+                    ids.add(app.id)
+                    if ((app.packageName.isNullOrBlank() || app.packageName.startsWith("com.primestore.")) &&
+                        !resolvedPkgWriteCache.contains(app.id)
+                    ) {
+                        val realPkg = ApkInstaller.getApkPackageName(context, apkFile)?.trim()
+                        if (!realPkg.isNullOrBlank() && realPkg != app.packageName) {
+                            resolvedPkgWriteCache.add(app.id)
+                            appsRepo.updatePackageName(app.id, realPkg)
+                        }
+                    }
+                }
+            }
+            for (dl in downloads.value) {
+                if (dl.isCompleted) {
+                    val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, dl.appId)
+                    if (apkFile != null && apkFile.exists() && apkFile.length() > 0L) {
+                        ids.add(dl.appId)
+                    }
+                }
+            }
+            _downloadedReadyIds.value = ids
+        }
+    }
 
     fun refreshInstalledApps() {
         val context = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshingInstalledApps.value = true
-            val catalog = if (apps.value.isNotEmpty()) apps.value else _pagedApps.value
+            val catalog = apps.value
             val list = mutableListOf<InstalledAppItemState>()
+            val pkgMap = HashMap<String, InstalledPackageSummary>(catalog.size)
+            val appsRepo = AppsRepository.getInstance(context)
 
             for (app in catalog) {
-                val apkFile = ApkInstaller.getApkFile(context, app.id)
+                val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, app.id)
                 val resolvedPkg = ApkInstaller.findInstalledPackage(
                     context,
                     app.name,
@@ -478,10 +752,21 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 )
 
                 if (!resolvedPkg.isNullOrBlank()) {
+                    if ((app.packageName.isNullOrBlank() || app.packageName.startsWith("com.primestore.")) &&
+                        !resolvedPkgWriteCache.contains(app.id)
+                    ) {
+                        resolvedPkgWriteCache.add(app.id)
+                        appsRepo.updatePackageName(app.id, resolvedPkg)
+                    }
                     val installedInfo = PackageHelper.getInstalledInfo(context, resolvedPkg)
                     if (installedInfo != null) {
                         val storeCode = app.versionCode
                         val hasUpdate = storeCode > installedInfo.versionCode
+                        pkgMap[app.id] = InstalledPackageSummary(
+                            packageName = resolvedPkg,
+                            versionCode = installedInfo.versionCode,
+                            versionName = installedInfo.versionName
+                        )
                         list.add(
                             InstalledAppItemState(
                                 app = app,
@@ -497,6 +782,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             withContext(Dispatchers.Main) {
+                _installedPkgByAppId.value = pkgMap
                 _installedAppsState.value = list
                 _isRefreshingInstalledApps.value = false
             }
@@ -550,10 +836,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun openInstalledApp(packageName: String, context: Context) {
         val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
         if (launchIntent != null) {
-            launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(launchIntent)
         } else {
-            emitToast(context.getString(R.string.toast_cannot_open_app))
+            emitToast(context.getString(R.string.app_no_launch_screen))
         }
     }
 
@@ -562,8 +848,8 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     // =========================================================================
 
     fun installDownloadedApk(appId: String, context: Context) {
-        val file = ApkInstaller.getApkFile(context, appId)
-        if (!file.exists() || file.length() == 0L) {
+        val file = ApkInstaller.findExistingPrimaryInstallFile(context, appId)
+        if (file == null || !file.exists() || file.length() == 0L) {
             emitToast(context.getString(R.string.toast_apk_not_found))
             startDownload(appId)
             return
@@ -572,12 +858,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun handlePreInstall(appId: String, apkFile: File, context: Context) {
-        val (archive, result) = PackageHelper.checkInstallPreconditions(context, apkFile)
+        val (_, result) = PackageHelper.checkInstallPreconditions(context, apkFile)
 
         when (result) {
             is InstallPrecheckResult.SignatureConflict -> {
                 pendingConflictApkFile = apkFile
                 pendingConflictPackageName = result.packageName
+                pendingConflictAppId = appId
+                _signatureConflictAppIds.value = _signatureConflictAppIds.value + appId
                 _uiState.value = _uiState.value.copy(
                     conflictDialogData = SignatureConflictData(
                         packageName = result.packageName,
@@ -590,6 +878,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
 
             is InstallPrecheckResult.DowngradeOrSameVersion -> {
                 pendingConflictApkFile = apkFile
+                pendingConflictAppId = appId
                 _uiState.value = _uiState.value.copy(
                     downgradeDialogData = DowngradeData(
                         packageName = result.packageName,
@@ -606,29 +895,66 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun confirmConflictUninstall(context: Context) {
+    fun confirmConflictUninstall(context: Context, launcher: ActivityResultLauncher<Intent>? = null) {
         val data = _uiState.value.conflictDialogData
         _uiState.value = _uiState.value.copy(conflictDialogData = null)
         if (data != null) {
             pendingConflictPackageName = data.packageName
-            PackageHelper.uninstall(context, data.packageName)
-            emitToast(context.getString(R.string.toast_please_uninstall_first))
+            if (pendingConflictApkFile == null && data.apkFilePath.isNotBlank()) {
+                pendingConflictApkFile = File(data.apkFilePath)
+            }
+            PackageHelper.uninstall(context, data.packageName, launcher)
+            if (launcher == null) {
+                emitToast(context.getString(R.string.toast_please_uninstall_first))
+            }
         }
+    }
+
+    fun onUninstallActivityResult(resultCode: Int, context: Context) {
+        val pendingPkg = pendingConflictPackageName
+        val pendingFile = pendingConflictApkFile
+        val pendingId = pendingConflictAppId.orEmpty()
+
+        if (!pendingPkg.isNullOrBlank() && pendingFile != null && pendingFile.exists()) {
+            if (!PackageHelper.isInstalled(context, pendingPkg)) {
+                pendingConflictPackageName = null
+                pendingConflictApkFile = null
+                pendingConflictAppId = null
+                if (pendingId.isNotBlank()) {
+                    _signatureConflictAppIds.value = _signatureConflictAppIds.value - pendingId
+                }
+                emitToast(context.getString(R.string.toast_starting_install))
+                executeDirectInstall(pendingId, pendingFile, context)
+                return
+            } else {
+                pendingConflictPackageName = null
+                pendingConflictApkFile = null
+                pendingConflictAppId = null
+                emitToast(context.getString(R.string.uninstall_cancelled))
+                return
+            }
+        }
+        refreshInstalledApps()
+        refreshDownloadedReadyIds()
     }
 
     fun dismissConflictDialog() {
         _uiState.value = _uiState.value.copy(conflictDialogData = null)
         pendingConflictApkFile = null
         pendingConflictPackageName = null
+        pendingConflictAppId = null
     }
 
     fun proceedWithDowngradeInstall(context: Context) {
         val data = _uiState.value.downgradeDialogData
+        val resolvedAppId = pendingConflictAppId ?: apps.value.find {
+            it.packageName.equals(data?.packageName, ignoreCase = true)
+        }?.id.orEmpty()
         _uiState.value = _uiState.value.copy(downgradeDialogData = null)
         if (data != null) {
             val file = File(data.apkFilePath)
             if (file.exists()) {
-                executeDirectInstall(data.packageName, file, context)
+                executeDirectInstall(resolvedAppId, file, context)
             }
         }
     }
@@ -638,15 +964,44 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun executeDirectInstall(appId: String, file: File, context: Context) {
-        if (PackageHelper.canRequestPackageInstalls(context)) {
-            val launched = PackageHelper.installApk(context, file) { msg ->
-                emitToast(msg)
+        val expectedPkg = apps.value.find { it.id == appId }?.packageName.orEmpty()
+        val silentMode = settingsRepo.shizukuRootInstallEnabled.value
+        if (PackageHelper.canRequestPackageInstalls(context) || silentMode) {
+            if (appId.isNotBlank()) {
+                _installingAppIds.value = _installingAppIds.value + appId
             }
-            if (launched) {
-                viewModelScope.launch {
-                    SupabaseClient.incrementDownloads(appId)
+            viewModelScope.launch {
+                val bundleFiles = if (appId.isNotBlank()) {
+                    withContext(Dispatchers.IO) {
+                        ApkInstaller.getBundleApkFiles(context, appId).ifEmpty { listOf(file) }
+                    }
+                } else {
+                    listOf(file)
+                }
+                val obbFile = if (appId.isNotBlank()) {
+                    ApkInstaller.getObbFile(context, appId).takeIf { it.exists() && it.length() > 0L }
+                } else {
+                    null
+                }
+                val launched = PackageHelper.installPackageBundle(
+                    context = context,
+                    files = bundleFiles,
+                    appId = appId,
+                    expectedPackageName = expectedPkg,
+                    obbFile = obbFile,
+                    useSilentRootShizuku = silentMode
+                ) { msg ->
+                    emitToast(msg)
+                }
+                if (launched) {
+                    if (appId.isNotBlank()) {
+                        SupabaseClient.incrementDownloads(appId)
+                    }
                     delay(3000)
                     refreshInstalledApps()
+                    refreshDownloadedReadyIds()
+                } else if (appId.isNotBlank()) {
+                    _installingAppIds.value = _installingAppIds.value - appId
                 }
             }
         } else {
@@ -660,6 +1015,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun checkAndResumePendingInstallAfterResume(context: Context) {
         val pendingPkg = pendingConflictPackageName
         val pendingFile = pendingConflictApkFile
+        val pendingId = pendingConflictAppId.orEmpty()
 
         if (!pendingPkg.isNullOrBlank() && pendingFile != null && pendingFile.exists()) {
             val isStillInstalled = PackageHelper.isInstalled(context, pendingPkg)
@@ -667,8 +1023,12 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                 // Successfully uninstalled! Now proceed with install
                 pendingConflictPackageName = null
                 pendingConflictApkFile = null
+                pendingConflictAppId = null
+                if (pendingId.isNotBlank()) {
+                    _signatureConflictAppIds.value = _signatureConflictAppIds.value - pendingId
+                }
                 emitToast(context.getString(R.string.toast_starting_install))
-                PackageHelper.installApk(context, pendingFile) { msg -> emitToast(msg) }
+                executeDirectInstall(pendingId, pendingFile, context)
                 return
             }
         }
@@ -682,10 +1042,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     // =========================================================================
 
     fun checkStorageAndStartDownload(appId: String, context: Context) {
-        val app = apps.value.find { it.id == appId } ?: _pagedApps.value.find { it.id == appId }
+        val app = apps.value.find { it.id == appId }
         if (app != null) {
             val freeBytes = getAvailableStorageBytes(context)
-            val estimatedBytes = parseSizeBytes(app.size)
+            val estimatedBytes = if (app.sizeBytes > 0L) app.sizeBytes else parseSizeBytes(app.size)
             val minThreshold = 60 * 1024 * 1024L // 60MB safety margin
 
             if (freeBytes < estimatedBytes + minThreshold && freeBytes < 200 * 1024 * 1024L) {
@@ -848,7 +1208,12 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             _isDownloadingStoreUpdate.value = false
             result.onSuccess { apkFile ->
                 emitToast(context.getString(R.string.store_update_ready_install))
-                PackageHelper.installApk(context, apkFile) { msg -> emitToast(msg) }
+                PackageHelper.installPackageBundle(
+                    context = context,
+                    files = listOf(apkFile),
+                    expectedPackageName = context.packageName,
+                    useSilentRootShizuku = settingsRepo.shizukuRootInstallEnabled.value
+                ) { msg -> emitToast(msg) }
             }.onFailure { err ->
                 emitToast(context.getString(R.string.store_update_download_failed, err.message ?: ""))
             }
@@ -884,13 +1249,18 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     var totalRead = 0L
+                    var lastEmitTime = 0L
 
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
                         totalRead += bytesRead
                         if (contentLength > 0) {
                             val progress = (totalRead.toFloat() / contentLength).coerceIn(0f, 1f)
-                            _storeUpdateDownloadProgress.value = progress
+                            val now = System.currentTimeMillis()
+                            if (now - lastEmitTime >= 100L || progress >= 1f) {
+                                lastEmitTime = now
+                                _storeUpdateDownloadProgress.value = progress
+                            }
                         }
                     }
                     output.flush()
@@ -905,7 +1275,12 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             _isDownloadingStoreUpdate.value = false
             if (success && updateFile.exists() && updateFile.length() > 0) {
                 emitToast(context.getString(R.string.store_update_ready_install))
-                PackageHelper.installApk(context, updateFile) { msg -> emitToast(msg) }
+                PackageHelper.installPackageBundle(
+                    context = context,
+                    files = listOf(updateFile),
+                    expectedPackageName = context.packageName,
+                    useSilentRootShizuku = settingsRepo.shizukuRootInstallEnabled.value
+                ) { msg -> emitToast(msg) }
             } else {
                 emitToast(context.getString(R.string.store_update_download_failed, ""))
             }
@@ -993,6 +1368,13 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun openCategory(category: AppCategory) {
+        val dest = when (category) {
+            AppCategory.APPS -> CategoryDestination.AllAppsHub
+            AppCategory.GAMES -> CategoryDestination.AllGamesHub
+            else -> CategoryDestination.SingleCategory(category)
+        }
+        _selectedHubFilterKey.value = "all"
+        _categoryDestination.value = dest
         _uiState.value = _uiState.value.copy(
             selectedCategory = category,
             currentTab = MainTab.CATEGORIES,
@@ -1000,12 +1382,43 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
+    fun openCategoryItem(item: CategoryItem) {
+        when (item.key.lowercase()) {
+            "apps" -> openCategory(AppCategory.APPS)
+            "games" -> openCategory(AppCategory.GAMES)
+            "trending", "popular" -> openCategory(AppCategory.POPULAR)
+            else -> {
+                val mappedEnum = SupabaseClient.mapCategory(item.key)
+                _selectedHubFilterKey.value = "all"
+                _categoryDestination.value = CategoryDestination.SingleCategory(
+                    category = mappedEnum,
+                    categoryItem = item
+                )
+                _uiState.value = _uiState.value.copy(
+                    selectedCategory = mappedEnum,
+                    currentTab = MainTab.CATEGORIES,
+                    selectedAppId = null
+                )
+            }
+        }
+    }
+
+    fun selectHubFilter(key: String) {
+        _selectedHubFilterKey.value = key
+    }
+
     fun clearSelectedCategory() {
+        _categoryDestination.value = null
+        _selectedHubFilterKey.value = "all"
         _uiState.value = _uiState.value.copy(selectedCategory = null)
     }
 
     fun setSortOrder(order: SortOrder) {
         _uiState.value = _uiState.value.copy(categorySortOrder = order)
+    }
+
+    fun setSearchAllTabs(all: Boolean) {
+        _searchAllTabs.value = all
     }
 
     fun openSearch() {
@@ -1098,14 +1511,108 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         setThemeMode(newMode)
     }
 
+    fun setNotificationsEnabled(enabled: Boolean) {
+        settingsRepo.setNotificationsEnabled(enabled)
+        _uiState.value = _uiState.value.copy(notificationsEnabled = enabled)
+    }
+
     fun toggleNotifications() {
-        _uiState.value = _uiState.value.copy(notificationsEnabled = !_uiState.value.notificationsEnabled)
+        setNotificationsEnabled(!_uiState.value.notificationsEnabled)
+    }
+
+    fun toggleDeleteApkAfterInstall() {
+        val next = !_uiState.value.deleteApkAfterInstall
+        settingsRepo.setDeleteApkAfterInstall(next)
+        _uiState.value = _uiState.value.copy(deleteApkAfterInstall = next)
+    }
+
+    fun toggleShizukuRootInstall() {
+        val next = !settingsRepo.shizukuRootInstallEnabled.value
+        settingsRepo.setShizukuRootInstallEnabled(next)
+    }
+
+    fun refreshStorageStats() {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val cacheStr = settingsRepo.formatStorageSize(settingsRepo.getCacheSizeBytes(ctx))
+            val apksStr = settingsRepo.formatStorageSize(settingsRepo.getApksSizeBytes(ctx))
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    cacheSize = cacheStr,
+                    apksSize = apksStr
+                )
+            }
+        }
     }
 
     fun clearCache() {
-        val oldSize = _uiState.value.cacheSize
-        _uiState.value = _uiState.value.copy(cacheSize = "0 KB")
-        emitToast(getApplication<Application>().getString(R.string.toast_cache_cleared, oldSize))
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val freed = settingsRepo.clearTemporaryCache(ctx)
+            val cacheStr = settingsRepo.formatStorageSize(settingsRepo.getCacheSizeBytes(ctx))
+            val apksStr = settingsRepo.formatStorageSize(settingsRepo.getApksSizeBytes(ctx))
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    cacheSize = cacheStr,
+                    apksSize = apksStr
+                )
+                emitToast(ctx.getString(R.string.toast_cache_cleared, settingsRepo.formatStorageSize(freed)))
+            }
+        }
+    }
+
+    fun deleteAllDownloadedApks() {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val freed = settingsRepo.deleteAllDownloadedApks(ctx)
+            val cacheStr = settingsRepo.formatStorageSize(settingsRepo.getCacheSizeBytes(ctx))
+            val apksStr = settingsRepo.formatStorageSize(settingsRepo.getApksSizeBytes(ctx))
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    cacheSize = cacheStr,
+                    apksSize = apksStr
+                )
+                refreshDownloadedReadyIds()
+                emitToast(ctx.getString(R.string.apks_deleted_toast, settingsRepo.formatStorageSize(freed)))
+            }
+        }
+    }
+
+    fun buildDiagnosticsReport(): String {
+        val ctx = getApplication<Application>()
+        val email = _uiState.value.userProfile?.email
+        if (!SupabaseClient.isAdmin(email) && !SupabaseClient.isOwner(email)) {
+            return ""
+        }
+        val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        val syncTs = lastSyncTimeMillis.value
+        val syncTimeStr = if (syncTs > 0L) dateFmt.format(Date(syncTs)) else ctx.getString(R.string.diag_never)
+        val tokenConfigured = if (githubTokenStatus.value.isConfigured == true || GitHubTokenProvider.hasCachedTokenInMemory()) {
+            ctx.getString(R.string.diag_yes)
+        } else {
+            ctx.getString(R.string.diag_no)
+        }
+        val recentErrors = SecureLogger.getRecentErrors()
+        val errorsText = if (recentErrors.isEmpty()) {
+            ctx.getString(R.string.diag_none)
+        } else {
+            recentErrors.takeLast(12).joinToString("\n") { entry ->
+                "[${dateFmt.format(Date(entry.timestampMillis))}] ${entry.level}/${entry.code}: ${SecureLogger.sanitize(entry.message)}"
+            }
+        }
+        return buildString {
+            appendLine("${ctx.getString(R.string.diag_store_version)}: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine("${ctx.getString(R.string.diag_android_version)}: Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("${ctx.getString(R.string.diag_device_lang)}: ${Locale.getDefault().toLanguageTag()}")
+            appendLine("${ctx.getString(R.string.diag_app_lang)}: ${_uiState.value.currentLanguage} (${_uiState.value.selectedLanguageTag})")
+            appendLine("${ctx.getString(R.string.diag_abis)}: ${Build.SUPPORTED_ABIS.joinToString(", ")}")
+            appendLine("${ctx.getString(R.string.diag_room_count)}: ${apps.value.size}")
+            appendLine("${ctx.getString(R.string.diag_last_sync)}: $syncTimeStr (${SecureLogger.sanitize(lastSyncResult.value)})")
+            appendLine("${ctx.getString(R.string.diag_gh_token)}: $tokenConfigured")
+            appendLine()
+            appendLine("${ctx.getString(R.string.diag_recent_errors)}:")
+            append(errorsText)
+        }
     }
 
     fun openScreenshot(index: Int) {
@@ -1201,12 +1708,9 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun onPermissionGrantedResumeInstall(context: Context) {
         val appId = _uiState.value.pendingInstallAppId ?: return
         if (PackageHelper.canRequestPackageInstalls(context)) {
-            val file = ApkInstaller.getApkFile(context, appId)
-            if (file.exists() && file.length() > 0) {
-                PackageHelper.installApk(context, file) { msg -> emitToast(msg) }
-                viewModelScope.launch {
-                    SupabaseClient.incrementDownloads(appId)
-                }
+            val file = ApkInstaller.findExistingPrimaryInstallFile(context, appId)
+            if (file != null && file.exists() && file.length() > 0L) {
+                executeDirectInstall(appId, file, context)
             }
             _uiState.value = _uiState.value.copy(
                 pendingInstallAppId = null,
@@ -1401,139 +1905,52 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         sourceCodeUrl: String? = null,
         supportedAbis: String = "Universal (All Architectures)",
         version: String = "1.0.0",
-        categoryKey: String = "apps"
+        categoryKey: String = "tools"
     ) {
-        val appId = id ?: "app_${System.currentTimeMillis()}"
-        val ctx = getApplication<Application>()
-        val tags = mutableListOf(StoreCategories.getTitle(ctx, categoryKey))
-        if (isOpenSource) tags.add(ctx.getString(R.string.cat_open_source))
-        if (supportedAbis.isNotBlank()) tags.add(supportedAbis.substringBefore("(").trim())
-
-        val newApp = AppItem(
-            id = appId,
-            name = name,
-            nameAr = name,
-            category = if (isOpenSource) AppCategory.OPEN_SOURCE else category,
-            tags = tags,
-            rating = rating,
-            ratingCount = "1.0K",
-            downloadCount = "+1K",
-            size = size,
-            sizeBytes = 100_000_000L,
-            iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else "📱",
-            accentColor = 0xFFA855F7,
-            descriptionAr = description,
-            descriptionEn = description,
-            featuresAr = features,
-            screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
-            isFeatured = false,
-            isTrending = false,
-            isNew = true,
-            iconUrl = iconUrl.ifBlank { null },
-            fileUrl = fileUrl.ifBlank { null },
-            screenshotUrls = screenshots,
-            isOpenSource = isOpenSource,
-            sourceCodeUrl = sourceCodeUrl?.ifBlank { null },
-            supportedAbis = supportedAbis,
-            version = version,
-            categoryKey = categoryKey
-        )
-        repository.refreshFromSupabase()
-        refreshPagedApps()
-        refreshInstalledApps()
+        viewModelScope.launch {
+            syncManager.invalidateEtag()
+            syncManager.syncNow(forceFull = false, suppressNewBanner = true)
+            refreshInstalledApps()
+            refreshDownloadedReadyIds()
+        }
     }
 
     fun refreshCatalogAfterAdminChange() {
-        repository.refreshFromSupabase()
-        refreshPagedApps()
-        refreshInstalledApps()
+        viewModelScope.launch {
+            syncManager.invalidateEtag()
+            syncManager.syncNow(forceFull = false, suppressNewBanner = true)
+            refreshInstalledApps()
+            refreshDownloadedReadyIds()
+        }
     }
 
     fun deleteAppFromAdmin(appId: String) {
         repository.deleteApp(appId, null)
-        refreshPagedApps()
         refreshInstalledApps()
+        refreshDownloadedReadyIds()
     }
 
-    // =========================================================================
-    // Mappers for Room Offline Cache
-    // =========================================================================
-
-    private fun mapAppItemToCached(app: AppItem): CachedAppEntity {
-        return CachedAppEntity(
-            id = app.id,
-            name = app.name,
-            nameAr = app.nameAr,
-            categoryKey = app.categoryKey,
-            rating = app.rating,
-            ratingCount = app.ratingCount,
-            downloadCount = app.downloadCount,
-            size = app.size,
-            iconEmoji = app.iconEmoji,
-            accentColor = app.accentColor,
-            descriptionAr = app.descriptionAr,
-            featuresJson = app.featuresAr.joinToString("|||"),
-            iconUrl = app.iconUrl,
-            fileUrl = app.fileUrl,
-            screenshotUrlsJson = app.screenshotUrls.joinToString("|||"),
-            isOpenSource = app.isOpenSource,
-            sourceCodeUrl = app.sourceCodeUrl,
-            supportedAbis = app.supportedAbis,
-            packageName = app.packageName,
-            version = app.version,
-            changelog = app.changelog
-        )
+    fun addCustomCategory(nameEn: String, nameAr: String, emoji: String, type: String) {
+        viewModelScope.launch {
+            categoriesRepository.addCustomCategory(nameEn, nameAr, emoji, type)
+        }
     }
 
-    private fun mapCachedToAppItem(entity: CachedAppEntity): AppItem {
-        val features = if (entity.featuresJson.isBlank()) emptyList() else entity.featuresJson.split("|||")
-        val screenshots = if (entity.screenshotUrlsJson.isBlank()) emptyList() else entity.screenshotUrlsJson.split("|||")
-        return AppItem(
-            id = entity.id,
-            name = entity.name,
-            nameAr = entity.nameAr,
-            category = mapCategoryKeyToAppCategory(entity.categoryKey),
-            tags = listOf(StoreCategories.getTitle(getApplication(), entity.categoryKey)),
-            rating = entity.rating,
-            ratingCount = entity.ratingCount,
-            downloadCount = entity.downloadCount,
-            size = entity.size,
-            sizeBytes = parseSizeBytes(entity.size),
-            iconEmoji = entity.iconEmoji,
-            accentColor = entity.accentColor,
-            descriptionAr = entity.descriptionAr,
-            descriptionEn = entity.descriptionAr,
-            featuresAr = features,
-            screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
-            isFeatured = false,
-            isTrending = false,
-            isNew = true,
-            iconUrl = entity.iconUrl,
-            fileUrl = entity.fileUrl,
-            screenshotUrls = screenshots,
-            isOpenSource = entity.isOpenSource,
-            sourceCodeUrl = entity.sourceCodeUrl,
-            supportedAbis = entity.supportedAbis,
-            packageName = entity.packageName,
-            version = entity.version,
-            categoryKey = entity.categoryKey,
-            changelog = entity.changelog
-        )
+    fun updateCategory(key: String, nameEn: String, nameAr: String, emoji: String) {
+        viewModelScope.launch {
+            categoriesRepository.updateCategory(key, nameEn, nameAr, emoji)
+        }
     }
 
-    private fun mapCategoryKeyToAppCategory(catKey: String): AppCategory {
-        val clean = catKey.lowercase()
-        return when {
-            clean.startsWith("game") || clean in listOf("action", "rpg", "simulation", "emulators", "retro", "games") -> AppCategory.GAMES
-            clean in listOf("root_tools", "root") -> AppCategory.ROOT_TOOLS
-            clean in listOf("open_source", "foss") -> AppCategory.OPEN_SOURCE
-            clean in listOf("trending", "popular") -> AppCategory.POPULAR
-            clean in listOf("tools", "system") -> AppCategory.TOOLS
-            clean in listOf("entertainment", "video", "media") -> AppCategory.ENTERTAINMENT
-            clean in listOf("music", "audio") -> AppCategory.MUSIC
-            clean in listOf("productivity", "business") -> AppCategory.PRODUCTIVITY
-            clean in listOf("social", "communication") -> AppCategory.SOCIAL
-            else -> AppCategory.APPS
+    fun setCategoryHidden(key: String, hidden: Boolean) {
+        viewModelScope.launch {
+            categoriesRepository.setCategoryHidden(key, hidden)
+        }
+    }
+
+    fun moveCategory(key: String, type: String, moveUp: Boolean) {
+        viewModelScope.launch {
+            categoriesRepository.moveCategory(key, type, moveUp)
         }
     }
 }

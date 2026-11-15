@@ -23,6 +23,12 @@ import java.security.MessageDigest
 import java.util.Locale
 import kotlin.coroutines.resume
 
+sealed class TranslationStage {
+    data object Identifying : TranslationStage()
+    data class DownloadingModel(val sourceLangTag: String, val targetLangTag: String) : TranslationStage()
+    data object Translating : TranslationStage()
+}
+
 sealed class TranslationOutcome {
     data class Success(
         val translatedText: String,
@@ -54,7 +60,8 @@ object MlKitTranslatorHelper {
         field: String,
         originalText: String,
         targetLanguageCode: String,
-        wifiOnly: Boolean = false
+        wifiOnly: Boolean = false,
+        onStageChanged: ((TranslationStage) -> Unit)? = null
     ): TranslationOutcome {
         val trimmed = originalText.trim()
         if (trimmed.isBlank()) return TranslationOutcome.AlreadyInTargetLanguage
@@ -81,15 +88,16 @@ object MlKitTranslatorHelper {
             )
         }
 
-        // 2. Split into paragraphs by newline & identify language per paragraph
-        val lines = originalText.split("\n")
-        val identifiedSources = ArrayList<String>(lines.size)
-        for (line in lines) {
-            val clean = line.trim()
-            if (clean.isBlank()) {
+        // 2. Split into lines, separating leading emoji/bullet prefixes from actual text
+        onStageChanged?.invoke(TranslationStage.Identifying)
+        val rawLines = originalText.split("\n")
+        val splitLines = rawLines.map { splitLeadingPrefix(it) }
+        val identifiedSources = ArrayList<String>(splitLines.size)
+        for ((_, body) in splitLines) {
+            if (body.isBlank()) {
                 identifiedSources.add("und")
             } else {
-                val detected = normalizeMlKitTag(identifyLanguage(clean))
+                val detected = normalizeMlKitTag(identifyLanguage(body))
                 identifiedSources.add(detected)
             }
         }
@@ -98,13 +106,13 @@ object MlKitTranslatorHelper {
             it != "und" && it != normalizedTarget && TranslateLanguage.fromLanguageTag(it) != null
         }
         if (translatableLangs.isEmpty()) {
-            // Also check whole text if individual short lines returned "und"
-            val wholeDetected = normalizeMlKitTag(identifyLanguage(trimmed))
+            val wholeBody = splitLines.map { it.second }.filter { it.isNotBlank() }.joinToString(" ")
+            val wholeDetected = if (wholeBody.isNotBlank()) normalizeMlKitTag(identifyLanguage(wholeBody)) else "und"
             if (wholeDetected == "und" || wholeDetected == normalizedTarget || TranslateLanguage.fromLanguageTag(wholeDetected) == null) {
                 return TranslationOutcome.AlreadyInTargetLanguage
             }
             for (i in identifiedSources.indices) {
-                if (lines[i].isNotBlank() && identifiedSources[i] == "und") {
+                if (splitLines[i].second.isNotBlank() && identifiedSources[i] == "und") {
                     identifiedSources[i] = wholeDetected
                 }
             }
@@ -120,7 +128,6 @@ object MlKitTranslatorHelper {
         return withContext(Dispatchers.IO) {
             val translatorCache = HashMap<String, Translator>()
             try {
-                // Check Wi-Fi requirement upfront for needed remote models
                 val neededSources = identifiedSources
                     .filter { it != "und" && it != normalizedTarget && TranslateLanguage.fromLanguageTag(it) != null }
                     .toSet()
@@ -138,13 +145,14 @@ object MlKitTranslatorHelper {
                 }
 
                 val conditions = DownloadConditions.Builder().build()
-                val outputLines = ArrayList<String>(lines.size)
+                val outputLines = ArrayList<String>(rawLines.size)
                 var anyTranslated = false
 
-                for (i in lines.indices) {
-                    val rawLine = lines[i]
+                for (i in rawLines.indices) {
+                    val rawLine = rawLines[i]
+                    val (prefix, body) = splitLines[i]
                     val srcTag = identifiedSources[i]
-                    if (rawLine.isBlank() || srcTag == "und" || srcTag == normalizedTarget) {
+                    if (body.isBlank() || srcTag == "und" || srcTag == normalizedTarget) {
                         outputLines.add(rawLine)
                         continue
                     }
@@ -163,6 +171,9 @@ object MlKitTranslatorHelper {
                         Translation.getClient(options)
                     }
 
+                    if (!isModelDownloaded(srcMlKit) || !isModelDownloaded(targetMlKitLang)) {
+                        onStageChanged?.invoke(TranslationStage.DownloadingModel(srcTag, normalizedTarget))
+                    }
                     val ready = downloadModel(translator, conditions)
                     if (!ready) {
                         return@withContext TranslationOutcome.Error(
@@ -171,14 +182,15 @@ object MlKitTranslatorHelper {
                         )
                     }
 
-                    val chunks = chunkParagraph(rawLine, maxChars = 400)
+                    onStageChanged?.invoke(TranslationStage.Translating)
+                    val chunks = chunkParagraph(body, maxChars = 400)
                     val translatedChunks = chunks.map { chunk ->
                         performTranslation(translator, chunk)
                     }
-                    val joinedLine = translatedChunks.joinToString(" ").trim()
-                    if (joinedLine.isNotBlank() && joinedLine != rawLine) {
+                    val joinedBody = translatedChunks.joinToString(" ").trim()
+                    if (joinedBody.isNotBlank() && joinedBody != body) {
                         anyTranslated = true
-                        outputLines.add(joinedLine)
+                        outputLines.add(prefix + joinedBody)
                     } else {
                         outputLines.add(rawLine)
                     }
@@ -226,6 +238,18 @@ object MlKitTranslatorHelper {
         return if (display.isNullOrBlank()) clean.uppercase() else display.replaceFirstChar {
             if (it.isLowerCase()) it.titlecase(uiLocale) else it.toString()
         }
+    }
+
+    private fun splitLeadingPrefix(line: String): Pair<String, String> {
+        var idx = 0
+        while (idx < line.length) {
+            val cp = line.codePointAt(idx)
+            if (Character.isLetterOrDigit(cp)) {
+                break
+            }
+            idx += Character.charCount(cp)
+        }
+        return line.substring(0, idx) to line.substring(idx).trim()
     }
 
     private fun normalizeMlKitTag(tag: String): String {

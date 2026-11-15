@@ -13,15 +13,19 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.example.data.download.DownloadService
 import com.example.data.installer.ApkInstaller
+import com.example.data.installer.PackageHelper
 import com.example.data.model.DownloadStatus
 import com.example.data.supabase.SupabaseClient
+import com.example.data.sync.SyncManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -36,11 +40,13 @@ class PrimeStoreRepository(private val context: Context) {
         context.getSharedPreferences("prime_store_prefs", Context.MODE_PRIVATE)
 
     private val scope = CoroutineScope(Dispatchers.Default)
+    private val appsRepository = AppsRepository.getInstance(context.applicationContext)
+    private val syncManager = SyncManager.getInstance(context.applicationContext)
 
     var remoteAppsUrl: String = ""
 
-    private val _apps = MutableStateFlow<List<AppItem>>(emptyList())
-    val apps: StateFlow<List<AppItem>> = _apps.asStateFlow()
+    val apps: StateFlow<List<AppItem>> = appsRepository.appsFlow
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private val _favorites = MutableStateFlow<Set<String>>(emptySet())
     val favorites: StateFlow<Set<String>> = _favorites.asStateFlow()
@@ -58,26 +64,20 @@ class PrimeStoreRepository(private val context: Context) {
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
 
     var onApkDownloadCompleted: ((appId: String, apkFile: File) -> Unit)? = null
+    var onLocalApkFilesChanged: (() -> Unit)? = null
 
     private val activeDownloadJobs = mutableMapOf<String, Job>()
 
     init {
-        loadCatalog()
-        refreshFromSupabase()
         loadFavoritesFromPrefs()
         loadSearchHistoryFromPrefs()
         initDefaultDownloads()
         initDefaultReviews()
     }
 
-    fun refreshFromSupabase() {
+    fun refreshFromSupabase(suppressNewBanner: Boolean = true) {
         scope.launch {
-            try {
-                val remoteApps = com.example.data.supabase.SupabaseClient.fetchApps()
-                _apps.value = remoteApps
-            } catch (e: Exception) {
-                // Keep current state
-            }
+            syncManager.syncNow(forceFull = false, suppressNewBanner = suppressNewBanner)
         }
     }
 
@@ -126,7 +126,7 @@ class PrimeStoreRepository(private val context: Context) {
 
     fun toggleFavorite(appId: String) {
         val current = _favorites.value.toMutableSet()
-        val app = _apps.value.find { it.id == appId }
+        val app = apps.value.find { it.id == appId }
         val appName = app?.nameAr ?: app?.name ?: context.getString(R.string.dl_service_default_app)
         if (current.contains(appId)) {
             current.remove(appId)
@@ -142,12 +142,12 @@ class PrimeStoreRepository(private val context: Context) {
     fun isFavorite(appId: String): Boolean = _favorites.value.contains(appId)
 
     fun startDownload(appId: String) {
-        val app = _apps.value.find { it.id == appId } ?: return
+        val app = apps.value.find { it.id == appId } ?: return
         val currentList = _downloads.value.toMutableList()
         val existingIndex = currentList.indexOfFirst { it.appId == appId }
 
-        val targetFile = ApkInstaller.getApkFile(context, appId)
-        if (targetFile.exists() && targetFile.length() > 0) {
+        val existingFile = ApkInstaller.findExistingPrimaryInstallFile(context, appId)
+        if (existingFile != null && existingFile.exists() && existingFile.length() > 0L) {
             val completedItem = DownloadItem(
                 appId = app.id,
                 appName = app.nameAr.ifBlank { app.name },
@@ -155,12 +155,12 @@ class PrimeStoreRepository(private val context: Context) {
                 accentColor = app.accentColor,
                 progress = 1.0f,
                 speed = "0 KB/s",
-                downloadedSize = formatBytes(targetFile.length()),
-                totalSize = formatBytes(targetFile.length()),
+                downloadedSize = formatBytes(existingFile.length()),
+                totalSize = formatBytes(existingFile.length()),
                 isCompleted = true,
                 isPaused = false,
                 status = DownloadStatus.COMPLETED,
-                apkFilePath = targetFile.absolutePath,
+                apkFilePath = existingFile.absolutePath,
                 errorMessage = null
             )
             if (existingIndex >= 0) {
@@ -171,7 +171,7 @@ class PrimeStoreRepository(private val context: Context) {
             _downloads.value = currentList
             val displayName = app.nameAr.ifBlank { app.name }
             emitToast(context.getString(R.string.toast_already_downloaded, displayName))
-            onApkDownloadCompleted?.invoke(appId, targetFile)
+            onApkDownloadCompleted?.invoke(appId, existingFile)
             return
         }
 
@@ -182,9 +182,10 @@ class PrimeStoreRepository(private val context: Context) {
         }
 
         val rawUrl = app.fileUrl?.trim()
+        val validSplits = app.splitApkUrls.filter { SupabaseClient.isValidDownloadLink(it) }
         val isDirectApk = SupabaseClient.isValidDownloadLink(rawUrl)
 
-        if (!isDirectApk) {
+        if (!isDirectApk && validSplits.isEmpty()) {
             emitToast(context.getString(R.string.toast_invalid_download_link))
             val failedItem = DownloadItem(
                 appId = app.id,
@@ -210,7 +211,6 @@ class PrimeStoreRepository(private val context: Context) {
             return
         }
 
-        val directUrl = rawUrl!!
         val appDisplayName = app.nameAr.ifBlank { app.name }
 
         val startingItem = DownloadItem(
@@ -240,98 +240,182 @@ class PrimeStoreRepository(private val context: Context) {
         DownloadService.start(context, appDisplayName)
 
         val job = scope.launch(Dispatchers.IO) {
-            val tempFile = File(targetFile.parentFile, "${appId}.apk.part")
-            if (tempFile.exists()) tempFile.delete()
-            var response: okhttp3.Response? = null
+            val bundleDir = ApkInstaller.getBundleDir(context, appId)
+            val urlsToDownload = buildList {
+                if (isDirectApk && !rawUrl.isNullOrBlank()) add(rawUrl)
+                validSplits.forEach { if (!contains(it)) add(it) }
+            }
+            val useSplitBundle = urlsToDownload.size > 1
+            val primaryExt = ApkInstaller.resolveExtensionFromUrl(urlsToDownload.first())
+            val primaryTargetFile = if (useSplitBundle) {
+                File(bundleDir, "00_base.apk")
+            } else {
+                ApkInstaller.getApkFile(context, appId, primaryExt)
+            }
+            val activeTempFiles = mutableListOf<File>()
 
             try {
                 val client = OkHttpClient.Builder()
                     .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(60, TimeUnit.SECONDS)
+                    .readTimeout(120, TimeUnit.SECONDS)
                     .followRedirects(true)
                     .followSslRedirects(true)
                     .build()
 
-                val request = Request.Builder()
-                    .url(directUrl)
-                    .header("User-Agent", "PrimeStore/1.0 (Android)")
-                    .build()
+                var cumulativeBytes = 0L
+                val totalParts = urlsToDownload.size
 
-                response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    throw IOException("HTTP ${response.code}: ${response.message}")
-                }
-
-                val responseBody = response.body ?: throw IOException(context.getString(R.string.error_empty_file))
-                val contentLength = responseBody.contentLength()
-                val totalBytes = if (contentLength > 0) contentLength else app.sizeBytes.coerceAtLeast(10_000_000L)
-
-                val inputStream = responseBody.byteStream()
-                val outputStream = FileOutputStream(tempFile)
-
-                val buffer = ByteArray(16 * 1024)
-                var bytesReadSoFar: Long = 0
-                var lastUpdateTime = System.currentTimeMillis()
-                var lastUpdateBytes: Long = 0
-                var read: Int
-
-                while (inputStream.read(buffer).also { read = it } != -1) {
-                    if (!isActive) {
-                        outputStream.close()
-                        inputStream.close()
-                        tempFile.delete()
-                        DownloadService.stop(context)
-                        return@launch
+                for ((partIdx, partUrl) in urlsToDownload.withIndex()) {
+                    val destFile = if (useSplitBundle) {
+                        val name = if (partIdx == 0) "00_base.apk" else "split_${partIdx}.apk"
+                        File(bundleDir, name)
+                    } else {
+                        primaryTargetFile
                     }
+                    val tempFile = File(destFile.parentFile, "${destFile.name}.part")
+                    activeTempFiles.add(tempFile)
+                    if (tempFile.exists()) tempFile.delete()
 
-                    outputStream.write(buffer, 0, read)
-                    bytesReadSoFar += read
+                    val request = Request.Builder()
+                        .url(partUrl)
+                        .header("User-Agent", "PrimeStore/1.0 (Android)")
+                        .build()
 
-                    val now = System.currentTimeMillis()
-                    val timeDelta = now - lastUpdateTime
-                    if (timeDelta >= 350) {
-                        val bytesDelta = bytesReadSoFar - lastUpdateBytes
-                        val speedMBps = if (timeDelta > 0) {
-                            (bytesDelta.toDouble() / (1024.0 * 1024.0)) / (timeDelta.toDouble() / 1000.0)
-                        } else 0.0
-                        val speedText = String.format(Locale.US, "%.1f MB/s", speedMBps)
-                        val progress = (bytesReadSoFar.toFloat() / totalBytes).coerceIn(0f, 0.99f)
-                        val downloadedText = formatBytes(bytesReadSoFar)
-                        val totalText = formatBytes(totalBytes)
-
-                        _downloads.value = _downloads.value.map { d ->
-                            if (d.appId == appId) {
-                                d.copy(
-                                    progress = progress,
-                                    speed = speedText,
-                                    downloadedSize = downloadedText,
-                                    totalSize = totalText,
-                                    status = DownloadStatus.DOWNLOADING,
-                                    isPaused = false
-                                )
-                            } else d
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw IOException("HTTP ${response.code}: ${response.message}")
                         }
+                        val responseBody = response.body ?: throw IOException(context.getString(R.string.error_empty_file))
+                        val contentLength = responseBody.contentLength()
+                        val estimatedTotal = if (contentLength > 0) contentLength else (app.sizeBytes / totalParts.coerceAtLeast(1)).coerceAtLeast(5_000_000L)
 
-                        DownloadService.updateProgress(
-                            context,
-                            appDisplayName,
-                            (progress * 100).toInt(),
-                            speedText
-                        )
+                        responseBody.byteStream().use { inputStream ->
+                            FileOutputStream(tempFile).use { outputStream ->
+                                val buffer = ByteArray(64 * 1024)
+                                var partRead = 0L
+                                var lastUpdateTime = System.currentTimeMillis()
+                                var lastUpdateBytes = 0L
+                                var read: Int
 
-                        lastUpdateTime = now
-                        lastUpdateBytes = bytesReadSoFar
+                                while (inputStream.read(buffer).also { read = it } != -1) {
+                                    if (!isActive) {
+                                        tempFile.delete()
+                                        DownloadService.stop(context)
+                                        return@launch
+                                    }
+                                    outputStream.write(buffer, 0, read)
+                                    partRead += read
+                                    cumulativeBytes += read
+
+                                    val now = System.currentTimeMillis()
+                                    val timeDelta = now - lastUpdateTime
+                                    if (timeDelta >= 100) {
+                                        val bytesDelta = partRead - lastUpdateBytes
+                                        val speedMBps = if (timeDelta > 0) {
+                                            (bytesDelta.toDouble() / (1024.0 * 1024.0)) / (timeDelta.toDouble() / 1000.0)
+                                        } else 0.0
+                                        val speedText = if (useSplitBundle) {
+                                            context.getString(R.string.downloading_split_part, partIdx + 1, totalParts)
+                                        } else {
+                                            String.format(Locale.US, "%.1f MB/s", speedMBps)
+                                        }
+                                        val partFrac = (partRead.toFloat() / estimatedTotal).coerceIn(0f, 1f)
+                                        val overallFrac = ((partIdx + partFrac) / totalParts.toFloat()).coerceIn(0f, 0.99f)
+                                        val downloadedText = formatBytes(cumulativeBytes)
+                                        val totalText = if (!useSplitBundle && contentLength > 0) formatBytes(contentLength) else app.size
+
+                                        _downloads.value = _downloads.value.map { d ->
+                                            if (d.appId == appId) {
+                                                d.copy(
+                                                    progress = overallFrac,
+                                                    speed = speedText,
+                                                    downloadedSize = downloadedText,
+                                                    totalSize = totalText,
+                                                    status = DownloadStatus.DOWNLOADING,
+                                                    isPaused = false
+                                                )
+                                            } else d
+                                        }
+
+                                        DownloadService.updateProgress(
+                                            context,
+                                            appDisplayName,
+                                            (overallFrac * 100).toInt(),
+                                            speedText
+                                        )
+                                        lastUpdateTime = now
+                                        lastUpdateBytes = partRead
+                                    }
+                                }
+                                outputStream.flush()
+                            }
+                        }
+                    }
+
+                    if (destFile.exists()) destFile.delete()
+                    tempFile.renameTo(destFile)
+                }
+
+                // Optional OBB download
+                val obbUrl = app.obbUrl?.trim()
+                if (!obbUrl.isNullOrBlank() && SupabaseClient.isValidDownloadLink(obbUrl)) {
+                    val obbDest = ApkInstaller.getObbFile(context, appId)
+                    val obbTemp = File(obbDest.parentFile, "${obbDest.name}.part")
+                    activeTempFiles.add(obbTemp)
+                    if (obbTemp.exists()) obbTemp.delete()
+
+                    _downloads.value = _downloads.value.map { d ->
+                        if (d.appId == appId) d.copy(speed = context.getString(R.string.downloading_obb_progress, 0)) else d
+                    }
+
+                    val obbReq = Request.Builder().url(obbUrl).header("User-Agent", "PrimeStore/1.0 (Android)").build()
+                    client.newCall(obbReq).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val obbTotal = resp.body?.contentLength() ?: -1L
+                            var obbRead = 0L
+                            var lastObbPct = 0
+                            resp.body?.byteStream()?.use { input ->
+                                FileOutputStream(obbTemp).use { out ->
+                                    val buf = ByteArray(64 * 1024)
+                                    var r: Int
+                                    while (input.read(buf).also { r = it } != -1) {
+                                        if (!isActive) {
+                                            obbTemp.delete()
+                                            DownloadService.stop(context)
+                                            return@launch
+                                        }
+                                        out.write(buf, 0, r)
+                                        obbRead += r
+                                        cumulativeBytes += r
+                                        if (obbTotal > 0) {
+                                            val pct = ((obbRead * 100) / obbTotal).toInt().coerceIn(0, 100)
+                                            if (pct >= lastObbPct + 5 || pct == 100) {
+                                                lastObbPct = pct
+                                                _downloads.value = _downloads.value.map { d ->
+                                                    if (d.appId == appId) d.copy(speed = context.getString(R.string.downloading_obb_progress, pct)) else d
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (obbDest.exists()) obbDest.delete()
+                            obbTemp.renameTo(obbDest)
+                        }
                     }
                 }
 
-                outputStream.flush()
-                outputStream.close()
-                inputStream.close()
+                // Optional SHA-256 verification before installing
+                if (!app.sha256.isNullOrBlank()) {
+                    _downloads.value = _downloads.value.map { d ->
+                        if (d.appId == appId) d.copy(speed = context.getString(R.string.verifying_sha256)) else d
+                    }
+                    if (!PackageHelper.verifySha256(primaryTargetFile, app.sha256)) {
+                        throw IOException(context.getString(R.string.sha256_mismatch_error))
+                    }
+                }
 
-                if (targetFile.exists()) targetFile.delete()
-                tempFile.renameTo(targetFile)
-
-                val finalTotalText = formatBytes(bytesReadSoFar)
+                val finalTotalText = formatBytes(cumulativeBytes.coerceAtLeast(primaryTargetFile.length()))
                 _downloads.value = _downloads.value.map { d ->
                     if (d.appId == appId) {
                         d.copy(
@@ -341,7 +425,7 @@ class PrimeStoreRepository(private val context: Context) {
                             totalSize = finalTotalText,
                             isCompleted = true,
                             status = DownloadStatus.COMPLETED,
-                            apkFilePath = targetFile.absolutePath,
+                            apkFilePath = primaryTargetFile.absolutePath,
                             errorMessage = null
                         )
                     } else d
@@ -349,24 +433,27 @@ class PrimeStoreRepository(private val context: Context) {
 
                 DownloadService.stop(context)
                 activeDownloadJobs.remove(appId)
+                onLocalApkFilesChanged?.invoke()
 
                 emitToast(context.getString(R.string.toast_download_completed, appDisplayName))
 
                 scope.launch {
-                    com.example.data.supabase.SupabaseClient.incrementDownloads(appId)
+                    SupabaseClient.incrementDownloads(appId)
                 }
 
                 scope.launch(Dispatchers.Main) {
-                    onApkDownloadCompleted?.invoke(appId, targetFile)
+                    onApkDownloadCompleted?.invoke(appId, primaryTargetFile)
                 }
 
             } catch (e: Exception) {
+                activeTempFiles.forEach { runCatching { if (it.exists()) it.delete() } }
                 if (e is kotlinx.coroutines.CancellationException) {
-                    tempFile.delete()
                     DownloadService.stop(context)
                     return@launch
                 }
-                tempFile.delete()
+                if (e.message == context.getString(R.string.sha256_mismatch_error)) {
+                    ApkInstaller.cleanupAppInstallFiles(context, appId)
+                }
                 DownloadService.stop(context)
                 activeDownloadJobs.remove(appId)
                 val failedLabel = context.getString(R.string.status_failed)
@@ -381,8 +468,6 @@ class PrimeStoreRepository(private val context: Context) {
                     } else d
                 }
                 emitToast(context.getString(R.string.toast_download_failed, appDisplayName, errorMsg))
-            } finally {
-                response?.close()
             }
         }
         activeDownloadJobs[appId] = job
@@ -407,15 +492,9 @@ class PrimeStoreRepository(private val context: Context) {
         activeDownloadJobs[appId]?.cancel()
         activeDownloadJobs.remove(appId)
         DownloadService.stop(context)
-        try {
-            val targetFile = ApkInstaller.getApkFile(context, appId)
-            val tempFile = File(targetFile.parentFile, "${appId}.apk.part")
-            if (tempFile.exists()) tempFile.delete()
-            if (targetFile.exists()) targetFile.delete()
-        } catch (e: Exception) {
-            // Ignored
-        }
+        ApkInstaller.cleanupAppInstallFiles(context, appId)
         _downloads.value = _downloads.value.filterNot { it.appId == appId }
+        onLocalApkFilesChanged?.invoke()
         emitToast(context.getString(R.string.toast_download_cancelled))
     }
 
@@ -481,8 +560,8 @@ class PrimeStoreRepository(private val context: Context) {
 
     fun addApp(app: AppItem, accessToken: String? = null) {
         scope.launch {
-            val categoryKey = categoryToString(app.category)
-            val result = com.example.data.supabase.SupabaseClient.insertApp(
+            val categoryKey = app.categoryKey.ifBlank { categoryToString(app.category) }
+            val result = SupabaseClient.insertApp(
                 accessToken = accessToken,
                 name = app.nameAr,
                 category = categoryKey,
@@ -494,9 +573,13 @@ class PrimeStoreRepository(private val context: Context) {
                 fileUrl = app.fileUrl.orEmpty(),
                 screenshots = app.screenshotUrls,
                 architecture = app.supportedAbis,
-                version = "1.0.0",
-                packageName = "com.primestore.${app.nameAr.lowercase().replace(Regex("[^a-z0-9]"), "")}",
-                downloads = app.downloadCount
+                version = app.version.ifBlank { "1.0.0" },
+                packageName = app.packageName ?: "com.primestore.${app.nameAr.lowercase().replace(Regex("[^a-z0-9]"), "")}",
+                downloads = app.downloadCount,
+                itemType = app.itemType,
+                sha256 = app.sha256.orEmpty(),
+                splitUrls = app.splitApkUrls,
+                obbUrl = app.obbUrl.orEmpty()
             )
             if (result.success) {
                 refreshFromSupabase()
@@ -509,8 +592,8 @@ class PrimeStoreRepository(private val context: Context) {
 
     fun updateApp(app: AppItem, accessToken: String? = null) {
         scope.launch {
-            val categoryKey = categoryToString(app.category)
-            val result = com.example.data.supabase.SupabaseClient.updateApp(
+            val categoryKey = app.categoryKey.ifBlank { categoryToString(app.category) }
+            val result = SupabaseClient.updateApp(
                 accessToken = accessToken,
                 id = app.id,
                 name = app.nameAr,
@@ -523,9 +606,13 @@ class PrimeStoreRepository(private val context: Context) {
                 fileUrl = app.fileUrl.orEmpty(),
                 screenshots = app.screenshotUrls,
                 architecture = app.supportedAbis,
-                version = "1.0.0",
-                packageName = "com.primestore.${app.nameAr.lowercase().replace(Regex("[^a-z0-9]"), "")}",
-                downloads = app.downloadCount
+                version = app.version.ifBlank { "1.0.0" },
+                packageName = app.packageName ?: "com.primestore.${app.nameAr.lowercase().replace(Regex("[^a-z0-9]"), "")}",
+                downloads = app.downloadCount,
+                itemType = app.itemType,
+                sha256 = app.sha256.orEmpty(),
+                splitUrls = app.splitApkUrls,
+                obbUrl = app.obbUrl.orEmpty()
             )
             if (result.success) {
                 refreshFromSupabase()
@@ -537,16 +624,15 @@ class PrimeStoreRepository(private val context: Context) {
     }
 
     fun deleteApp(appId: String, accessToken: String? = null) {
-        val current = _apps.value.toMutableList()
-        val app = current.find { it.id == appId }
+        val app = apps.value.find { it.id == appId }
         val name = app?.nameAr ?: app?.name ?: context.getString(R.string.dl_service_default_app)
-        current.removeAll { it.id == appId }
-        _apps.value = current
         emitToast(context.getString(R.string.toast_app_deleted, name))
 
         scope.launch {
+            appsRepository.deleteLocalApp(appId)
+            syncManager.invalidateEtag()
             com.example.data.supabase.SupabaseClient.deleteApp(accessToken, appId)
-            refreshFromSupabase()
+            syncManager.syncNow(forceFull = false, suppressNewBanner = true)
         }
     }
 
@@ -564,9 +650,5 @@ class PrimeStoreRepository(private val context: Context) {
 
     private fun initDefaultReviews() {
         _reviews.value = emptyMap()
-    }
-
-    private fun loadCatalog() {
-        _apps.value = emptyList()
     }
 }

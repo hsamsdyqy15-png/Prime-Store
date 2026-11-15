@@ -21,6 +21,40 @@ object SecureLogger {
             .replace(authHeaderRegex, "$1=[REDACTED]")
     }
 
+    data class DiagnosticLogEntry(
+        val timestampMillis: Long,
+        val level: String,
+        val code: String,
+        val message: String
+    )
+
+    private const val MAX_DIAGNOSTIC_LOGS = 50
+    private val logLock = Any()
+    private val recentErrorBuffer = ArrayDeque<DiagnosticLogEntry>(MAX_DIAGNOSTIC_LOGS)
+
+    private fun recordError(level: String, code: String, message: String) {
+        val clean = sanitize(message).take(240)
+        synchronized(logLock) {
+            if (recentErrorBuffer.size >= MAX_DIAGNOSTIC_LOGS) {
+                recentErrorBuffer.removeFirst()
+            }
+            recentErrorBuffer.addLast(
+                DiagnosticLogEntry(
+                    timestampMillis = System.currentTimeMillis(),
+                    level = level,
+                    code = code,
+                    message = clean
+                )
+            )
+        }
+    }
+
+    fun getRecentErrors(): List<DiagnosticLogEntry> {
+        synchronized(logLock) {
+            return recentErrorBuffer.toList()
+        }
+    }
+
     fun d(tag: String, message: String) {
         if (BuildConfig.DEBUG) {
             Log.d(tag, sanitize(message))
@@ -28,11 +62,19 @@ object SecureLogger {
     }
 
     fun w(tag: String, code: String, message: String) {
-        Log.w(tag, "[$code] ${sanitize(message)}")
+        val safe = sanitize(message)
+        recordError("WARN", code, safe)
+        Log.w(tag, "[$code] $safe")
     }
 
     fun e(tag: String, code: String, message: String, throwable: Throwable? = null) {
         val safeMsg = "[$code] ${sanitize(message)}"
+        val fullMsg = if (throwable != null) {
+            "${sanitize(message)} (${sanitize(throwable.message)})"
+        } else {
+            sanitize(message)
+        }
+        recordError("ERROR", code, fullMsg)
         if (throwable != null) {
             Log.e(tag, "$safeMsg (${sanitize(throwable.message)})")
         } else {

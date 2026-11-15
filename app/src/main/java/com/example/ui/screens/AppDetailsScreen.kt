@@ -34,9 +34,13 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -58,6 +62,7 @@ import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,7 +74,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -86,24 +90,26 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.installer.ApkInstaller
-import com.example.data.installer.PackageHelper
+import com.example.data.model.AppActionState
 import com.example.data.model.AppItem
 import com.example.data.model.DownloadItem
-import com.example.data.model.DownloadStatus
+import com.example.data.model.InstalledPackageSummary
 import com.example.data.model.ReviewItem
+import com.example.data.model.resolveAppActionState
 import com.example.data.security.AiSecurityScanner
 import com.example.data.security.SecurityReport
 import com.example.data.translation.MlKitTranslatorHelper
 import com.example.data.translation.TranslationOutcome
+import com.example.data.translation.TranslationStage
 import com.example.ui.components.AppIconBadge
 import com.example.ui.components.NeonCard
 import com.example.ui.components.NeonGradientButton
 import com.example.ui.components.ProblemReportDialog
 import com.example.ui.components.StarRatingBar
+import com.example.ui.components.StoreImageLoader
 import com.example.ui.theme.AccentGold
 import com.example.ui.theme.PrimeTheme
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -113,6 +119,10 @@ fun AppDetailsScreen(
     downloadItem: DownloadItem?,
     reviews: List<ReviewItem>,
     allApps: List<AppItem> = emptyList(),
+    installedInfo: InstalledPackageSummary? = null,
+    isApkReady: Boolean = false,
+    isInstalling: Boolean = false,
+    hasSignatureConflict: Boolean = false,
     targetLanguageCode: String = "en",
     autoTranslateEnabled: Boolean = true,
     wifiOnlyTranslation: Boolean = false,
@@ -121,8 +131,11 @@ fun AppDetailsScreen(
     onSearchClick: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDownloadClick: () -> Unit,
+    onResumeDownload: () -> Unit = onDownloadClick,
+    onPauseDownload: () -> Unit = {},
     onCancelDownload: () -> Unit,
     onInstallClick: () -> Unit = onDownloadClick,
+    onForceReinstallClick: () -> Unit = onInstallClick,
     onUninstallClick: (String) -> Unit = {},
     onOpenAppClick: (String) -> Unit = {},
     onReportProblem: (String, String) -> Unit = { _, _ -> },
@@ -158,6 +171,7 @@ fun AppDetailsScreen(
     var showOriginalText by remember(app.id, targetLanguageCode) { mutableStateOf(false) }
     var translationRetryCount by remember { mutableIntStateOf(0) }
     var isTranslating by remember(app.id, targetLanguageCode) { mutableStateOf(false) }
+    var translationStage by remember(app.id, targetLanguageCode) { mutableStateOf<TranslationStage?>(null) }
     var translatedDesc by remember(app.id, targetLanguageCode) { mutableStateOf<String?>(null) }
     var translatedFeatures by remember(app.id, targetLanguageCode) { mutableStateOf<List<String>?>(null) }
     var translatedChangelog by remember(app.id, targetLanguageCode) { mutableStateOf<String?>(null) }
@@ -165,17 +179,26 @@ fun AppDetailsScreen(
     var translationError by remember(app.id, targetLanguageCode) { mutableStateOf<String?>(null) }
     var isTranslationWifiBlocked by remember(app.id, targetLanguageCode) { mutableStateOf(false) }
 
+    val safeVersion = remember(app.version) {
+        app.version.trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "1.0.0"
+    }
+    val safeChangelog = remember(app.changelog) {
+        app.changelog?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+    }
     val baseDescription = remember(app, targetLanguageCode) {
+        val descAr = app.descriptionAr.trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
+        val descEn = app.descriptionEn.trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
         if (targetLanguageCode.equals("ar", ignoreCase = true)) {
-            app.descriptionAr.ifBlank { app.descriptionEn }
+            descAr.ifBlank { descEn }
         } else {
-            app.descriptionEn.ifBlank { app.descriptionAr }
+            descEn.ifBlank { descAr }
         }
     }
 
     LaunchedEffect(app.id, targetLanguageCode, autoTranslateEnabled, wifiOnlyTranslation, translationRetryCount) {
         if (!autoTranslateEnabled) {
             isTranslating = false
+            translationStage = null
             translatedDesc = null
             translatedFeatures = null
             translatedChangelog = null
@@ -186,6 +209,7 @@ fun AppDetailsScreen(
         }
 
         isTranslating = true
+        translationStage = TranslationStage.Identifying
         translationError = null
         isTranslationWifiBlocked = false
         translatedDesc = null
@@ -199,7 +223,8 @@ fun AppDetailsScreen(
             field = "description",
             originalText = baseDescription,
             targetLanguageCode = targetLanguageCode,
-            wifiOnly = wifiOnlyTranslation
+            wifiOnly = wifiOnlyTranslation,
+            onStageChanged = { translationStage = it }
         )
         when (descOutcome) {
             is TranslationOutcome.Success -> {
@@ -222,7 +247,8 @@ fun AppDetailsScreen(
                 field = "features",
                 originalText = app.featuresAr.joinToString("\n"),
                 targetLanguageCode = targetLanguageCode,
-                wifiOnly = wifiOnlyTranslation
+                wifiOnly = wifiOnlyTranslation,
+                onStageChanged = { translationStage = it }
             )
             when (featOutcome) {
                 is TranslationOutcome.Success -> {
@@ -244,7 +270,7 @@ fun AppDetailsScreen(
             }
         }
 
-        val rawChangelog = app.changelog?.trim().orEmpty()
+        val rawChangelog = safeChangelog.orEmpty()
         if (translationError == null && rawChangelog.isNotBlank()) {
             val chgOutcome = MlKitTranslatorHelper.translateField(
                 context = context,
@@ -252,7 +278,8 @@ fun AppDetailsScreen(
                 field = "changelog",
                 originalText = rawChangelog,
                 targetLanguageCode = targetLanguageCode,
-                wifiOnly = wifiOnlyTranslation
+                wifiOnly = wifiOnlyTranslation,
+                onStageChanged = { translationStage = it }
             )
             if (chgOutcome is TranslationOutcome.Success) {
                 translatedChangelog = chgOutcome.translatedText
@@ -262,14 +289,18 @@ fun AppDetailsScreen(
             }
         }
 
+        translationStage = null
         isTranslating = false
     }
 
-    val installedInfo = remember(app.packageName, app.name) {
-        val apkFile = ApkInstaller.getApkFile(context, app.id)
-        val pkg = ApkInstaller.findInstalledPackage(context, app.name, apkFile, app.packageName)
-        if (!pkg.isNullOrBlank()) PackageHelper.getInstalledInfo(context, pkg) else null
-    }
+    val actionState = resolveAppActionState(
+        app = app,
+        downloadItem = downloadItem,
+        isApkReady = isApkReady,
+        isInstalling = isInstalling,
+        hasSignatureConflict = hasSignatureConflict,
+        installedInfo = installedInfo
+    )
 
     val similarApps = remember(allApps, app) {
         allApps.filter {
@@ -291,7 +322,7 @@ fun AppDetailsScreen(
     val displayedChangelog = if (!showOriginalText && !translatedChangelog.isNullOrBlank()) {
         translatedChangelog!!
     } else {
-        app.changelog?.ifBlank { null } ?: defaultWhatsNew
+        safeChangelog ?: defaultWhatsNew
     }
     val hasAnyTranslation = !translatedDesc.isNullOrBlank() ||
         !translatedFeatures.isNullOrEmpty() ||
@@ -372,6 +403,13 @@ fun AppDetailsScreen(
                                     onClick = {
                                         showMenu = false
                                         onShareClick()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.install_anyway_reinstall), color = colors.textPrimary) },
+                                    onClick = {
+                                        showMenu = false
+                                        onForceReinstallClick()
                                     }
                                 )
                                 DropdownMenuItem(
@@ -457,6 +495,24 @@ fun AppDetailsScreen(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+
+                        if (installedInfo != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.success.copy(alpha = if (colors.isDark) 0.22f else 0.12f))
+                                    .border(1.dp, colors.success.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                                    .testTag("details_installed_badge")
+                            ) {
+                                Text(
+                                    text = "✔ ${stringResource(R.string.badge_installed)}",
+                                    color = colors.success,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
 
                         Box(
@@ -559,157 +615,235 @@ fun AppDetailsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Download / Install / Update / Open Action Section
-                    if (downloadItem != null && downloadItem.status == DownloadStatus.DOWNLOADING) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .shadow(if (colors.isDark) 8.dp else 2.dp, RoundedCornerShape(18.dp), ambientColor = colors.accentGlow, spotColor = colors.accent)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(colors.card)
-                                .border(1.dp, colors.border, RoundedCornerShape(18.dp))
-                                .padding(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                    // Download / Install / Update / Open Action Section (strict AppActionState)
+                    when (actionState) {
+                        is AppActionState.Downloading -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(colors.card)
+                                    .border(1.dp, colors.border, RoundedCornerShape(18.dp))
+                                    .padding(16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.downloading_percent, (actionState.progress * 100).toInt()),
+                                        color = colors.textPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = actionState.speed,
+                                        color = colors.accent,
+                                        fontSize = 12.sp
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = {
+                                                if (actionState.isPaused) onResumeDownload() else onPauseDownload()
+                                            },
+                                            modifier = Modifier.minimumInteractiveComponentSize()
+                                        ) {
+                                            Icon(
+                                                imageVector = if (actionState.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                                contentDescription = if (actionState.isPaused) {
+                                                    stringResource(R.string.download_resume)
+                                                } else {
+                                                    stringResource(R.string.download_pause)
+                                                },
+                                                tint = colors.accent
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = onCancelDownload,
+                                            modifier = Modifier.minimumInteractiveComponentSize()
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = stringResource(R.string.cancel),
+                                                tint = colors.textPrimary
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LinearProgressIndicator(
+                                    progress = { actionState.progress.coerceIn(0f, 1f) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    color = colors.accent,
+                                    trackColor = colors.surface
+                                )
+                            }
+                        }
+
+                        is AppActionState.Retry -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f))
+                                    .border(1.dp, colors.danger.copy(alpha = 0.6f), RoundedCornerShape(18.dp))
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(
-                                    text = stringResource(R.string.downloading_percent, (downloadItem.progress * 100).toInt()),
+                                    text = actionState.errorMessage ?: stringResource(R.string.download_failed_retry),
+                                    color = colors.danger,
+                                    fontSize = 13.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                NeonGradientButton(
+                                    text = stringResource(R.string.download_retry),
+                                    icon = Icons.Filled.Refresh,
+                                    testTag = "details_retry_download_button",
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = onResumeDownload
+                                )
+                            }
+                        }
+
+                        AppActionState.Installing -> {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(colors.cardAlt)
+                                    .border(1.dp, colors.accent.copy(alpha = 0.6f), RoundedCornerShape(16.dp)),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    color = colors.accent,
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.5.dp
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = stringResource(R.string.installing_dots),
                                     color = colors.textPrimary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
                                 )
-                                Text(
-                                    text = downloadItem.speed,
-                                    color = colors.accent,
-                                    fontSize = 12.sp
-                                )
-                                IconButton(
-                                    onClick = onCancelDownload,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = stringResource(R.string.cancel),
-                                        tint = colors.textPrimary
-                                    )
-                                }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(
-                                progress = { downloadItem.progress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
-                                color = colors.accent,
-                                trackColor = colors.surface
-                            )
                         }
-                    } else if (downloadItem != null && downloadItem.status == DownloadStatus.FAILED) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f))
-                                .border(1.dp, colors.danger.copy(alpha = 0.6f), RoundedCornerShape(18.dp))
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = downloadItem.errorMessage ?: stringResource(R.string.download_failed_retry),
-                                color = colors.danger,
-                                fontSize = 13.sp,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            NeonGradientButton(
-                                text = stringResource(R.string.download_retry),
-                                icon = Icons.Filled.Download,
-                                testTag = "details_retry_download_button",
+
+                        is AppActionState.InstallReady -> {
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                onClick = onDownloadClick
-                            )
-                        }
-                    } else if (downloadItem != null && (downloadItem.isCompleted || downloadItem.status == DownloadStatus.COMPLETED)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            NeonGradientButton(
-                                text = stringResource(R.string.ready_to_install),
-                                icon = Icons.Filled.CheckCircle,
-                                testTag = "details_install_button",
-                                modifier = Modifier.weight(1f),
-                                onClick = onInstallClick
-                            )
-                            if (installedInfo != null) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Button(
-                                    onClick = { showConfirmUninstallDialog = true },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
-                                    ),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.6f)),
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier.height(48.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Filled.Delete, contentDescription = stringResource(R.string.uninstall), tint = colors.danger)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(stringResource(R.string.uninstall), color = colors.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                NeonGradientButton(
+                                    text = stringResource(R.string.ready_to_install),
+                                    icon = Icons.Filled.CheckCircle,
+                                    testTag = "details_install_button",
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onInstallClick
+                                )
+                                if (installedInfo != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = { showConfirmUninstallDialog = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                                        ),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.6f)),
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.height(48.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Filled.Delete, contentDescription = stringResource(R.string.uninstall), tint = colors.danger)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(stringResource(R.string.uninstall), color = colors.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
                                 }
                             }
                         }
-                    } else if (installedInfo != null) {
-                        val hasUpdate = app.versionCode > installedInfo.versionCode
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (hasUpdate) {
+
+                        is AppActionState.Update -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 NeonGradientButton(
-                                    text = "${stringResource(R.string.update_to_version, app.version)} (${app.size})",
-                                    icon = Icons.Filled.Download,
+                                    text = "${stringResource(R.string.update_to_version, safeVersion)} (${app.size})",
+                                    icon = Icons.Filled.SystemUpdate,
                                     testTag = "details_update_button",
                                     modifier = Modifier.weight(1f),
                                     onClick = onDownloadClick
                                 )
-                            } else {
+                                if (installedInfo != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = { showConfirmUninstallDialog = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                                        ),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.6f)),
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.height(48.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Filled.Delete, contentDescription = stringResource(R.string.uninstall), tint = colors.danger)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(stringResource(R.string.uninstall), color = colors.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        AppActionState.Open -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 NeonGradientButton(
                                     text = stringResource(R.string.open_app),
                                     icon = Icons.Filled.OpenInNew,
                                     testTag = "details_open_button",
                                     modifier = Modifier.weight(1f),
-                                    onClick = { onOpenAppClick(installedInfo.packageName) }
+                                    onClick = {
+                                        val pkg = installedInfo?.packageName
+                                        if (!pkg.isNullOrBlank()) {
+                                            onOpenAppClick(pkg)
+                                        }
+                                    }
                                 )
-                            }
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            Button(
-                                onClick = { showConfirmUninstallDialog = true },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.6f)),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.height(48.dp)
-                            ) {
-                                Icon(imageVector = Icons.Filled.Delete, contentDescription = stringResource(R.string.uninstall), tint = colors.danger)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(stringResource(R.string.uninstall), color = colors.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                if (installedInfo != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = { showConfirmUninstallDialog = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.22f else 0.12f)
+                                        ),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.6f)),
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.height(48.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Filled.Delete, contentDescription = stringResource(R.string.uninstall), tint = colors.danger)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(stringResource(R.string.uninstall), color = colors.danger, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
                             }
                         }
-                    } else {
-                        NeonGradientButton(
-                            text = "${stringResource(R.string.download)} (${app.size})",
-                            icon = Icons.Filled.Download,
-                            testTag = "details_download_button",
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = onDownloadClick
-                        )
+
+                        AppActionState.Download -> {
+                            NeonGradientButton(
+                                text = "${stringResource(R.string.download)} (${app.size})",
+                                icon = Icons.Filled.Download,
+                                testTag = "details_download_button",
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onDownloadClick
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -720,7 +854,8 @@ fun AppDetailsScreen(
                             scope.launch {
                                 isScanningSecurity = true
                                 showSecurityDialog = true
-                                val apkFile = ApkInstaller.getApkFile(context, app.id)
+                                val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, app.id)
+                                    ?: ApkInstaller.getApkFile(context, app.id)
                                 val report = AiSecurityScanner.scanApk(context, apkFile)
                                 securityReport = report
                                 isScanningSecurity = false
@@ -744,37 +879,39 @@ fun AppDetailsScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Resolve Signature / Install Conflict Button
-                    Button(
-                        onClick = {
-                            val apkFile = ApkInstaller.getApkFile(context, app.id)
-                            val resolvedPkg = ApkInstaller.findInstalledPackage(
-                                context,
-                                app.name,
-                                apkFile,
-                                app.packageName
+                    // Show Signature Conflict resolution banner ONLY when an actual signature conflict occurred
+                    if (hasSignatureConflict) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, app.id)
+                                    ?: ApkInstaller.getApkFile(context, app.id)
+                                val resolvedPkg = installedInfo?.packageName ?: ApkInstaller.findInstalledPackage(
+                                    context,
+                                    app.name,
+                                    apkFile,
+                                    app.packageName
+                                )
+                                detectedInstalledPackage = resolvedPkg
+                                showUninstallConflictDialog = true
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("details_conflict_fix_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.55f))
+                        ) {
+                            Text(
+                                text = "🛡️ ${stringResource(R.string.uninstall_and_install)}",
+                                color = colors.danger,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                            detectedInstalledPackage = resolvedPkg
-                            showUninstallConflictDialog = true
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("details_conflict_fix_button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = colors.danger.copy(alpha = if (colors.isDark) 0.18f else 0.10f)
-                        ),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.danger.copy(alpha = 0.55f))
-                    ) {
-                        Text(
-                            text = "🛡️ ${stringResource(R.string.uninstall_and_install)}",
-                            color = colors.danger,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        }
                     }
                 }
             }
@@ -847,8 +984,16 @@ fun AppDetailsScreen(
                                         strokeWidth = 2.dp
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
+                                    val stageText = when (val stage = translationStage) {
+                                        is TranslationStage.DownloadingModel -> stringResource(
+                                            R.string.downloading_translation_model,
+                                            stage.sourceLangTag.uppercase(),
+                                            stage.targetLangTag.uppercase()
+                                        )
+                                        else -> stringResource(R.string.translating_text)
+                                    }
                                     Text(
-                                        text = stringResource(R.string.translating_text),
+                                        text = stageText,
                                         color = colors.textPrimary,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium
@@ -966,7 +1111,7 @@ fun AppDetailsScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                             Text("🚀 ", fontSize = 15.sp)
                                             Text(
-                                                text = "${stringResource(R.string.whats_new)} (v${app.version})",
+                                                text = "${stringResource(R.string.whats_new)} (v$safeVersion)",
                                                 color = colors.textPrimary,
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold
@@ -996,7 +1141,7 @@ fun AppDetailsScreen(
 
                             Text(
                                 text = displayedDescription,
-                                color = colors.textSecondary,
+                                color = colors.textPrimary.copy(alpha = if (colors.isDark) 0.88f else 0.90f),
                                 fontSize = 14.sp,
                                 lineHeight = 22.sp
                             )
@@ -1186,7 +1331,7 @@ fun AppDetailsScreen(
                                     Spacer(modifier = Modifier.height(6.dp))
                                     SpecRow(
                                         label = stringResource(R.string.version),
-                                        value = app.version,
+                                        value = safeVersion,
                                         valueColor = colors.textPrimary
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -1720,10 +1865,11 @@ fun ScreenshotThumbnail(
     onClick: () -> Unit
 ) {
     val colors = PrimeTheme.colors
+    val context = LocalContext.current
+    val imageLoader = remember(context) { StoreImageLoader.get(context) }
     Box(
         modifier = modifier
             .size(width, height)
-            .shadow(if (colors.isDark) 6.dp else 2.dp, RoundedCornerShape(14.dp), ambientColor = colors.accentGlow, spotColor = colors.accent)
             .clip(RoundedCornerShape(14.dp))
             .background(
                 Brush.linearGradient(
@@ -1737,6 +1883,7 @@ fun ScreenshotThumbnail(
         if (!imageUrl.isNullOrBlank()) {
             AsyncImage(
                 model = imageUrl,
+                imageLoader = imageLoader,
                 contentDescription = stringResource(R.string.screenshots),
                 modifier = Modifier
                     .fillMaxSize()

@@ -1,5 +1,12 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,18 +25,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Login
@@ -51,6 +66,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -63,17 +79,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.BuildConfig
 import com.example.R
 import com.example.data.github.StoreReleaseInfo
@@ -92,8 +112,11 @@ fun SettingsScreen(
     isDarkMode: Boolean,
     notificationsEnabled: Boolean,
     cacheSize: String,
+    apksSize: String = "0 KB",
+    deleteApkAfterInstall: Boolean = true,
     userProfile: UserProfile?,
     isAdmin: Boolean = false,
+    diagnosticsReport: String = "",
     hasNewUpdateBadge: Boolean = false,
     isCheckingUpdate: Boolean = false,
     availableStoreUpdate: StoreUpdateInfo? = null,
@@ -102,6 +125,7 @@ fun SettingsScreen(
     showLoginDialog: Boolean = false,
     isAuthLoading: Boolean = false,
     authErrorMessage: String? = null,
+    listState: LazyListState = rememberLazyListState(),
     onOpenInstalledApps: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
     updatesCount: Int = 0,
@@ -128,7 +152,13 @@ fun SettingsScreen(
     onDismissUpdateBadge: () -> Unit = {},
     onToggleDarkMode: () -> Unit,
     onToggleNotifications: () -> Unit,
+    onSetNotificationsEnabled: (Boolean) -> Unit = { _ -> onToggleNotifications() },
+    onToggleDeleteApkAfterInstall: () -> Unit = {},
+    shizukuRootInstallEnabled: Boolean = false,
+    onToggleShizukuRootInstall: () -> Unit = {},
     onClearCache: () -> Unit,
+    onDeleteAllDownloadedApks: () -> Unit = {},
+    onRefreshStorageStats: () -> Unit = {},
     onShareApp: () -> Unit,
     onRateApp: () -> Unit,
     onLogoutClick: () -> Unit,
@@ -138,12 +168,34 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val colors = PrimeTheme.colors
 
     var showAboutDialog by remember { mutableStateOf(false) }
     var showCacheDialog by remember { mutableStateOf(false) }
+    var showConfirmDeleteApks by remember { mutableStateOf(false) }
+    var showDiagnosticsDialog by remember { mutableStateOf(false) }
     var showAdminLoginDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var notifPermDenied by remember { mutableStateOf(false) }
+
+    val hasNotifPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            notifPermDenied = false
+            onSetNotificationsEnabled(true)
+        } else {
+            notifPermDenied = true
+            onSetNotificationsEnabled(false)
+            onToast(context.getString(R.string.notifications_perm_denied))
+        }
+    }
 
     var showUpdateFoundDialog by remember { mutableStateOf(false) }
     var showUpToDateDialog by remember { mutableStateOf(false) }
@@ -187,6 +239,7 @@ fun SettingsScreen(
         }
 
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -199,12 +252,8 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
-                        .testTag("account_card")
-                        .clickable {
-                            if (!isUserLoggedIn) {
-                                onOpenLogin()
-                            }
-                        }
+                        .testTag("account_card"),
+                    onClick = if (!isUserLoggedIn) { { onOpenLogin() } } else null
                 ) {
                     Row(
                         modifier = Modifier
@@ -297,8 +346,8 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
-                        .testTag("app_updates_row")
-                        .clickable { onOpenUpdates() }
+                        .testTag("app_updates_row"),
+                    onClick = { onOpenUpdates() }
                 ) {
                     Row(
                         modifier = Modifier
@@ -429,10 +478,11 @@ fun SettingsScreen(
                                     )
                                 }
                             }
-                            if (githubReleaseInfo.bodyNotes.isNotBlank()) {
+                            val cleanBodyNotes = githubReleaseInfo.bodyNotes.cleanOrNull()
+                            if (cleanBodyNotes.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = githubReleaseInfo.bodyNotes.take(150),
+                                    text = cleanBodyNotes.take(150),
                                     color = colors.textSecondary,
                                     fontSize = 11.sp,
                                     lineHeight = 16.sp
@@ -449,17 +499,17 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
-                        .testTag("check_store_update_row")
-                        .clickable {
-                            onCheckForUpdate { hasUpdate, info ->
-                                if (hasUpdate && info != null) {
-                                    pendingUpdateInfo = info
-                                    showUpdateFoundDialog = true
-                                } else {
-                                    showUpToDateDialog = true
-                                }
+                        .testTag("check_store_update_row"),
+                    onClick = {
+                        onCheckForUpdate { hasUpdate, info ->
+                            if (hasUpdate && info != null) {
+                                pendingUpdateInfo = info
+                                showUpdateFoundDialog = true
+                            } else {
+                                showUpToDateDialog = true
                             }
                         }
+                    }
                 ) {
                     Row(
                         modifier = Modifier
@@ -612,7 +662,8 @@ fun SettingsScreen(
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .defaultMinSize(minHeight = 40.dp)
+                                        .minimumInteractiveComponentSize()
+                                        .defaultMinSize(minHeight = 44.dp)
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(if (isSelected) colors.accent else colors.surface)
                                         .border(
@@ -787,7 +838,104 @@ fun SettingsScreen(
                 }
             }
 
-            // 11. Notifications Toggle Card
+            // 11. Notifications Toggle Card (with Android 13+ permission check)
+            item {
+                val effectiveNotifChecked = notificationsEnabled && hasNotifPermission
+                NeonCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.notifications),
+                                    color = colors.textPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = when {
+                                        !hasNotifPermission && notificationsEnabled -> stringResource(R.string.notifications_perm_denied)
+                                        effectiveNotifChecked -> stringResource(R.string.notifications_enabled)
+                                        else -> stringResource(R.string.notifications_disabled)
+                                    },
+                                    color = if (!hasNotifPermission && notifPermDenied) colors.warning else colors.textSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Switch(
+                                    checked = effectiveNotifChecked,
+                                    onCheckedChange = { wantEnable ->
+                                        if (wantEnable) {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotifPermission) {
+                                                notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            } else {
+                                                notifPermDenied = false
+                                                onSetNotificationsEnabled(true)
+                                            }
+                                        } else {
+                                            onSetNotificationsEnabled(false)
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("notifications_switch"),
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = colors.textOnAccent,
+                                        checkedTrackColor = colors.accent,
+                                        uncheckedThumbColor = colors.textMuted,
+                                        uncheckedTrackColor = colors.surface,
+                                        uncheckedBorderColor = colors.border
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Icon(
+                                    imageVector = Icons.Filled.Notifications,
+                                    contentDescription = null,
+                                    tint = colors.accent,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        if (!hasNotifPermission && (notifPermDenied || notificationsEnabled)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                        }
+                                        runCatching { context.startActivity(intent) }
+                                    },
+                                    modifier = Modifier.testTag("open_notif_settings_button")
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.open_notification_settings),
+                                        color = colors.accent,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 11.5 Auto-delete APK after install Toggle Card
             item {
                 NeonCard(
                     modifier = Modifier
@@ -803,56 +951,103 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = stringResource(R.string.notifications),
+                                text = stringResource(R.string.delete_apk_after_install),
                                 color = colors.textPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (notificationsEnabled) {
-                                    stringResource(R.string.notifications_enabled)
-                                } else {
-                                    stringResource(R.string.notifications_disabled)
-                                },
+                                text = stringResource(R.string.delete_apk_after_install_desc),
                                 color = colors.textSecondary,
                                 fontSize = 12.sp
                             )
                         }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Switch(
-                                checked = notificationsEnabled,
-                                onCheckedChange = { onToggleNotifications() },
-                                modifier = Modifier.testTag("notifications_switch"),
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = colors.textOnAccent,
-                                    checkedTrackColor = colors.accent,
-                                    uncheckedThumbColor = colors.textMuted,
-                                    uncheckedTrackColor = colors.surface,
-                                    uncheckedBorderColor = colors.border
-                                )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = deleteApkAfterInstall,
+                            onCheckedChange = { onToggleDeleteApkAfterInstall() },
+                            modifier = Modifier.testTag("delete_apk_after_install_switch"),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = colors.textOnAccent,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textMuted,
+                                uncheckedTrackColor = colors.surface,
+                                uncheckedBorderColor = colors.border
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Icon(
-                                imageVector = Icons.Filled.Notifications,
-                                contentDescription = null,
-                                tint = colors.accent,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
+                        )
                     }
                 }
             }
 
-            // 12. Storage Management
+            // 11.6 Shizuku / Root Silent Install Mode Toggle Card
+            item {
+                NeonCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.silent_install_mode_title),
+                                color = colors.textPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = stringResource(R.string.silent_install_mode_desc),
+                                color = colors.textSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = shizukuRootInstallEnabled,
+                            onCheckedChange = { onToggleShizukuRootInstall() },
+                            modifier = Modifier.testTag("shizuku_root_switch"),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = colors.textOnAccent,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textMuted,
+                                uncheckedTrackColor = colors.surface,
+                                uncheckedBorderColor = colors.border
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 12. Storage Management (Cache + Downloaded APKs breakdown)
             item {
                 SettingsOptionItem(
-                    title = stringResource(R.string.storage_mgmt),
-                    subtitle = stringResource(R.string.cache_size_used, cacheSize),
+                    title = stringResource(R.string.manage_storage),
+                    subtitle = stringResource(R.string.storage_breakdown_subtitle, cacheSize, apksSize),
                     icon = Icons.Filled.Storage,
                     testTag = "storage_mgmt_row",
-                    onClick = { showCacheDialog = true }
+                    onClick = {
+                        onRefreshStorageStats()
+                        showCacheDialog = true
+                    }
                 )
+            }
+
+            // 12.5 Owner/Admin Diagnostics Row
+            if (isAdmin) {
+                item {
+                    SettingsOptionItem(
+                        title = stringResource(R.string.diagnostics_title),
+                        subtitle = stringResource(R.string.diagnostics_subtitle),
+                        icon = Icons.Filled.BugReport,
+                        testTag = "diagnostics_row",
+                        onClick = { showDiagnosticsDialog = true }
+                    )
+                }
             }
 
             // 13. About Store
@@ -943,7 +1138,8 @@ fun SettingsScreen(
                             fontSize = 13.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        if (update.notes.isNotBlank()) {
+                        val cleanNotes = update.notes.cleanOrNull()
+                        if (cleanNotes.isNotBlank()) {
                             Text(
                                 text = stringResource(R.string.admin_update_notes),
                                 color = colors.textPrimary,
@@ -952,7 +1148,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = update.notes,
+                                text = cleanNotes,
                                 color = colors.textSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp
@@ -1406,17 +1602,123 @@ fun SettingsScreen(
             )
         }
 
-        // Cache Clear Dialog
+        // Manage Storage Breakdown Dialog
         if (showCacheDialog) {
             AlertDialog(
                 onDismissRequest = { showCacheDialog = false },
                 containerColor = colors.card,
                 title = {
-                    Text(text = stringResource(R.string.clear_cache), color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.manage_storage),
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = stringResource(R.string.storage_breakdown_subtitle, cacheSize, apksSize),
+                            color = colors.textSecondary,
+                            fontSize = 12.sp
+                        )
+
+                        NeonCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("clear_temp_cache_btn"),
+                            onClick = {
+                                onClearCache()
+                                showCacheDialog = false
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.CleaningServices,
+                                    contentDescription = null,
+                                    tint = colors.accent,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.clear_temp_cache),
+                                        color = colors.textPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.clear_temp_cache_desc, cacheSize),
+                                        color = colors.textSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        NeonCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("delete_downloaded_apks_btn"),
+                            onClick = { showConfirmDeleteApks = true }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.DeleteSweep,
+                                    contentDescription = null,
+                                    tint = colors.danger,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.delete_downloaded_apks),
+                                        color = colors.textPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.delete_downloaded_apks_desc, apksSize),
+                                        color = colors.textSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showCacheDialog = false }) {
+                        Text(stringResource(R.string.close), color = colors.accent, fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+
+        // Confirm Delete Downloaded APKs Dialog
+        if (showConfirmDeleteApks) {
+            AlertDialog(
+                onDismissRequest = { showConfirmDeleteApks = false },
+                containerColor = colors.card,
+                title = {
+                    Text(
+                        text = stringResource(R.string.delete_downloaded_apks),
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 text = {
                     Text(
-                        text = stringResource(R.string.clear_cache_confirm, cacheSize),
+                        text = stringResource(R.string.delete_downloaded_apks_confirm, apksSize),
                         color = colors.textSecondary,
                         fontSize = 13.sp
                     )
@@ -1424,17 +1726,77 @@ fun SettingsScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            onClearCache()
+                            onDeleteAllDownloadedApks()
+                            showConfirmDeleteApks = false
                             showCacheDialog = false
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.danger)
                     ) {
-                        Text(stringResource(R.string.confirm), color = colors.textOnAccent)
+                        Text(stringResource(R.string.confirm), color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showCacheDialog = false }) {
+                    TextButton(onClick = { showConfirmDeleteApks = false }) {
                         Text(stringResource(R.string.cancel), color = colors.textMuted)
+                    }
+                }
+            )
+        }
+
+        // Owner/Admin Diagnostics Dialog
+        if (showDiagnosticsDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiagnosticsDialog = false },
+                containerColor = colors.card,
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.BugReport,
+                            contentDescription = null,
+                            tint = colors.accent
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.diagnostics_title),
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                text = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.surface)
+                            .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = diagnosticsReport.cleanOrNull().ifBlank { "—" },
+                            color = colors.textPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(diagnosticsReport))
+                            onToast(context.getString(R.string.report_copied))
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                    ) {
+                        Text(stringResource(R.string.copy_report), color = colors.textOnAccent, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDiagnosticsDialog = false }) {
+                        Text(stringResource(R.string.close), color = colors.textMuted)
                     }
                 }
             )
@@ -1560,8 +1922,8 @@ private fun SettingsOptionItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .testTag(testTag)
-            .clickable { onClick() }
+            .testTag(testTag),
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier
@@ -1604,3 +1966,6 @@ private fun SettingsOptionItem(
         }
     }
 }
+
+private fun String?.cleanOrNull(): String =
+    this?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()

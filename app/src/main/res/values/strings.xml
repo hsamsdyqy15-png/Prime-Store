@@ -577,4 +577,154 @@
     <string name="self_check_gh_repo">4. GitHub repository connection</string>
     <string name="self_check_apps_write">5. Database apps write permission</string>
     <string name="admin_publish_success_draft_cleared">Published and saved to catalog ✔</string>
+
+    <!-- Live Sync & Unified Category Hubs -->
+    <string name="new_apps_added_banner">New apps added</string>
+    <string name="new_apps_added_count">%1$d new apps added</string>
+    <string name="new_apps_added_tap">Tap to view</string>
+    <string name="hub_all_apps_title">All Apps</string>
+    <string name="hub_all_games_title">All Games</string>
+    <string name="chip_all_with_count">All (%1$d)</string>
+    <string name="category_chip_with_count">%1$s (%2$d)</string>
+    <string name="sync_updating_label">Syncing catalog…</string>
+
+    <!-- Action State, Storage, Notifications, Share & Diagnostics -->
+    <string name="installing_dots">Installing…</string>
+    <string name="install_anyway_reinstall">Install anyway / Reinstall</string>
+    <string name="app_no_launch_screen">This app has no launch screen</string>
+    <string name="uninstall_cancelled">Uninstall cancelled</string>
+    <string name="delete_apk_after_install">Delete APK after install</string>
+    <string name="delete_apk_after_install_desc">Automatically free space once an app is installed</string>
+    <string name="manage_storage">Manage Storage</string>
+    <string name="storage_breakdown_subtitle">Cache: %1$s • APKs: %2$s</string>
+    <string name="clear_temp_cache">Clear Temporary Cache</string>
+    <string name="clear_temp_cache_desc">Clear temporary files and image cache (%1$s)</string>
+    <string name="delete_downloaded_apks">Delete Downloaded APKs</string>
+    <string name="delete_downloaded_apks_desc">Remove stored APK installer files (%1$s)</string>
+    <string name="delete_downloaded_apks_confirm">Delete all downloaded APK files (%1$s)?</string>
+    <string name="apks_deleted_toast">Deleted %1$s of downloaded APKs 🗑️</string>
+    <string name="notifications_perm_denied">Notification permission denied. Enable it from system settings.</string>
+    <string name="open_notification_settings">Notification Settings</string>
+    <string name="downloading_translation_model">Downloading %1$s → %2$s translation model…</string>
+    <string name="share_store_text">Discover %1$s — curated apps and games with instant updates and on-device translation!</string>
+    <string name="share_app_text">Check out %1$s (%2$s) on Prime Store!</string>
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_subtitle">Inspect sync, device info, and recent error logs</string>
+    <string name="copy_report">Copy Report</string>
+    <string name="report_copied">Diagnostic report copied ✔</string>
+    <string name="diag_store_version">Store Version</string>
+    <string name="diag_android_version">Android Version</string>
+    <string name="diag_device_lang">Device Language</string>
+    <string name="diag_app_lang">App Language</string>
+    <string name="diag_abis">Supported ABIs</string>
+    <string name="diag_room_count">Cached Catalog Apps</string>
+    <string name="diag_last_sync">Last Sync</string>
+    <string name="diag_gh_token">GitHub Token</string>
+    <string name="diag_recent_errors">Recent Errors</string>
+    <string name="diag_yes">Configured</string>
+    <string name="diag_no">Not configured</string>
+    <string name="diag_never">Never</string>
+    <string name="diag_none">None</string>
+
+    <!-- Smooth Installer, Badges, Notifications & Split/OBB -->
+    <string name="badge_installed">Installed</string>
+    <string name="toast_app_installed_fmt">%1$s — Installed ✔</string>
+    <string name="notif_installed_channel_name">App Installations</string>
+    <string name="notif_installed_channel_desc">Notifications when downloaded apps finish installing</string>
+    <string name="notif_installed_title">Installed</string>
+    <string name="notif_installed_tap_open">Tap to open %1$s</string>
+    <string name="install_perm_why_title">Allow App Installations</string>
+    <string name="install_perm_why_1">1. Prime Store downloads the official APK/bundle and verifies its SHA-256 integrity.</string>
+    <string name="install_perm_why_2">2. Android requires your permission once so Prime Store can launch the system package installer.</string>
+    <string name="install_perm_why_3">3. You stay in control — Android always prompts for confirmation on first-time installs.</string>
+    <string name="install_perm_open_settings">Allow &amp; Continue</string>
+    <string name="verifying_sha256">Verifying file integrity…</string>
+    <string name="sha256_mismatch_error">SHA-256 checksum mismatch! File may be corrupted.</string>
+    <string name="downloading_split_part">Downloading split part %1$d/%2$d…</string>
+    <string name="downloading_obb_progress">Downloading game data (OBB) %1$d%%…</string>
+    <string name="obb_scoped_storage_hint">Game data saved to app folder (Android 11+ scoped storage restriction on /Android/obb).</string>
+    <string name="silent_install_mode_title">Shizuku / Root Silent Install Mode</string>
+    <string name="silent_install_mode_desc">Attempt silent package installation via Shizuku or Root when available (falls back to standard installer)</string>
+    <string name="silent_install_unavailable">Shizuku/Root unavailable — using standard Android installer</string>
+
+    <!-- Home Tabs & Scoped Search -->
+    <string name="tab_games">Games</string>
+    <string name="tab_apps_only">Apps</string>
+    <string name="search_scope_games">Searching in Games</string>
+    <string name="search_scope_apps">Searching in Apps</string>
+    <string name="search_scope_all">Search All</string>
+
+    <!-- Admin Item Type, Category Manager & Advanced Installer Fields -->
+    <string name="admin_item_type_label">Item Type *</string>
+    <string name="admin_type_game">Game</string>
+    <string name="admin_type_app">App</string>
+    <string name="admin_category_manager">Category Manager</string>
+    <string name="admin_cat_manage_desc">Add, rename, reorder, change icon, or hide Games &amp; Apps categories</string>
+    <string name="admin_add_category">Add Category</string>
+    <string name="admin_rename_category">Edit Category</string>
+    <string name="admin_cat_name_en">English Name</string>
+    <string name="admin_cat_name_ar">Arabic Name</string>
+    <string name="admin_cat_emoji">Emoji / Icon</string>
+    <string name="admin_cat_hide">Hide</string>
+    <string name="admin_cat_show">Show</string>
+    <string name="admin_cat_hidden_badge">Hidden</string>
+    <string name="admin_move_up">Move up</string>
+    <string name="admin_move_down">Move down</string>
+    <string name="admin_sha256_optional">SHA-256 Checksum (optional)</string>
+    <string name="admin_split_urls_optional">Split APK URLs (comma or newline separated, optional)</string>
+    <string name="admin_obb_url_optional">OBB File URL (optional)</string>
+    <string name="admin_advanced_installer_fields">Advanced Bundle &amp; Verification (Optional)</string>
+
+    <!-- Expanded Games Categories (40) -->
+    <string name="cat_game_football">Football &amp; Soccer</string>
+    <string name="cat_game_shooter">Shooter</string>
+    <string name="cat_game_battle_royale">Battle Royale</string>
+    <string name="cat_game_survival">Survival</string>
+    <string name="cat_game_war">War &amp; Military</string>
+    <string name="cat_game_mmorpg">MMORPG</string>
+    <string name="cat_game_fighting">Fighting</string>
+    <string name="cat_game_horror">Horror</string>
+    <string name="cat_game_platformer">Platformer</string>
+    <string name="cat_game_open_world">Open World</string>
+    <string name="cat_game_idle">Idle &amp; Clicker</string>
+    <string name="cat_game_tower_defense">Tower Defense</string>
+    <string name="cat_game_stealth">Stealth</string>
+    <string name="cat_game_sandbox">Sandbox</string>
+    <string name="cat_game_fishing">Fishing</string>
+    <string name="cat_game_hunting">Hunting</string>
+    <string name="cat_game_cooking">Cooking</string>
+    <string name="cat_game_dress_up">Dress Up &amp; Fashion</string>
+    <string name="cat_game_kids">Kids Games</string>
+    <string name="cat_game_offline">Offline Games</string>
+    <string name="cat_game_multiplayer">Multiplayer</string>
+    <string name="cat_mods">Game Mods</string>
+
+    <!-- Expanded Apps Categories (54) -->
+    <string name="cat_photo_editors">Photo Editors</string>
+    <string name="cat_browsers">Web Browsers</string>
+    <string name="cat_screen_recorders">Screen Recorders</string>
+    <string name="cat_wallpapers">Wallpapers</string>
+    <string name="cat_themes_launchers">Themes &amp; Launchers</string>
+    <string name="cat_icon_packs">Icon Packs</string>
+    <string name="cat_keyboards">Keyboards</string>
+    <string name="cat_fonts">Fonts</string>
+    <string name="cat_file_managers">File Managers</string>
+    <string name="cat_cleaners_boosters">Cleaners &amp; Boosters</string>
+    <string name="cat_security_antivirus">Security &amp; Antivirus</string>
+    <string name="cat_vpn">VPN &amp; Privacy</string>
+    <string name="cat_battery_savers">Battery Savers</string>
+    <string name="cat_office_documents">Office &amp; Documents</string>
+    <string name="cat_notes">Notes &amp; Lists</string>
+    <string name="cat_calendar">Calendar &amp; Planner</string>
+    <string name="cat_languages_translators">Languages &amp; Translators</string>
+    <string name="cat_live_tv_streaming">Live TV &amp; Streaming</string>
+    <string name="cat_developer_tools">Developer Tools</string>
+    <string name="cat_widgets">Widgets</string>
+    <string name="cat_qr_scanners">QR &amp; Barcode Scanners</string>
+    <string name="cat_pdf_tools">PDF Tools</string>
+    <string name="cat_downloaders">Download Managers</string>
+    <string name="cat_gallery">Gallery &amp; Albums</string>
+    <string name="cat_clock_alarm">Clock &amp; Alarms</string>
+    <string name="cat_calculators">Calculators</string>
+    <string name="cat_social_media_tools">Social Media Tools</string>
 </resources>

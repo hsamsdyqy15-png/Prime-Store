@@ -54,6 +54,12 @@ object SupabaseClient {
         return ADMIN_EMAILS.any { it.lowercase() == clean }
     }
 
+    private fun JSONObject.optSafeString(key: String, fallback: String = ""): String {
+        if (!has(key) || isNull(key)) return fallback
+        val value = optString(key, fallback)
+        return if (value.equals("null", ignoreCase = true)) fallback else value
+    }
+
     private val client: OkHttpClient by lazy {
         SecureLogger.attachRedactedLogging(
             OkHttpClient.Builder()
@@ -199,12 +205,12 @@ object SupabaseClient {
                 val respBody = response.body?.string().orEmpty()
                 if (response.isSuccessful && respBody.isNotBlank()) {
                     val json = JSONObject(respBody)
-                    val newAccessToken = json.getString("access_token")
-                    val newRefreshToken = json.optString("refresh_token", refreshToken)
+                    val newAccessToken = json.optSafeString("access_token")
+                    val newRefreshToken = json.optSafeString("refresh_token", refreshToken)
                     val expiresIn = json.optLong("expires_in", 3600L)
                     val expiresAt = json.optLong("expires_at", (System.currentTimeMillis() / 1000L) + expiresIn)
                     val userObj = json.optJSONObject("user")
-                    val email = userObj?.optString("email")?.ifBlank { null } ?: getSavedUserEmail() ?: ""
+                    val email = userObj?.optSafeString("email")?.ifBlank { null } ?: getSavedUserEmail() ?: ""
 
                     saveSession(email, newAccessToken, newRefreshToken, expiresAt)
                     RefreshResponse(
@@ -315,7 +321,7 @@ object SupabaseClient {
                 }
             }
             if (ok && body.isNotBlank()) {
-                val email = JSONObject(body).optString("email", getSavedUserEmail().orEmpty())
+                val email = JSONObject(body).optSafeString("email", getSavedUserEmail().orEmpty())
                 Result.success(email)
             } else {
                 SecureLogger.e(TAG, "AUTH_USER_$code", "User session validation failed")
@@ -342,7 +348,19 @@ object SupabaseClient {
         val message: String = "",
         val details: String = "",
         val code: String = "",
-        val httpCode: Int = 200
+        val httpCode: Int = 200,
+        val savedApp: AppItem? = null
+    )
+
+    data class AppMetaRecord(
+        val id: String,
+        val updatedAtMillis: Long
+    )
+
+    data class DeltaCheckResult(
+        val notModified: Boolean,
+        val records: List<AppMetaRecord> = emptyList(),
+        val etag: String? = null
     )
 
     data class SecretFetchResult(
@@ -373,12 +391,12 @@ object SupabaseClient {
                 val respBody = response.body?.string().orEmpty()
                 if (response.isSuccessful) {
                     val json = JSONObject(respBody)
-                    val token = json.optString("access_token", "")
-                    val rt = json.optString("refresh_token", "")
+                    val token = json.optSafeString("access_token", "")
+                    val rt = json.optSafeString("refresh_token", "")
                     val expiresIn = json.optLong("expires_in", 3600L)
                     val expiresAt = json.optLong("expires_at", (System.currentTimeMillis() / 1000L) + expiresIn)
                     val userObj = json.optJSONObject("user")
-                    val userEmail = userObj?.optString("email", email) ?: email
+                    val userEmail = userObj?.optSafeString("email", email)?.ifBlank { email } ?: email
 
                     saveSession(userEmail, token, rt, expiresAt)
 
@@ -391,9 +409,9 @@ object SupabaseClient {
                 } else {
                     SecureLogger.w(TAG, "SIGN_IN_${response.code}", "Sign in rejected")
                     val errJson = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = errJson?.optString("msg")?.ifBlank { null }
-                        ?: errJson?.optString("message")?.ifBlank { null }
-                        ?: errJson?.optString("error_description")?.ifBlank { null }
+                    val msg = errJson?.optSafeString("msg")?.ifBlank { null }
+                        ?: errJson?.optSafeString("message")?.ifBlank { null }
+                        ?: errJson?.optSafeString("error_description")?.ifBlank { null }
                         ?: appContext?.getString(R.string.toast_admin_wrong_creds)
                         ?: "Invalid login credentials"
                     AuthResponse(success = false, errorMessage = msg)
@@ -426,12 +444,12 @@ object SupabaseClient {
                 val respBody = response.body?.string().orEmpty()
                 if (response.isSuccessful) {
                     val json = JSONObject(respBody)
-                    val token = json.optString("access_token", "")
-                    val rt = json.optString("refresh_token", "")
+                    val token = json.optSafeString("access_token", "")
+                    val rt = json.optSafeString("refresh_token", "")
                     val expiresIn = json.optLong("expires_in", 3600L)
                     val expiresAt = json.optLong("expires_at", (System.currentTimeMillis() / 1000L) + expiresIn)
                     val userObj = json.optJSONObject("user")
-                    val userEmail = userObj?.optString("email", email) ?: email
+                    val userEmail = userObj?.optSafeString("email", email)?.ifBlank { email } ?: email
 
                     if (token.isNotBlank()) {
                         saveSession(userEmail, token, rt, expiresAt)
@@ -445,8 +463,8 @@ object SupabaseClient {
                     )
                 } else {
                     val errJson = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = errJson?.optString("msg")?.ifBlank { null }
-                        ?: errJson?.optString("message")?.ifBlank { null }
+                    val msg = errJson?.optSafeString("msg")?.ifBlank { null }
+                        ?: errJson?.optSafeString("message")?.ifBlank { null }
                         ?: appContext?.getString(R.string.error_unexpected)
                         ?: "Failed to create account"
                     AuthResponse(success = false, errorMessage = msg)
@@ -483,14 +501,14 @@ object SupabaseClient {
                         SecretFetchResult(success = true, value = null, updatedAt = null, httpCode = response.code)
                     } else {
                         val obj = arr.getJSONObject(0)
-                        val value = obj.optString("value", "").trim().ifBlank { null }
-                        val updatedAt = obj.optString("updated_at", "").trim().ifBlank { null }
+                        val value = obj.optSafeString("value", "").trim().ifBlank { null }
+                        val updatedAt = obj.optSafeString("updated_at", "").trim().ifBlank { null }
                         SecretFetchResult(success = true, value = value, updatedAt = updatedAt, httpCode = response.code)
                     }
                 } else {
                     val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
-                    val code = json?.optString("code", "${response.code}").orEmpty()
+                    val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP ${response.code}"
+                    val code = json?.optSafeString("code", "${response.code}").orEmpty()
                     val expired = isTokenExpiredError(response.code, "$msg $respBody")
                     val rlsDenied = isRlsPermissionError(response.code, "$msg $respBody")
                     SecureLogger.e(TAG, "SECRET_GET_${response.code}", "Failed to read secret '$key': $msg")
@@ -566,12 +584,12 @@ object SupabaseClient {
                         SecretStatusResult(success = true, isConfigured = false, updatedAt = null, httpCode = response.code)
                     } else {
                         val obj = arr.getJSONObject(0)
-                        val updatedAt = obj.optString("updated_at", "").trim().ifBlank { null }
+                        val updatedAt = obj.optSafeString("updated_at", "").trim().ifBlank { null }
                         SecretStatusResult(success = true, isConfigured = true, updatedAt = updatedAt, httpCode = response.code)
                     }
                 } else {
                     val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
+                    val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP ${response.code}"
                     SecretStatusResult(
                         success = false,
                         httpCode = response.code,
@@ -640,9 +658,9 @@ object SupabaseClient {
                     SupabaseMutationResult(success = true, httpCode = response.code)
                 } else {
                     val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
-                    val details = json?.optString("details", "").orEmpty()
-                    val code = json?.optString("code", "${response.code}").orEmpty()
+                    val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP ${response.code}"
+                    val details = json?.optSafeString("details", "").orEmpty()
+                    val code = json?.optSafeString("code", "${response.code}").orEmpty()
                     SecureLogger.e(TAG, "SECRET_UPSERT_${response.code}", "Upsert secret '$key' failed: $msg")
                     SupabaseMutationResult(
                         success = false,
@@ -700,8 +718,8 @@ object SupabaseClient {
                     SupabaseMutationResult(success = true, httpCode = response.code)
                 } else {
                     val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
-                    val code = json?.optString("code", "${response.code}").orEmpty()
+                    val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP ${response.code}"
+                    val code = json?.optSafeString("code", "${response.code}").orEmpty()
                     SecureLogger.e(TAG, "SECRET_DEL_${response.code}", "Delete secret '$key' failed: $msg")
                     SupabaseMutationResult(
                         success = false,
@@ -774,7 +792,7 @@ object SupabaseClient {
                 val arr = try { JSONArray(body) } catch (_: Exception) { JSONArray() }
                 if (arr.length() > 0) {
                     val obj = arr.getJSONObject(0)
-                    obj.optString("id", "") to obj.optString("name", "")
+                    obj.optSafeString("id", "") to obj.optSafeString("name", "")
                 } else {
                     "" to ""
                 }
@@ -811,8 +829,8 @@ object SupabaseClient {
                         }
                     } else {
                         val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                        val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${resp.code}" }
-                        val code = json?.optString("code", "${resp.code}").orEmpty()
+                        val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP ${resp.code}"
+                        val code = json?.optSafeString("code", "${resp.code}").orEmpty()
                         return SupabaseMutationResult(
                             success = false,
                             message = SecureLogger.sanitize(msg),
@@ -846,29 +864,95 @@ object SupabaseClient {
     // Catalog Parsing & Queries
     // =========================================================================
 
+    fun parseIsoTimestampMillis(raw: String?): Long {
+        if (raw.isNullOrBlank()) return 0L
+        var clean = raw.trim()
+        // Normalize timezone offset like +00:00 or -05:00 -> +0000 / Z
+        if (clean.endsWith("Z")) {
+            clean = clean.dropLast(1) + "+0000"
+        } else {
+            val tzRegex = Regex("([+-]\\d{2}):(\\d{2})$")
+            clean = tzRegex.replace(clean) { m -> "${m.groupValues[1]}${m.groupValues[2]}" }
+        }
+        // Truncate/pad fractional seconds to 3 digits if present
+        val dotIdx = clean.indexOf('.')
+        if (dotIdx > 0) {
+            val tzStart = clean.indexOfAny(charArrayOf('+', '-'), startIndex = dotIdx)
+            val frac = if (tzStart > dotIdx) clean.substring(dotIdx + 1, tzStart) else clean.substring(dotIdx + 1)
+            val suffix = if (tzStart > dotIdx) clean.substring(tzStart) else ""
+            val ms = frac.padEnd(3, '0').take(3)
+            clean = clean.substring(0, dotIdx + 1) + ms + suffix
+        }
+        val patterns = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+            "yyyy-MM-dd'T'HH:mm:ssZ",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ssZ",
+            "yyyy-MM-dd HH:mm:ss"
+        )
+        for (pattern in patterns) {
+            try {
+                val sdf = SimpleDateFormat(pattern, Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                    isLenient = true
+                }
+                val parsed = sdf.parse(clean)
+                if (parsed != null) return parsed.time
+            } catch (_: Exception) {
+            }
+        }
+        return 0L
+    }
+
+    private fun parseSizeToBytes(sizeStr: String): Long {
+        val s = sizeStr.trim().lowercase(Locale.US)
+        return try {
+            val num = s.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 25.0
+            when {
+                s.contains("gb") -> (num * 1024 * 1024 * 1024).toLong()
+                s.contains("mb") -> (num * 1024 * 1024).toLong()
+                s.contains("kb") -> (num * 1024).toLong()
+                else -> 25_000_000L
+            }
+        } catch (_: Exception) {
+            25_000_000L
+        }
+    }
+
     fun parseAppItem(obj: JSONObject, i: Int = 0): AppItem {
-        val id = obj.optString("id", "")
-        val name = obj.optString("name", appContext?.getString(R.string.dl_service_default_app) ?: "App")
-        val categoryStr = obj.optString("category", "apps").lowercase()
-        val rating = obj.optDouble("rating", 4.5).toFloat()
-        val downloads = obj.optString("downloads", "+100")
-        val size = obj.optString("size", "25 MB")
-        val desc = obj.optString("description", "")
-        val iconUrl = obj.optString("icon_url", "")
-        val fileUrl = obj.optString("file_url", "")
+        val id = obj.optSafeString("id", "")
+        val name = obj.optSafeString("name", "").ifBlank { appContext?.getString(R.string.dl_service_default_app) ?: "App" }
+        val categoryStr = obj.optSafeString("category", "tools").ifBlank { "tools" }.lowercase()
+        val rating = if (obj.isNull("rating")) 4.5f else obj.optDouble("rating", 4.5).toFloat()
+        val downloads = obj.optSafeString("downloads", "+100").ifBlank { "+100" }
+        val downloadsLong = parseDownloads(downloads)
+        val size = obj.optSafeString("size", "25 MB").ifBlank { "25 MB" }
+        val desc = obj.optSafeString("description", "")
+        val iconUrl = obj.optSafeString("icon_url", "")
+        val fileUrl = obj.optSafeString("file_url", "")
         val isOpenSource = obj.optBoolean("is_open_source", false)
-        val sourceCodeUrl = obj.optString("source_code_url", "").ifBlank { null }
-        val supportedAbis = obj.optString("supported_abis", "Universal (All Architectures)")
-        val version = obj.optString("version", "1.0.0")
+        val sourceCodeUrl = obj.optSafeString("source_code_url", "").ifBlank { null }
+        val supportedAbis = obj.optSafeString("supported_abis", "Universal (All Architectures)").ifBlank { "Universal (All Architectures)" }
+        val version = obj.optSafeString("version", "1.0.0").ifBlank { "1.0.0" }
         val versionCode = obj.optLong("version_code", 1L)
-        val changelog = obj.optString("changelog", "").ifBlank { null }
-        val packageName = obj.optString("package_name", "").ifBlank { null }
+        val changelog = obj.optSafeString("changelog", "").ifBlank { null }
+        val packageName = obj.optSafeString("package_name", "").ifBlank { null }
+        val createdAtMillis = parseIsoTimestampMillis(obj.optSafeString("created_at", ""))
+        val updatedAtMillis = parseIsoTimestampMillis(obj.optSafeString("updated_at", "")).let {
+            if (it > 0L) it else createdAtMillis
+        }
 
         val featuresList = mutableListOf<String>()
         val featArray = obj.optJSONArray("features")
         if (featArray != null) {
             for (f in 0 until featArray.length()) {
-                featuresList.add(featArray.getString(f))
+                if (!featArray.isNull(f)) {
+                    val feat = featArray.optString(f, "").trim()
+                    if (feat.isNotBlank() && !feat.equals("null", ignoreCase = true)) {
+                        featuresList.add(feat)
+                    }
+                }
             }
         }
 
@@ -876,13 +960,46 @@ object SupabaseClient {
         val screenArray = obj.optJSONArray("screenshots")
         if (screenArray != null) {
             for (s in 0 until screenArray.length()) {
-                screenList.add(screenArray.getString(s))
+                if (!screenArray.isNull(s)) {
+                    val scr = screenArray.optString(s, "").trim()
+                    if (scr.isNotBlank() && !scr.equals("null", ignoreCase = true)) {
+                        screenList.add(scr)
+                    }
+                }
             }
         }
 
-        val category = if (isOpenSource) AppCategory.OPEN_SOURCE else mapCategory(categoryStr)
+        val explicitType = obj.optSafeString("item_type", "").ifBlank { null }
+        val sha256 = obj.optSafeString("sha256", "").trim().ifBlank { null }
+        val obbUrl = obj.optSafeString("obb_url", "").trim().ifBlank { null }
+        val splitUrlsList = mutableListOf<String>()
+        val splitArr = obj.optJSONArray("split_urls")
+        if (splitArr != null) {
+            for (k in 0 until splitArr.length()) {
+                if (!splitArr.isNull(k)) {
+                    val u = splitArr.optString(k, "").trim()
+                    if (u.isNotBlank() && !u.equals("null", ignoreCase = true)) {
+                        splitUrlsList.add(u)
+                    }
+                }
+            }
+        } else {
+            val splitRaw = obj.optSafeString("split_urls", "").trim()
+            if (splitRaw.isNotBlank()) {
+                splitRaw.split("\n", ",", "|||").forEach { part ->
+                    val u = part.trim()
+                    if (u.startsWith("http", ignoreCase = true)) {
+                        splitUrlsList.add(u)
+                    }
+                }
+            }
+        }
+
+        val mappedCat = mapCategory(categoryStr)
+        val itemType = StoreCategories.inferItemType(categoryStr, explicitType, mappedCat)
+        val category = if (isOpenSource && itemType != StoreCategories.ITEM_TYPE_GAME) AppCategory.OPEN_SOURCE else mappedCat
         val categoryTitle = appContext?.let { StoreCategories.getTitle(it, categoryStr) }
-            ?: StoreCategories.find(categoryStr).titleEn
+            ?: StoreCategories.find(categoryStr, itemType).titleEn
         val tags = mutableListOf(categoryTitle)
         if (isOpenSource) {
             tags.add(appContext?.getString(R.string.cat_open_source) ?: "FOSS")
@@ -899,7 +1016,7 @@ object SupabaseClient {
             ratingCount = "2.5K",
             downloadCount = downloads,
             size = size,
-            sizeBytes = 25_000_000L,
+            sizeBytes = parseSizeToBytes(size),
             iconEmoji = if (iconUrl.length <= 4 && !iconUrl.startsWith("http")) iconUrl else StoreCategories.getEmoji(categoryStr),
             accentColor = category.accentHex,
             bannerRes = null,
@@ -908,7 +1025,7 @@ object SupabaseClient {
             featuresAr = featuresList,
             screenshotsColors = listOf(0xFF2E1065, 0xFF4C1D95),
             isFeatured = i < 2,
-            isTrending = i % 2 == 0,
+            isTrending = i % 2 == 0 || downloadsLong >= 1000L,
             isNew = true,
             iconUrl = iconUrl.ifBlank { null },
             fileUrl = fileUrl.ifBlank { null },
@@ -920,8 +1037,80 @@ object SupabaseClient {
             version = version,
             categoryKey = categoryStr,
             changelog = changelog,
-            versionCode = versionCode
+            versionCode = versionCode,
+            updatedAtMillis = updatedAtMillis,
+            createdAtMillis = createdAtMillis,
+            downloadCountLong = downloadsLong,
+            itemType = itemType,
+            sha256 = sha256,
+            splitApkUrls = splitUrlsList,
+            obbUrl = obbUrl
         )
+    }
+
+    suspend fun fetchAppMetadataDelta(lastEtag: String? = null): DeltaCheckResult? = withContext(Dispatchers.IO) {
+        try {
+            val token = getValidToken() ?: SUPABASE_KEY
+            val reqBuilder = Request.Builder()
+                .url("$SUPABASE_URL/rest/v1/apps?select=id,updated_at,created_at&order=created_at.desc")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $token")
+                .get()
+            if (!lastEtag.isNullOrBlank()) {
+                reqBuilder.header("If-None-Match", lastEtag)
+            }
+            client.newCall(reqBuilder.build()).execute().use { response ->
+                if (response.code == 304) {
+                    return@withContext DeltaCheckResult(notModified = true, etag = lastEtag)
+                }
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful || body.isBlank()) return@withContext null
+                val arr = JSONArray(body)
+                val records = ArrayList<AppMetaRecord>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val id = obj.optSafeString("id", "").trim()
+                    if (id.isNotBlank()) {
+                        val upd = parseIsoTimestampMillis(obj.optSafeString("updated_at", "")).let {
+                            if (it > 0L) it else parseIsoTimestampMillis(obj.optSafeString("created_at", ""))
+                        }
+                        records.add(AppMetaRecord(id = id, updatedAtMillis = upd))
+                    }
+                }
+                val newEtag = response.header("ETag")
+                DeltaCheckResult(notModified = false, records = records, etag = newEtag)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun fetchAppsByIds(ids: List<String>): List<AppItem> = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext emptyList()
+        val result = mutableListOf<AppItem>()
+        try {
+            val token = getValidToken() ?: SUPABASE_KEY
+            for (chunk in ids.chunked(40)) {
+                val encodedList = chunk.joinToString(",") { Uri.encode(it.trim()) }
+                val request = Request.Builder()
+                    .url("$SUPABASE_URL/rest/v1/apps?select=*&id=in.($encodedList)")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+                    if (response.isSuccessful && body.isNotBlank()) {
+                        val jsonArray = JSONArray(body)
+                        for (i in 0 until jsonArray.length()) {
+                            result.add(parseAppItem(jsonArray.getJSONObject(i), i))
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
+        result
     }
 
     suspend fun fetchApps(): List<AppItem> = withContext(Dispatchers.IO) {
@@ -1001,6 +1190,74 @@ object SupabaseClient {
         }
     }
 
+    private fun parseReturnedApp(respBody: String): AppItem? {
+        return try {
+            val trimmed = respBody.trim()
+            when {
+                trimmed.startsWith("[") -> {
+                    val arr = JSONArray(trimmed)
+                    if (arr.length() > 0) parseAppItem(arr.getJSONObject(0)) else null
+                }
+                trimmed.startsWith("{") -> parseAppItem(JSONObject(trimmed))
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isMissingOptionalColumnError(httpCode: Int, respBody: String): Boolean {
+        if (httpCode != 400 && httpCode != 404) return false
+        val lower = respBody.lowercase()
+        return lower.contains("pgrst204") ||
+            lower.contains("schema cache") ||
+            lower.contains("could not find") ||
+            lower.contains("column")
+    }
+
+    private fun buildAppPayload(
+        name: String,
+        category: String,
+        rating: Float,
+        downloadsLong: Long,
+        size: String,
+        description: String,
+        features: List<String>,
+        iconUrl: String,
+        fileUrl: String,
+        screenshots: List<String>,
+        architecture: String,
+        version: String,
+        cleanPkg: String,
+        itemType: String,
+        sha256: String,
+        splitUrls: List<String>,
+        obbUrl: String,
+        includeExtendedFields: Boolean
+    ): JSONObject {
+        return JSONObject().apply {
+            put("name", name.trim())
+            put("category", category.trim())
+            put("rating", rating)
+            put("downloads", downloadsLong)
+            put("size", size.trim())
+            put("description", description.trim())
+            put("features", JSONArray(features))
+            put("icon_url", iconUrl.trim())
+            put("file_url", fileUrl.trim())
+            put("screenshots", JSONArray(screenshots))
+            put("architecture", architecture.ifBlank { "Universal" }.trim())
+            put("version", version.ifBlank { "1.0.0" }.trim())
+            put("package_name", cleanPkg.trim())
+            if (includeExtendedFields) {
+                put("item_type", StoreCategories.inferItemType(category, itemType))
+                if (sha256.isNotBlank()) put("sha256", sha256.trim())
+                if (splitUrls.isNotEmpty()) put("split_urls", JSONArray(splitUrls))
+                if (obbUrl.isNotBlank()) put("obb_url", obbUrl.trim())
+            }
+        }
+    }
+
     private fun rawInsertApp(
         token: String,
         name: String,
@@ -1015,7 +1272,11 @@ object SupabaseClient {
         architecture: String,
         version: String,
         packageName: String,
-        downloads: String
+        downloads: String,
+        itemType: String,
+        sha256: String,
+        splitUrls: List<String>,
+        obbUrl: String
     ): SupabaseMutationResult {
         return try {
             val downloadsLong = parseDownloads(downloads)
@@ -1024,49 +1285,67 @@ object SupabaseClient {
                 if (clean.isNotBlank()) "com.primestore.$clean" else "com.primestore.app"
             }
 
-            val payload = JSONObject().apply {
-                put("name", name.trim())
-                put("category", category.trim())
-                put("rating", rating)
-                put("downloads", downloadsLong)
-                put("size", size.trim())
-                put("description", description.trim())
-                put("features", JSONArray(features))
-                put("icon_url", iconUrl.trim())
-                put("file_url", fileUrl.trim())
-                put("screenshots", JSONArray(screenshots))
-                put("architecture", architecture.ifBlank { "Universal" }.trim())
-                put("version", version.ifBlank { "1.0.0" }.trim())
-                put("package_name", cleanPkg.trim())
+            fun executeWithExtended(includeExtended: Boolean): Triple<Boolean, Int, String> {
+                val payload = buildAppPayload(
+                    name = name,
+                    category = category,
+                    rating = rating,
+                    downloadsLong = downloadsLong,
+                    size = size,
+                    description = description,
+                    features = features,
+                    iconUrl = iconUrl,
+                    fileUrl = fileUrl,
+                    screenshots = screenshots,
+                    architecture = architecture,
+                    version = version,
+                    cleanPkg = cleanPkg,
+                    itemType = itemType,
+                    sha256 = sha256,
+                    splitUrls = splitUrls,
+                    obbUrl = obbUrl,
+                    includeExtendedFields = includeExtended
+                )
+                val request = Request.Builder()
+                    .url("$SUPABASE_URL/rest/v1/apps")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $token")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=representation")
+                    .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    return Triple(response.isSuccessful, response.code, response.body?.string().orEmpty())
+                }
             }
 
-            val request = Request.Builder()
-                .url("$SUPABASE_URL/rest/v1/apps")
-                .header("apikey", SUPABASE_KEY)
-                .header("Authorization", "Bearer $token")
-                .header("Content-Type", "application/json")
-                .header("Prefer", "return=representation")
-                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .build()
+            var (ok, httpCode, respBody) = executeWithExtended(true)
+            if (!ok && isMissingOptionalColumnError(httpCode, respBody)) {
+                val fallback = executeWithExtended(false)
+                ok = fallback.first
+                httpCode = fallback.second
+                respBody = fallback.third
+            }
 
-            client.newCall(request).execute().use { response ->
-                val respBody = response.body?.string().orEmpty()
-                if (response.isSuccessful) {
-                    SupabaseMutationResult(success = true, httpCode = response.code)
-                } else {
-                    val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
-                    val details = json?.optString("details", "").orEmpty()
-                    val code = json?.optString("code", "${response.code}").orEmpty().ifBlank { "${response.code}" }
-                    SecureLogger.e(TAG, "INSERT_APP_${response.code}", "Insert app failed: $msg")
-                    SupabaseMutationResult(
-                        success = false,
-                        message = SecureLogger.sanitize(msg),
-                        details = SecureLogger.sanitize(details),
-                        code = code,
-                        httpCode = response.code
-                    )
-                }
+            if (ok) {
+                SupabaseMutationResult(
+                    success = true,
+                    httpCode = httpCode,
+                    savedApp = parseReturnedApp(respBody)
+                )
+            } else {
+                val json = try { JSONObject(respBody) } catch (_: Exception) { null }
+                val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP $httpCode"
+                val details = json?.optSafeString("details", "").orEmpty()
+                val code = json?.optSafeString("code", "$httpCode")?.ifBlank { "$httpCode" } ?: "$httpCode"
+                SecureLogger.e(TAG, "INSERT_APP_$httpCode", "Insert app failed: $msg")
+                SupabaseMutationResult(
+                    success = false,
+                    message = SecureLogger.sanitize(msg),
+                    details = SecureLogger.sanitize(details),
+                    code = code,
+                    httpCode = httpCode
+                )
             }
         } catch (e: Exception) {
             SecureLogger.e(TAG, "INSERT_APP_EXC", "Insert app exception", e)
@@ -1094,7 +1373,11 @@ object SupabaseClient {
         architecture: String = "Universal",
         version: String = "1.0.0",
         packageName: String = "",
-        downloads: String = "0"
+        downloads: String = "0",
+        itemType: String = StoreCategories.inferItemType(category),
+        sha256: String = "",
+        splitUrls: List<String> = emptyList(),
+        obbUrl: String = ""
     ): SupabaseMutationResult = withContext(Dispatchers.IO) {
         val initialToken = getValidUserToken() ?: accessToken?.takeIf { it.isNotBlank() && it != SUPABASE_KEY }
         if (initialToken.isNullOrBlank()) {
@@ -1119,7 +1402,11 @@ object SupabaseClient {
             architecture = architecture,
             version = version,
             packageName = packageName,
-            downloads = downloads
+            downloads = downloads,
+            itemType = itemType,
+            sha256 = sha256,
+            splitUrls = splitUrls,
+            obbUrl = obbUrl
         )
 
         if (!result.success && isTokenExpiredError(result.httpCode, "${result.message} ${result.details}")) {
@@ -1139,7 +1426,11 @@ object SupabaseClient {
                     architecture = architecture,
                     version = version,
                     packageName = packageName,
-                    downloads = downloads
+                    downloads = downloads,
+                    itemType = itemType,
+                    sha256 = sha256,
+                    splitUrls = splitUrls,
+                    obbUrl = obbUrl
                 )
             }
         }
@@ -1161,7 +1452,11 @@ object SupabaseClient {
         architecture: String,
         version: String,
         packageName: String,
-        downloads: String
+        downloads: String,
+        itemType: String,
+        sha256: String,
+        splitUrls: List<String>,
+        obbUrl: String
     ): SupabaseMutationResult {
         return try {
             val downloadsLong = parseDownloads(downloads)
@@ -1170,49 +1465,67 @@ object SupabaseClient {
                 if (clean.isNotBlank()) "com.primestore.$clean" else "com.primestore.app"
             }
 
-            val payload = JSONObject().apply {
-                put("name", name.trim())
-                put("category", category.trim())
-                put("rating", rating)
-                put("downloads", downloadsLong)
-                put("size", size.trim())
-                put("description", description.trim())
-                put("features", JSONArray(features))
-                put("icon_url", iconUrl.trim())
-                put("file_url", fileUrl.trim())
-                put("screenshots", JSONArray(screenshots))
-                put("architecture", architecture.ifBlank { "Universal" }.trim())
-                put("version", version.ifBlank { "1.0.0" }.trim())
-                put("package_name", cleanPkg.trim())
+            fun executePatchWithExtended(includeExtended: Boolean): Triple<Boolean, Int, String> {
+                val payload = buildAppPayload(
+                    name = name,
+                    category = category,
+                    rating = rating,
+                    downloadsLong = downloadsLong,
+                    size = size,
+                    description = description,
+                    features = features,
+                    iconUrl = iconUrl,
+                    fileUrl = fileUrl,
+                    screenshots = screenshots,
+                    architecture = architecture,
+                    version = version,
+                    cleanPkg = cleanPkg,
+                    itemType = itemType,
+                    sha256 = sha256,
+                    splitUrls = splitUrls,
+                    obbUrl = obbUrl,
+                    includeExtendedFields = includeExtended
+                )
+                val request = Request.Builder()
+                    .url("$SUPABASE_URL/rest/v1/apps?id=eq.$id")
+                    .header("apikey", SUPABASE_KEY)
+                    .header("Authorization", "Bearer $token")
+                    .header("Content-Type", "application/json")
+                    .header("Prefer", "return=representation")
+                    .patch(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    return Triple(response.isSuccessful, response.code, response.body?.string().orEmpty())
+                }
             }
 
-            val request = Request.Builder()
-                .url("$SUPABASE_URL/rest/v1/apps?id=eq.$id")
-                .header("apikey", SUPABASE_KEY)
-                .header("Authorization", "Bearer $token")
-                .header("Content-Type", "application/json")
-                .header("Prefer", "return=representation")
-                .patch(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .build()
+            var (ok, httpCode, respBody) = executePatchWithExtended(true)
+            if (!ok && isMissingOptionalColumnError(httpCode, respBody)) {
+                val fallback = executePatchWithExtended(false)
+                ok = fallback.first
+                httpCode = fallback.second
+                respBody = fallback.third
+            }
 
-            client.newCall(request).execute().use { response ->
-                val respBody = response.body?.string().orEmpty()
-                if (response.isSuccessful) {
-                    SupabaseMutationResult(success = true, httpCode = response.code)
-                } else {
-                    val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                    val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP ${response.code}" }
-                    val details = json?.optString("details", "").orEmpty()
-                    val code = json?.optString("code", "${response.code}").orEmpty().ifBlank { "${response.code}" }
-                    SecureLogger.e(TAG, "UPDATE_APP_${response.code}", "Update app failed: $msg")
-                    SupabaseMutationResult(
-                        success = false,
-                        message = SecureLogger.sanitize(msg),
-                        details = SecureLogger.sanitize(details),
-                        code = code,
-                        httpCode = response.code
-                    )
-                }
+            if (ok) {
+                SupabaseMutationResult(
+                    success = true,
+                    httpCode = httpCode,
+                    savedApp = parseReturnedApp(respBody)
+                )
+            } else {
+                val json = try { JSONObject(respBody) } catch (_: Exception) { null }
+                val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP $httpCode"
+                val details = json?.optSafeString("details", "").orEmpty()
+                val code = json?.optSafeString("code", "$httpCode")?.ifBlank { "$httpCode" } ?: "$httpCode"
+                SecureLogger.e(TAG, "UPDATE_APP_$httpCode", "Update app failed: $msg")
+                SupabaseMutationResult(
+                    success = false,
+                    message = SecureLogger.sanitize(msg),
+                    details = SecureLogger.sanitize(details),
+                    code = code,
+                    httpCode = httpCode
+                )
             }
         } catch (e: Exception) {
             SecureLogger.e(TAG, "UPDATE_APP_EXC", "Update app exception", e)
@@ -1241,7 +1554,11 @@ object SupabaseClient {
         architecture: String = "Universal",
         version: String = "1.0.0",
         packageName: String = "",
-        downloads: String = "0"
+        downloads: String = "0",
+        itemType: String = StoreCategories.inferItemType(category),
+        sha256: String = "",
+        splitUrls: List<String> = emptyList(),
+        obbUrl: String = ""
     ): SupabaseMutationResult = withContext(Dispatchers.IO) {
         val initialToken = getValidUserToken() ?: accessToken?.takeIf { it.isNotBlank() && it != SUPABASE_KEY }
         if (initialToken.isNullOrBlank()) {
@@ -1267,7 +1584,11 @@ object SupabaseClient {
             architecture = architecture,
             version = version,
             packageName = packageName,
-            downloads = downloads
+            downloads = downloads,
+            itemType = itemType,
+            sha256 = sha256,
+            splitUrls = splitUrls,
+            obbUrl = obbUrl
         )
 
         if (!result.success && isTokenExpiredError(result.httpCode, "${result.message} ${result.details}")) {
@@ -1288,7 +1609,11 @@ object SupabaseClient {
                     architecture = architecture,
                     version = version,
                     packageName = packageName,
-                    downloads = downloads
+                    downloads = downloads,
+                    itemType = itemType,
+                    sha256 = sha256,
+                    splitUrls = splitUrls,
+                    obbUrl = obbUrl
                 )
             }
         }
@@ -1380,6 +1705,10 @@ object SupabaseClient {
         val pathWithoutQuery = clean.substringBefore("?")
         return lower.contains("supabase.co/storage/v1/object/public") ||
             pathWithoutQuery.endsWith(".apk", ignoreCase = true) ||
+            pathWithoutQuery.endsWith(".apks", ignoreCase = true) ||
+            pathWithoutQuery.endsWith(".xapk", ignoreCase = true) ||
+            pathWithoutQuery.endsWith(".zip", ignoreCase = true) ||
+            pathWithoutQuery.endsWith(".obb", ignoreCase = true) ||
             (lower.contains("github.com") && lower.contains("/releases/"))
     }
 
@@ -1425,10 +1754,10 @@ object SupabaseClient {
                 StoreUpdateInfo(
                     id = obj.optInt("id", 1),
                     versionCode = obj.optInt("version_code", 1),
-                    versionName = obj.optString("version_name", "1.0.0"),
-                    notes = obj.optString("notes", ""),
-                    apkUrl = obj.optString("apk_url", ""),
-                    updatedAt = obj.optString("updated_at", null)
+                    versionName = obj.optSafeString("version_name", "1.0.0").ifBlank { "1.0.0" },
+                    notes = obj.optSafeString("notes", ""),
+                    apkUrl = obj.optSafeString("apk_url", ""),
+                    updatedAt = obj.optSafeString("updated_at", "").ifBlank { null }
                 )
             }
         } catch (_: Exception) {
@@ -1490,8 +1819,8 @@ object SupabaseClient {
                 SupabaseMutationResult(success = true, httpCode = statusCode)
             } else {
                 val json = try { JSONObject(respBody) } catch (_: Exception) { null }
-                val msg = json?.optString("message", respBody).orEmpty().ifBlank { "HTTP $statusCode" }
-                val code = json?.optString("code", "$statusCode").orEmpty()
+                val msg = json?.optSafeString("message", respBody)?.ifBlank { null } ?: "HTTP $statusCode"
+                val code = json?.optSafeString("code", "$statusCode").orEmpty()
                 SupabaseMutationResult(
                     success = false,
                     message = SecureLogger.sanitize(msg),
@@ -1578,8 +1907,10 @@ object SupabaseClient {
                 } else {
                     val errorBody = response.body?.string().orEmpty()
                     val parsedMsg = try {
-                        val json = JSONObject(errorBody)
-                        json.optString("message", json.optString("error", errorBody))
+                        val json = try { JSONObject(errorBody) } catch (_: Exception) { null }
+                        json?.optSafeString("message", "").orEmpty()
+                            .ifBlank { json?.optSafeString("error", errorBody).orEmpty() }
+                            .ifBlank { errorBody }
                     } catch (_: Exception) {
                         errorBody.ifBlank { "HTTP ${response.code}: ${response.message}" }
                     }
@@ -1640,7 +1971,7 @@ object SupabaseClient {
                     val errorBody = response.body?.string().orEmpty()
                     val parsedMsg = try {
                         val json = JSONObject(errorBody)
-                        json.optString("message", json.optString("error", errorBody))
+                        json.optSafeString("message", "").ifBlank { json.optSafeString("error", errorBody) }
                     } catch (_: Exception) {
                         errorBody.ifBlank { "HTTP ${response.code}: ${response.message}" }
                     }
@@ -1692,29 +2023,31 @@ object SupabaseClient {
         accessToken: String?
     ): String? = uploadStorageBytesDetailed(bytes, path, mimeType, accessToken).getOrNull()
 
-    private fun mapCategory(cat: String): AppCategory {
-        return when (cat.lowercase()) {
-            "games" -> AppCategory.GAMES
-            "apps" -> AppCategory.APPS
-            "trending", "popular" -> AppCategory.POPULAR
-            "entertainment" -> AppCategory.ENTERTAINMENT
-            "sports" -> AppCategory.SPORTS
-            "business" -> AppCategory.BUSINESS
-            "education" -> AppCategory.EDUCATION
-            "music", "music_audio" -> AppCategory.MUSIC
-            "tools" -> AppCategory.TOOLS
-            "productivity" -> AppCategory.PRODUCTIVITY
-            "personalization" -> AppCategory.PERSONALIZATION
-            "media" -> AppCategory.MEDIA
-            "social", "communication" -> AppCategory.SOCIAL
-            "action", "game_action" -> AppCategory.ACTION
-            "rpg", "game_role_playing" -> AppCategory.RPG
-            "simulation", "game_simulation" -> AppCategory.SIMULATION
-            "emulators" -> AppCategory.EMULATORS
-            "retro" -> AppCategory.RETRO
-            "root_tools" -> AppCategory.ROOT_TOOLS
-            "open_source" -> AppCategory.OPEN_SOURCE
-            "video", "video_players_editors" -> AppCategory.VIDEO
+    internal fun mapCategory(cat: String): AppCategory {
+        val clean = cat.lowercase()
+        return when {
+            clean == "games" || clean == "mods" -> AppCategory.GAMES
+            clean == "apps" -> AppCategory.APPS
+            clean == "trending" || clean == "popular" -> AppCategory.POPULAR
+            clean == "entertainment" -> AppCategory.ENTERTAINMENT
+            clean == "sports" || clean == "game_sports" -> AppCategory.SPORTS
+            clean == "business" || clean == "finance" -> AppCategory.BUSINESS
+            clean == "education" || clean == "game_educational" -> AppCategory.EDUCATION
+            clean == "music" || clean == "music_audio" || clean == "game_music" -> AppCategory.MUSIC
+            clean == "tools" || clean in setOf("file_managers", "cleaners_boosters", "security_antivirus", "vpn", "battery_savers", "qr_scanners", "downloaders", "clock_alarm", "calculators", "keyboards") -> AppCategory.TOOLS
+            clean == "productivity" || clean in setOf("office_documents", "notes", "calendar", "pdf_tools") -> AppCategory.PRODUCTIVITY
+            clean == "personalization" || clean in setOf("wallpapers", "themes_launchers", "icon_packs", "fonts", "widgets", "art_design") -> AppCategory.PERSONALIZATION
+            clean == "media" || clean in setOf("photography", "photo_editors", "gallery") -> AppCategory.MEDIA
+            clean == "social" || clean == "communication" || clean == "social_media_tools" -> AppCategory.SOCIAL
+            clean == "action" || clean == "game_action" || clean == "game_shooter" || clean == "game_fighting" || clean == "game_war" || clean == "game_battle_royale" -> AppCategory.ACTION
+            clean == "rpg" || clean == "game_role_playing" || clean == "game_mmorpg" -> AppCategory.RPG
+            clean == "simulation" || clean == "game_simulation" -> AppCategory.SIMULATION
+            clean == "emulators" -> AppCategory.EMULATORS
+            clean == "retro" -> AppCategory.RETRO
+            clean == "root_tools" -> AppCategory.ROOT_TOOLS
+            clean == "open_source" || clean == "developer_tools" -> AppCategory.OPEN_SOURCE
+            clean == "video" || clean == "video_players_editors" || clean == "screen_recorders" -> AppCategory.VIDEO
+            clean.startsWith("game_") -> AppCategory.GAMES
             else -> AppCategory.APPS
         }
     }

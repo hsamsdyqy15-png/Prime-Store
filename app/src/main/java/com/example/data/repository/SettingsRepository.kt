@@ -32,12 +32,24 @@ class SettingsRepository(context: Context) {
     private val _wifiOnlyTranslation = MutableStateFlow(readWifiOnlyTranslation())
     val wifiOnlyTranslation: StateFlow<Boolean> = _wifiOnlyTranslation.asStateFlow()
 
+    private val _notificationsEnabled = MutableStateFlow(readNotificationsEnabled())
+    val notificationsEnabled: StateFlow<Boolean> = _notificationsEnabled.asStateFlow()
+
+    private val _deleteApkAfterInstall = MutableStateFlow(readDeleteApkAfterInstall())
+    val deleteApkAfterInstall: StateFlow<Boolean> = _deleteApkAfterInstall.asStateFlow()
+
+    private val _shizukuRootInstallEnabled = MutableStateFlow(readShizukuRootInstallEnabled())
+    val shizukuRootInstallEnabled: StateFlow<Boolean> = _shizukuRootInstallEnabled.asStateFlow()
+
     companion object {
         private const val KEY_THEME_MODE = "ps_theme_mode_v2"
         private const val KEY_ACCENT_HEX = "ps_theme_accent_v2"
         private const val KEY_LANGUAGE_TAG = "ps_language_tag_v2"
         private const val KEY_AUTO_TRANSLATE = "ps_auto_translate_v2"
         private const val KEY_WIFI_ONLY_TRANSLATE = "ps_wifi_only_translate_v2"
+        private const val KEY_NOTIFICATIONS_ENABLED = "ps_notifications_enabled_v2"
+        private const val KEY_DELETE_APK_AFTER_INSTALL = "ps_delete_apk_after_install_v2"
+        private const val KEY_SHIZUKU_ROOT_MODE = "ps_shizuku_root_install_v1"
 
         private val SUPPORTED_LANGS = setOf(
             "en", "ar", "tr", "fr", "es", "de", "ru", "fa", "ur", "hi", "id", "pt"
@@ -119,6 +131,15 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    private fun readNotificationsEnabled(): Boolean =
+        prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true)
+
+    private fun readDeleteApkAfterInstall(): Boolean =
+        prefs.getBoolean(KEY_DELETE_APK_AFTER_INSTALL, true)
+
+    private fun readShizukuRootInstallEnabled(): Boolean =
+        prefs.getBoolean(KEY_SHIZUKU_ROOT_MODE, false)
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
         _themeMode.value = mode
@@ -137,6 +158,21 @@ class SettingsRepository(context: Context) {
     fun setWifiOnlyTranslation(wifiOnly: Boolean) {
         prefs.edit().putBoolean(KEY_WIFI_ONLY_TRANSLATE, wifiOnly).apply()
         _wifiOnlyTranslation.value = wifiOnly
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, enabled).apply()
+        _notificationsEnabled.value = enabled
+    }
+
+    fun setDeleteApkAfterInstall(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DELETE_APK_AFTER_INSTALL, enabled).apply()
+        _deleteApkAfterInstall.value = enabled
+    }
+
+    fun setShizukuRootInstallEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHIZUKU_ROOT_MODE, enabled).apply()
+        _shizukuRootInstallEnabled.value = enabled
     }
 
     fun setLanguage(tag: String) {
@@ -181,5 +217,64 @@ class SettingsRepository(context: Context) {
             if (norm != "auto") return norm
         }
         return resolveDeviceLanguage()
+    }
+
+    fun getCacheSizeBytes(context: Context): Long {
+        var total = 0L
+        total += dirSize(context.cacheDir)
+        total += dirSize(context.externalCacheDir)
+        return total
+    }
+
+    fun getApksSizeBytes(context: Context): Long {
+        val dir = context.getExternalFilesDir("apks") ?: java.io.File(context.filesDir, "apks")
+        return dirSize(dir)
+    }
+
+    fun clearTemporaryCache(context: Context): Long {
+        val before = getCacheSizeBytes(context)
+        deleteChildren(context.cacheDir)
+        deleteChildren(context.externalCacheDir)
+        val after = getCacheSizeBytes(context)
+        return (before - after).coerceAtLeast(0L)
+    }
+
+    fun deleteAllDownloadedApks(context: Context): Long {
+        val dir = context.getExternalFilesDir("apks") ?: java.io.File(context.filesDir, "apks")
+        val before = dirSize(dir)
+        deleteChildren(dir)
+        return before
+    }
+
+    fun formatStorageSize(bytes: Long): String {
+        return when {
+            bytes >= 1024L * 1024L * 1024L -> String.format(Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+            bytes >= 1024L * 1024L -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+            bytes >= 1024L -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
+            else -> "0 KB"
+        }
+    }
+
+    private fun dirSize(file: java.io.File?): Long {
+        if (file == null || !file.exists()) return 0L
+        if (file.isFile) return file.length()
+        var sum = 0L
+        val children = file.listFiles() ?: return 0L
+        for (child in children) {
+            sum += dirSize(child)
+        }
+        return sum
+    }
+
+    private fun deleteChildren(dir: java.io.File?) {
+        if (dir == null || !dir.exists() || !dir.isDirectory) return
+        val children = dir.listFiles() ?: return
+        for (child in children) {
+            if (child.isDirectory) {
+                child.deleteRecursively()
+            } else {
+                child.delete()
+            }
+        }
     }
 }

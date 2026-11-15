@@ -29,13 +29,17 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +49,7 @@ import com.example.R
 import com.example.ui.MainTab
 import com.example.ui.theme.PrimeTheme
 
+@Immutable
 data class NavTabItem(
     val tab: MainTab,
     val titleResId: Int,
@@ -69,6 +74,7 @@ fun PrimeBottomNavBar(
 ) {
     val colors = PrimeTheme.colors
     val navElevation = if (colors.isDark) 16.dp else 6.dp
+    val haptic = LocalHapticFeedback.current
 
     Box(
         modifier = modifier
@@ -89,7 +95,7 @@ fun PrimeBottomNavBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -101,10 +107,14 @@ fun PrimeBottomNavBar(
                 Column(
                     modifier = Modifier
                         .testTag(item.testTag)
+                        .minimumInteractiveComponentSize()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = ripple(bounded = false, color = colors.accent)
-                        ) { onTabSelected(item.tab) }
+                        ) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onTabSelected(item.tab)
+                        }
                         .padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center

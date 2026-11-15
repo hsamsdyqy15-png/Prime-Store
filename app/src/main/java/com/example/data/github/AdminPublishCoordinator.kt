@@ -6,8 +6,11 @@ import android.webkit.MimeTypeMap
 import com.example.R
 import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
+import com.example.data.model.StoreCategories
+import com.example.data.repository.AppsRepository
 import com.example.data.supabase.SecureLogger
 import com.example.data.supabase.SupabaseClient
+import com.example.data.sync.SyncManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,7 +32,7 @@ import java.util.UUID
 data class AdminPublishDraft(
     val editingAppId: String? = null,
     val name: String = "",
-    val categoryKey: String = "apps",
+    val categoryKey: String = "tools",
     val versionStr: String = "1.0.0",
     val ratingStr: String = "4.5",
     val sizeStr: String = "120 MB",
@@ -45,7 +48,11 @@ data class AdminPublishDraft(
     val pickedShotUriStrs: List<String> = emptyList(),
     val pickedApkUriStr: String? = null,
     val pickedApkFileName: String = "",
-    val pickedApkSizeBytes: Long = 0L
+    val pickedApkSizeBytes: Long = 0L,
+    val itemType: String = StoreCategories.ITEM_TYPE_APP,
+    val sha256: String = "",
+    val splitApkUrlsText: String = "",
+    val obbUrl: String = ""
 )
 
 data class AdminPublishState(
@@ -102,6 +109,10 @@ object AdminPublishCoordinator {
                 put("pickedApkUriStr", draft.pickedApkUriStr ?: JSONObject.NULL)
                 put("pickedApkFileName", draft.pickedApkFileName)
                 put("pickedApkSizeBytes", draft.pickedApkSizeBytes)
+                put("itemType", draft.itemType)
+                put("sha256", draft.sha256)
+                put("splitApkUrlsText", draft.splitApkUrlsText)
+                put("obbUrl", draft.obbUrl)
             }
             context.getSharedPreferences(DRAFT_PREFS, Context.MODE_PRIVATE)
                 .edit()
@@ -127,10 +138,11 @@ object AdminPublishCoordinator {
             if (psArr != null) {
                 for (i in 0 until psArr.length()) pickedShots.add(psArr.optString(i))
             }
+            val loadedCat = json.optString("categoryKey", "tools").ifBlank { "tools" }
             AdminPublishDraft(
                 editingAppId = if (json.isNull("editingAppId")) null else json.optString("editingAppId", "").ifBlank { null },
                 name = json.optString("name", ""),
-                categoryKey = json.optString("categoryKey", "apps").ifBlank { "apps" },
+                categoryKey = loadedCat,
                 versionStr = json.optString("versionStr", "1.0.0"),
                 ratingStr = json.optString("ratingStr", "4.5"),
                 sizeStr = json.optString("sizeStr", "120 MB"),
@@ -146,7 +158,11 @@ object AdminPublishCoordinator {
                 pickedShotUriStrs = pickedShots.filter { it.isNotBlank() },
                 pickedApkUriStr = if (json.isNull("pickedApkUriStr")) null else json.optString("pickedApkUriStr", "").ifBlank { null },
                 pickedApkFileName = json.optString("pickedApkFileName", ""),
-                pickedApkSizeBytes = json.optLong("pickedApkSizeBytes", 0L)
+                pickedApkSizeBytes = json.optLong("pickedApkSizeBytes", 0L),
+                itemType = json.optString("itemType", StoreCategories.inferItemType(loadedCat)),
+                sha256 = json.optString("sha256", ""),
+                splitApkUrlsText = json.optString("splitApkUrlsText", ""),
+                obbUrl = json.optString("obbUrl", "")
             )
         } catch (_: Exception) {
             null
@@ -274,6 +290,7 @@ object AdminPublishCoordinator {
                 val ext = getFileExtension(context, pickedIconUri, "png")
                 val path = "icons/${UUID.randomUUID()}.$ext"
                 val mime = context.contentResolver.getType(pickedIconUri) ?: "image/png"
+                var lastIconUiTime = 0L
                 val uploadRes = retryStorageUpload(context) {
                     SupabaseClient.uploadStorageFileDetailed(
                         context = context,
@@ -283,7 +300,11 @@ object AdminPublishCoordinator {
                         accessToken = freshToken
                     ) { written, tot ->
                         if (tot > 0) {
-                            _state.value = _state.value.copy(progress = (written.toFloat() / tot).coerceIn(0f, 1f))
+                            val now = System.currentTimeMillis()
+                            if (now - lastIconUiTime >= 100L || written >= tot) {
+                                lastIconUiTime = now
+                                _state.value = _state.value.copy(progress = (written.toFloat() / tot).coerceIn(0f, 1f))
+                            }
                         }
                     }
                 }
@@ -330,6 +351,7 @@ object AdminPublishCoordinator {
                 val ext = getFileExtension(context, sUri, "jpg")
                 val path = "shots/${UUID.randomUUID()}.$ext"
                 val mime = context.contentResolver.getType(sUri) ?: "image/jpeg"
+                var lastShotUiTime = 0L
                 val uploadRes = retryStorageUpload(context) {
                     SupabaseClient.uploadStorageFileDetailed(
                         context = context,
@@ -339,7 +361,11 @@ object AdminPublishCoordinator {
                         accessToken = freshToken
                     ) { written, tot ->
                         if (tot > 0) {
-                            _state.value = _state.value.copy(progress = (written.toFloat() / tot).coerceIn(0f, 1f))
+                            val now = System.currentTimeMillis()
+                            if (now - lastShotUiTime >= 100L || written >= tot) {
+                                lastShotUiTime = now
+                                _state.value = _state.value.copy(progress = (written.toFloat() / tot).coerceIn(0f, 1f))
+                            }
                         }
                     }
                 }
@@ -375,6 +401,7 @@ object AdminPublishCoordinator {
                 }
 
                 var lastNotifTime = 0L
+                var lastUiTime = 0L
                 val ghResult = GitHubStorageHelper.uploadAppRelease(
                     context = context,
                     userEmail = adminEmail,
@@ -392,13 +419,16 @@ object AdminPublishCoordinator {
                                 val frac = if (phase.totalBytes > 0) (phase.bytesWritten.toFloat() / phase.totalBytes).coerceIn(0f, 1f) else 0f
                                 val upMb = formatSize(phase.bytesWritten)
                                 val totMb = formatSize(phase.totalBytes)
-                                _state.value = _state.value.copy(
-                                    progress = frac,
-                                    uploadedMbText = upMb,
-                                    totalMbText = totMb,
-                                    stepLabel = "${context.getString(R.string.admin_upload_step_apk_gh)} ($currentStep/$totalSteps)"
-                                )
                                 val now = System.currentTimeMillis()
+                                if (now - lastUiTime >= 100L || phase.bytesWritten >= phase.totalBytes) {
+                                    lastUiTime = now
+                                    _state.value = _state.value.copy(
+                                        progress = frac,
+                                        uploadedMbText = upMb,
+                                        totalMbText = totMb,
+                                        stepLabel = "${context.getString(R.string.admin_upload_step_apk_gh)} ($currentStep/$totalSteps)"
+                                    )
+                                }
                                 if (now - lastNotifTime >= 400L || phase.bytesWritten >= phase.totalBytes) {
                                     lastNotifTime = now
                                     GitHubUploadService.updateProgress(
@@ -478,6 +508,13 @@ object AdminPublishCoordinator {
             }
             val features = workingDraft.featuresStr.split("\n").map { it.trim() }.filter { it.isNotBlank() }
             val categoryKey = workingDraft.categoryKey
+            val resolvedItemType = StoreCategories.normalizeItemType(workingDraft.itemType)
+            val resolvedSha256 = workingDraft.sha256.trim()
+            val resolvedSplitUrls = workingDraft.splitApkUrlsText
+                .split("\n", ",")
+                .map { it.trim() }
+                .filter { it.startsWith("http", ignoreCase = true) }
+            val resolvedObbUrl = workingDraft.obbUrl.trim()
             val pkgName = "com.primestore.${workingDraft.name.lowercase().replace(Regex("[^a-z0-9]"), "")}"
 
             val mutationResult = if (workingDraft.editingAppId == null) {
@@ -495,7 +532,11 @@ object AdminPublishCoordinator {
                     architecture = workingDraft.detectedAbis,
                     version = workingDraft.versionStr.ifBlank { "1.0.0" },
                     packageName = pkgName,
-                    downloads = "0"
+                    downloads = "0",
+                    itemType = resolvedItemType,
+                    sha256 = resolvedSha256,
+                    splitUrls = resolvedSplitUrls,
+                    obbUrl = resolvedObbUrl
                 )
             } else {
                 SupabaseClient.updateApp(
@@ -513,7 +554,11 @@ object AdminPublishCoordinator {
                     architecture = workingDraft.detectedAbis,
                     version = workingDraft.versionStr.ifBlank { "1.0.0" },
                     packageName = pkgName,
-                    downloads = "0"
+                    downloads = "0",
+                    itemType = resolvedItemType,
+                    sha256 = resolvedSha256,
+                    splitUrls = resolvedSplitUrls,
+                    obbUrl = resolvedObbUrl
                 )
             }
 
@@ -552,13 +597,29 @@ object AdminPublishCoordinator {
             clearDraft(context)
             lastApkExtractedIconBytes = null
 
+            val appsRepo = AppsRepository.getInstance(context)
+            val syncMgr = SyncManager.getInstance(context)
+            syncMgr.invalidateEtag()
+
+            val returnedApp = mutationResult.savedApp?.let { saved ->
+                saved.copy(
+                    itemType = resolvedItemType,
+                    sha256 = saved.sha256 ?: resolvedSha256.ifBlank { null },
+                    splitApkUrls = if (saved.splitApkUrls.isNotEmpty()) saved.splitApkUrls else resolvedSplitUrls,
+                    obbUrl = saved.obbUrl ?: resolvedObbUrl.ifBlank { null }
+                )
+            }
+            if (returnedApp != null && returnedApp.id.isNotBlank()) {
+                appsRepo.upsertLocalApp(returnedApp)
+            }
+            syncMgr.syncNow(forceFull = false, suppressNewBanner = true)
+
             withContext(Dispatchers.Main) {
                 lastOnCatalogSaved?.invoke()
             }
 
-            delay(600)
-            val verifiedApp = runCatching {
-                SupabaseClient.fetchApps().find { it.name.trim().equals(workingDraft.name.trim(), ignoreCase = true) }
+            val verifiedApp = returnedApp ?: runCatching {
+                appsRepo.getAllAppsDirect().find { it.name.trim().equals(workingDraft.name.trim(), ignoreCase = true) }
             }.getOrNull()
 
             val successText = if (workingDraft.editingAppId != null) {

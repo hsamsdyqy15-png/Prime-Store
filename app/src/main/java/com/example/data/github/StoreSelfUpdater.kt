@@ -145,7 +145,9 @@ object StoreSelfUpdater {
     private fun parseReleaseJson(context: Context, jsonStr: String): StoreReleaseInfo? {
         return try {
             val root = JSONObject(jsonStr)
-            val tagName = if (root.isNull("tag_name")) "" else root.optString("tag_name", "").trim()
+            val tagName = if (root.isNull("tag_name")) "" else root.optString("tag_name", "").let {
+                if (it.equals("null", ignoreCase = true)) "" else it.trim()
+            }
             val rawBody = if (root.isNull("body")) "" else root.optString("body", "").trim()
             val bodyNotes = if (rawBody.isBlank() || rawBody.equals("null", ignoreCase = true)) {
                 context.getString(R.string.whats_new_default)
@@ -172,11 +174,14 @@ object StoreSelfUpdater {
             if (assets != null) {
                 for (i in 0 until assets.length()) {
                     val asset = assets.getJSONObject(i)
-                    val name = asset.optString("name", "")
+                    val name = if (asset.isNull("name")) "" else asset.optString("name", "")
                     if (name.endsWith(".apk", ignoreCase = true)) {
-                        apkUrl = asset.optString("browser_download_url", "")
-                        apkSize = asset.optLong("size", 0L)
-                        break
+                        val candidateUrl = if (asset.isNull("browser_download_url")) "" else asset.optString("browser_download_url", "")
+                        if (!candidateUrl.equals("null", ignoreCase = true) && candidateUrl.isNotBlank()) {
+                            apkUrl = candidateUrl
+                            apkSize = asset.optLong("size", 0L)
+                            break
+                        }
                     }
                 }
             }
@@ -222,12 +227,20 @@ object StoreSelfUpdater {
                 val buffer = ByteArray(8192)
                 var bytesRead: Int
                 var totalBytesRead = 0L
+                var lastProgressEmit = 0L
 
                 while (input.read(buffer).also { bytesRead = it } != -1) {
                     output.write(buffer, 0, bytesRead)
                     totalBytesRead += bytesRead
-                    val progress = if (totalLength > 0) (totalBytesRead.toFloat() / totalLength).coerceIn(0f, 1f) else 0f
-                    onProgress(progress, formatSize(totalBytesRead), formatSize(totalLength))
+                    val now = System.currentTimeMillis()
+                    if (now - lastProgressEmit >= 100L || (totalLength > 0 && totalBytesRead >= totalLength)) {
+                        lastProgressEmit = now
+                        val progress = if (totalLength > 0) (totalBytesRead.toFloat() / totalLength).coerceIn(0f, 1f) else 0f
+                        onProgress(progress, formatSize(totalBytesRead), formatSize(totalLength))
+                    }
+                }
+                if (totalLength > 0) {
+                    onProgress(1f, formatSize(totalBytesRead), formatSize(totalLength))
                 }
                 output.flush()
                 output.close()

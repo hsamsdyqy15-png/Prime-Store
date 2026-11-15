@@ -13,7 +13,7 @@ android {
     applicationId = "com.aistudio.primestore.gktvwy"
     minSdk = 24
     targetSdk = 36
-    val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+    val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "2").toInt()
     versionCode = runNumber
     versionName = "1.0.$runNumber"
 
@@ -87,6 +87,7 @@ dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.activity.compose)
+  implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
