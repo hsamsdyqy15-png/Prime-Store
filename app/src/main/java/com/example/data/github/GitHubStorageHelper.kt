@@ -480,10 +480,11 @@ object GitHubStorageHelper {
                                     activeToken = refreshed.getOrThrow()
                                     return@use
                                 } else {
-                                    lastError = refreshed.exceptionOrNull()
+                                    val err = refreshed.exceptionOrNull()
                                         ?: GitHubApiException(401, GitHubTokenProvider.mapGitHubHttpError(context, 401, userEmail))
+                                    lastError = err
                                     deleteRelease(cleanOwner, cleanRepo, activeToken, releaseId)
-                                    return@withContext Result.failure(lastError!!)
+                                    return@withContext Result.failure(err)
                                 }
                             } else {
                                 val mapped = GitHubTokenProvider.mapGitHubHttpError(context, 401, userEmail)

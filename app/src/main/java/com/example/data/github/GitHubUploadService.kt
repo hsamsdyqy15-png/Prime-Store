@@ -13,6 +13,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.data.supabase.SecureLogger
 
 class GitHubUploadService : Service() {
 
@@ -35,10 +36,14 @@ class GitHubUploadService : Service() {
                 action = ACTION_START
                 putExtra(EXTRA_FILE_NAME, fileName)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (t: Throwable) {
+                SecureLogger.w("GitHubUploadService", "FGS_START_FALLBACK", "Could not start upload FGS: ${t.message}")
             }
         }
 
@@ -90,12 +95,22 @@ class GitHubUploadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action
+        if (action == null) {
+            releaseLocks()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        when (action) {
             ACTION_START -> {
                 currentFileName = intent.getStringExtra(EXTRA_FILE_NAME)
                     ?: getString(R.string.gh_service_default_file)
                 acquireLocks()
-                startForeground(NOTIFICATION_ID, buildNotification(0, "0 MB", "0 MB", null))
+                try {
+                    startForeground(NOTIFICATION_ID, buildNotification(0, "0 MB", "0 MB", null))
+                } catch (t: Throwable) {
+                    SecureLogger.w("GitHubUploadService", "FGS_PROMOTE_ERR", "startForeground skipped: ${t.message}")
+                }
             }
             ACTION_UPDATE -> {
                 val fName = intent.getStringExtra(EXTRA_FILE_NAME) ?: currentFileName
@@ -104,11 +119,13 @@ class GitHubUploadService : Service() {
                 val upMb = intent.getStringExtra(EXTRA_UPLOADED_MB) ?: "0 MB"
                 val totMb = intent.getStringExtra(EXTRA_TOTAL_MB) ?: "0 MB"
                 val statusText = intent.getStringExtra(EXTRA_STATUS_TEXT)
-                notificationManager.notify(NOTIFICATION_ID, buildNotification(progress, upMb, totMb, statusText))
+                runCatching {
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification(progress, upMb, totMb, statusText))
+                }
             }
             ACTION_STOP -> {
                 releaseLocks()
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
                 stopSelf()
             }
         }

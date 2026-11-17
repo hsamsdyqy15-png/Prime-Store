@@ -13,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
 import com.example.R
+import com.example.crash.CrashReporter
 import com.example.data.github.AdminPublishCoordinator
 import com.example.data.github.AdminPublishState
 import com.example.data.github.GitHubStorageHelper
@@ -33,6 +34,7 @@ import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
 import com.example.data.model.CategoryItem
 import com.example.data.model.DownloadItem
+import com.example.data.model.DownloadStatus
 import com.example.data.model.InstalledPackageSummary
 import com.example.data.model.ReviewItem
 import com.example.data.model.StoreCategories
@@ -53,7 +55,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -146,6 +151,8 @@ data class UiState(
     val downgradeDialogData: DowngradeData? = null,
     val lowStorageDialogData: Pair<String, String>? = null,
     val lowStoragePendingAppId: String? = null,
+    val showCrashDialog: Boolean = false,
+    val lastCrashReport: String? = null,
     val userProfile: UserProfile? = null
 )
 
@@ -361,16 +368,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     val shizukuRootInstallEnabled: StateFlow<Boolean> = settingsRepo.shizukuRootInstallEnabled
 
     init {
-        viewModelScope.launch(Dispatchers.IO) {
-            categoriesRepository.ensureSeeded()
-        }
-        syncManager.attachToApplication(application)
-        GitHubStorageHelper.purgeLegacyLocalToken(application.applicationContext)
-        SupabaseClient.init(application.applicationContext)
-        SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
-        restoreSession()
-
-        // Language & translation setup
+        // Language & translation setup (fast in-memory reads from pre-warmed SettingsRepository)
         val savedLang = settingsRepo.languageTag.value
         val activeLang = settingsRepo.getEffectiveLanguageCode()
         val autoTranslate = settingsRepo.autoTranslateEnabled.value
@@ -381,18 +379,49 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         val currentAccent = settingsRepo.accentHex.value
         val isFirstRun = !authPrefs.getBoolean("has_completed_onboarding", false)
 
-        _uiState.value = _uiState.value.copy(
-            selectedLanguageTag = savedLang,
-            currentLanguage = activeLang,
-            autoTranslateEnabled = autoTranslate,
-            wifiOnlyTranslation = wifiOnly,
-            themeMode = currentThemeMode.name.lowercase(),
-            themeAccent = currentAccent,
-            isDarkMode = currentThemeMode != com.example.ui.theme.ThemeMode.LIGHT,
-            notificationsEnabled = settingsRepo.notificationsEnabled.value,
-            deleteApkAfterInstall = settingsRepo.deleteApkAfterInstall.value,
-            showOnboarding = isFirstRun
-        )
+        _uiState.update {
+            it.copy(
+                selectedLanguageTag = savedLang,
+                currentLanguage = activeLang,
+                autoTranslateEnabled = autoTranslate,
+                wifiOnlyTranslation = wifiOnly,
+                themeMode = currentThemeMode.name.lowercase(),
+                themeAccent = currentAccent,
+                isDarkMode = currentThemeMode != com.example.ui.theme.ThemeMode.LIGHT,
+                notificationsEnabled = settingsRepo.notificationsEnabled.value,
+                deleteApkAfterInstall = settingsRepo.deleteApkAfterInstall.value,
+                showOnboarding = isFirstRun
+            )
+        }
+
+        // Offload heavy startup IO (DB seeding, Keystore/EncryptedPrefs init, session restore, crash check)
+        viewModelScope.launch(Dispatchers.IO) {
+            categoriesRepository.ensureSeeded()
+            val appCtx = application.applicationContext
+            GitHubStorageHelper.purgeLegacyLocalToken(appCtx)
+            SupabaseClient.init(appCtx)
+            SupabaseClient.onSessionExpiredListener = { onSessionExpired() }
+            restoreSession()
+
+            if (CrashReporter.hasUnreadCrash(appCtx)) {
+                val report = CrashReporter.getLastCrashReport(appCtx)
+                if (!report.isNullOrBlank()) {
+                    _uiState.update { state ->
+                        state.copy(
+                            showCrashDialog = true,
+                            lastCrashReport = report
+                        )
+                    }
+                }
+            }
+
+            StoreSelfUpdater.onAppStarted(application) { msg ->
+                emitToast(msg)
+            }
+            checkStoreUpdateSilentlyOnStartup()
+        }
+
+        syncManager.attachToApplication(application)
         refreshStorageStats()
 
         // Register dynamic system broadcast receiver for instant install/uninstall updates
@@ -521,22 +550,16 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         viewModelScope.launch {
-            delay(1400)
-            _uiState.value = _uiState.value.copy(showSplash = false)
+            if (apps.value.isEmpty()) {
+                delay(250)
+            }
+            _uiState.update { it.copy(showSplash = false) }
         }
 
-        // Welcome toast if updated
-        StoreSelfUpdater.onAppStarted(application) { msg ->
-            emitToast(msg)
-        }
-
-        // Start foreground live sync (delta metadata + 20s polling + Realtime WebSocket)
+        // Start foreground live sync (delta metadata + 20s foreground polling)
         syncManager.onForegroundStarted()
 
-        // Auto-check store update on startup (max once every 6 hours)
-        checkStoreUpdateSilentlyOnStartup()
-
-        // Monitor apps & downloads on IO for installed packages & local APKs
+        // Monitor apps & completed downloads on IO for installed packages & local APKs
         viewModelScope.launch {
             apps.collect {
                 refreshInstalledApps()
@@ -544,9 +567,16 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
         viewModelScope.launch {
-            downloads.collect {
-                refreshDownloadedReadyIds()
-            }
+            downloads
+                .map { list ->
+                    list.filter { it.isCompleted || it.status == DownloadStatus.COMPLETED }
+                        .map { it.appId }
+                        .toSet()
+                }
+                .distinctUntilChanged()
+                .collect {
+                    refreshDownloadedReadyIds()
+                }
         }
     }
 
@@ -703,11 +733,12 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun refreshDownloadedReadyIds() {
         val context = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
-            val ids = HashSet<String>()
+            val existingFiles = ApkInstaller.scanExistingPrimaryInstallFiles(context)
+            val ids = HashSet<String>(existingFiles.size)
             val catalog = apps.value
             val appsRepo = AppsRepository.getInstance(context)
             for (app in catalog) {
-                val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, app.id)
+                val apkFile = existingFiles[app.id]
                 if (apkFile != null && apkFile.exists() && apkFile.length() > 0L) {
                     ids.add(app.id)
                     if ((app.packageName.isNullOrBlank() || app.packageName.startsWith("com.primestore.")) &&
@@ -723,7 +754,7 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             }
             for (dl in downloads.value) {
                 if (dl.isCompleted) {
-                    val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, dl.appId)
+                    val apkFile = existingFiles[dl.appId]
                     if (apkFile != null && apkFile.exists() && apkFile.length() > 0L) {
                         ids.add(dl.appId)
                     }
@@ -737,13 +768,14 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         val context = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshingInstalledApps.value = true
+            val existingFiles = ApkInstaller.scanExistingPrimaryInstallFiles(context)
             val catalog = apps.value
             val list = mutableListOf<InstalledAppItemState>()
             val pkgMap = HashMap<String, InstalledPackageSummary>(catalog.size)
             val appsRepo = AppsRepository.getInstance(context)
 
             for (app in catalog) {
-                val apkFile = ApkInstaller.findExistingPrimaryInstallFile(context, app.id)
+                val apkFile = existingFiles[app.id]
                 val resolvedPkg = ApkInstaller.findInstalledPackage(
                     context,
                     app.name,
@@ -758,15 +790,11 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
                         resolvedPkgWriteCache.add(app.id)
                         appsRepo.updatePackageName(app.id, resolvedPkg)
                     }
-                    val installedInfo = PackageHelper.getInstalledInfo(context, resolvedPkg)
+                    val installedInfo = PackageHelper.getInstalledVersionSummary(context, resolvedPkg)
                     if (installedInfo != null) {
                         val storeCode = app.versionCode
                         val hasUpdate = storeCode > installedInfo.versionCode
-                        pkgMap[app.id] = InstalledPackageSummary(
-                            packageName = resolvedPkg,
-                            versionCode = installedInfo.versionCode,
-                            versionName = installedInfo.versionName
-                        )
+                        pkgMap[app.id] = installedInfo
                         list.add(
                             InstalledAppItemState(
                                 app = app,
@@ -834,10 +862,16 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun openInstalledApp(packageName: String, context: Context) {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+        val launchIntent = runCatching {
+            context.packageManager.getLaunchIntentForPackage(packageName)
+        }.getOrNull()
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(launchIntent)
+            try {
+                context.startActivity(launchIntent)
+            } catch (_: Exception) {
+                emitToast(context.getString(R.string.app_no_launch_screen))
+            }
         } else {
             emitToast(context.getString(R.string.app_no_launch_screen))
         }
@@ -1300,14 +1334,16 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         if (!email.isNullOrBlank() && SupabaseClient.hasStoredSession()) {
             val isUserAdmin = SupabaseClient.isAdmin(email)
             val adminName = getApplication<Application>().getString(R.string.admin_badge)
-            _uiState.value = _uiState.value.copy(
-                userProfile = UserProfile(
-                    name = if (isUserAdmin) adminName else email.substringBefore("@"),
-                    email = email,
-                    isPrimeMember = isUserAdmin
-                ),
-                isAdmin = isUserAdmin
-            )
+            _uiState.update {
+                it.copy(
+                    userProfile = UserProfile(
+                        name = if (isUserAdmin) adminName else email.substringBefore("@"),
+                        email = email,
+                        isPrimeMember = isUserAdmin
+                    ),
+                    isAdmin = isUserAdmin
+                )
+            }
             viewModelScope.launch {
                 SupabaseClient.getValidToken(forceRefresh = false)
             }
@@ -1578,12 +1614,21 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun dismissCrashDialog() {
+        CrashReporter.markCrashAcknowledged(getApplication())
+        _uiState.update { it.copy(showCrashDialog = false) }
+    }
+
+    fun buildCrashShareText(): String {
+        val ctx = getApplication<Application>()
+        val raw = _uiState.value.lastCrashReport
+            ?: CrashReporter.getLastCrashReport(ctx)
+            ?: ctx.getString(R.string.diag_none)
+        return SecureLogger.sanitize(raw)
+    }
+
     fun buildDiagnosticsReport(): String {
         val ctx = getApplication<Application>()
-        val email = _uiState.value.userProfile?.email
-        if (!SupabaseClient.isAdmin(email) && !SupabaseClient.isOwner(email)) {
-            return ""
-        }
         val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val syncTs = lastSyncTimeMillis.value
         val syncTimeStr = if (syncTs > 0L) dateFmt.format(Date(syncTs)) else ctx.getString(R.string.diag_never)
@@ -1596,10 +1641,13 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
         val errorsText = if (recentErrors.isEmpty()) {
             ctx.getString(R.string.diag_none)
         } else {
-            recentErrors.takeLast(12).joinToString("\n") { entry ->
+            recentErrors.takeLast(50).joinToString("\n") { entry ->
                 "[${dateFmt.format(Date(entry.timestampMillis))}] ${entry.level}/${entry.code}: ${SecureLogger.sanitize(entry.message)}"
             }
         }
+        val lastCrash = SecureLogger.sanitize(CrashReporter.getLastCrashReport(ctx))
+            .trim()
+            .ifBlank { ctx.getString(R.string.diag_none) }
         return buildString {
             appendLine("${ctx.getString(R.string.diag_store_version)}: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine("${ctx.getString(R.string.diag_android_version)}: Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
@@ -1611,7 +1659,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
             appendLine("${ctx.getString(R.string.diag_gh_token)}: $tokenConfigured")
             appendLine()
             appendLine("${ctx.getString(R.string.diag_recent_errors)}:")
-            append(errorsText)
+            appendLine(errorsText)
+            appendLine()
+            appendLine("${ctx.getString(R.string.diag_last_crash)}:")
+            append(lastCrash)
         }
     }
 
@@ -1634,6 +1685,10 @@ class PrimeStoreViewModel(application: Application) : AndroidViewModel(applicati
     fun handleBack(): Boolean {
         val state = _uiState.value
         return when {
+            state.showCrashDialog -> {
+                dismissCrashDialog()
+                true
+            }
             state.showScreenshotIndex != null -> {
                 closeScreenshot()
                 true

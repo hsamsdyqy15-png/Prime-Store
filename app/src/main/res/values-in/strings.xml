@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">Jam &amp; Alarm</string>
     <string name="cat_calculators">Kalkulator</string>
     <string name="cat_social_media_tools">Alat Media Sosial</string>
+
+    <string name="crash_dialog_title">Aplikasi pulih dari penghentian tak terduga</string>
+    <string name="crash_dialog_body">Prime Store menyimpan detail diagnostik dari penghentian tak terduga terakhir. Anda dapat menyalin atau membagikan laporan ini.</string>
+    <string name="crash_dialog_copy">Salin</string>
+    <string name="crash_dialog_share">Bagikan</string>
+    <string name="crash_dialog_dismiss">Tutup</string>
+    <string name="crash_report_copied">Laporan kerusakan disalin ✔</string>
+    <string name="diag_last_crash">Laporan Kerusakan Terakhir</string>
+    <string name="error_network_timeout">Waktu koneksi habis. Periksa jaringan Anda dan coba lagi.</string>
+    <string name="error_network_offline">Tidak ada koneksi internet atau server tidak terjangkau.</string>
+    <string name="error_network_ssl">Kesalahan koneksi aman. Periksa tanggal perangkat atau jaringan.</string>
 </resources>

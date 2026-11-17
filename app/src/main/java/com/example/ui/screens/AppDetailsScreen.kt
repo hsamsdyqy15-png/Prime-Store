@@ -195,7 +195,17 @@ fun AppDetailsScreen(
         }
     }
 
-    LaunchedEffect(app.id, targetLanguageCode, autoTranslateEnabled, wifiOnlyTranslation, translationRetryCount) {
+    val knownDescSourceHint = remember(app, targetLanguageCode) {
+        val descAr = app.descriptionAr.trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
+        val descEn = app.descriptionEn.trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }.orEmpty()
+        when {
+            targetLanguageCode.equals("ar", ignoreCase = true) && descAr.isNotBlank() -> "ar"
+            targetLanguageCode.equals("en", ignoreCase = true) && descEn.isNotBlank() -> "en"
+            else -> null
+        }
+    }
+
+    LaunchedEffect(app.id, baseDescription, targetLanguageCode, autoTranslateEnabled, wifiOnlyTranslation, translationRetryCount) {
         if (!autoTranslateEnabled) {
             isTranslating = false
             translationStage = null
@@ -224,6 +234,7 @@ fun AppDetailsScreen(
             originalText = baseDescription,
             targetLanguageCode = targetLanguageCode,
             wifiOnly = wifiOnlyTranslation,
+            knownSourceHint = knownDescSourceHint,
             onStageChanged = { translationStage = it }
         )
         when (descOutcome) {
@@ -308,25 +319,28 @@ fun AppDetailsScreen(
         }.take(6)
     }
 
-    val displayedDescription = if (!showOriginalText && !translatedDesc.isNullOrBlank()) {
-        translatedDesc!!
+    val descTrans = translatedDesc
+    val displayedDescription = if (!showOriginalText && !descTrans.isNullOrBlank()) {
+        descTrans
     } else {
         baseDescription
     }
-    val displayedFeatures = if (!showOriginalText && !translatedFeatures.isNullOrEmpty()) {
-        translatedFeatures!!
+    val featTrans = translatedFeatures
+    val displayedFeatures = if (!showOriginalText && !featTrans.isNullOrEmpty()) {
+        featTrans
     } else {
         app.featuresAr
     }
     val defaultWhatsNew = stringResource(R.string.whats_new_default)
-    val displayedChangelog = if (!showOriginalText && !translatedChangelog.isNullOrBlank()) {
-        translatedChangelog!!
+    val logTrans = translatedChangelog
+    val displayedChangelog = if (!showOriginalText && !logTrans.isNullOrBlank()) {
+        logTrans
     } else {
         safeChangelog ?: defaultWhatsNew
     }
-    val hasAnyTranslation = !translatedDesc.isNullOrBlank() ||
-        !translatedFeatures.isNullOrEmpty() ||
-        !translatedChangelog.isNullOrBlank()
+    val hasAnyTranslation = !descTrans.isNullOrBlank() ||
+        !featTrans.isNullOrEmpty() ||
+        !logTrans.isNullOrBlank()
 
     Box(
         modifier = modifier
@@ -1642,8 +1656,9 @@ fun AppDetailsScreen(
                                 textAlign = TextAlign.Center
                             )
                         }
-                    } else if (securityReport != null) {
-                        val rep = securityReport!!
+                    } else {
+                        val rep = securityReport
+                        if (rep != null) {
                         Column {
                             Box(
                                 modifier = Modifier
@@ -1688,6 +1703,7 @@ fun AppDetailsScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(rep.aiSummaryAr, color = colors.textPrimary, fontSize = 13.sp, lineHeight = 18.sp)
+                        }
                         }
                     }
                 },

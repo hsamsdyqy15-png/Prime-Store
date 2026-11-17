@@ -19,6 +19,7 @@ import com.example.R
 import com.example.data.github.StoreSelfUpdater
 import com.example.data.github.StoreUpdateCheckResult
 import com.example.data.installer.PackageHelper
+import com.example.data.repository.SettingsRepository
 import com.example.data.supabase.SupabaseClient
 import java.util.concurrent.TimeUnit
 
@@ -53,8 +54,7 @@ class StoreUpdateWorker(
     }
 
     override suspend fun doWork(): Result {
-        val prefs = context.getSharedPreferences("prime_store_auth", Context.MODE_PRIVATE)
-        val notificationsEnabled = prefs.getBoolean("ps_notifications_enabled", true)
+        val notificationsEnabled = SettingsRepository.getInstance(context).notificationsEnabled.value
         if (!notificationsEnabled) return Result.success()
 
         // 1. Check for Prime Store self update
@@ -89,9 +89,9 @@ class StoreUpdateWorker(
                     message = context.getString(R.string.worker_apps_update_msg, updateCount),
                     notificationId = 102
                 )
-            } else if (allApps.isNotEmpty()) {
-                val newest = allApps.first()
-                if (newest.isNew) {
+            } else {
+                val newest = allApps.firstOrNull()
+                if (newest != null && newest.isNew) {
                     showNotification(
                         title = context.getString(R.string.worker_new_app_title),
                         message = context.getString(R.string.worker_new_app_msg, newest.nameAr.ifBlank { newest.name }),

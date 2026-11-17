@@ -727,4 +727,16 @@
     <string name="cat_clock_alarm">Clock &amp; Alarms</string>
     <string name="cat_calculators">Calculators</string>
     <string name="cat_social_media_tools">Social Media Tools</string>
+
+    <!-- Crash Recovery & Friendly Network Errors -->
+    <string name="crash_dialog_title">App recovered from an unexpected crash</string>
+    <string name="crash_dialog_body">Prime Store saved diagnostic details from the last unexpected stop. You can copy or share this report to help resolve it.</string>
+    <string name="crash_dialog_copy">Copy</string>
+    <string name="crash_dialog_share">Share</string>
+    <string name="crash_dialog_dismiss">Dismiss</string>
+    <string name="crash_report_copied">Crash report copied ✔</string>
+    <string name="diag_last_crash">Last Crash Report</string>
+    <string name="error_network_timeout">Connection timed out. Please check your network and try again.</string>
+    <string name="error_network_offline">No internet connection or server unreachable.</string>
+    <string name="error_network_ssl">Secure connection error. Please check your device date or network.</string>
 </resources>

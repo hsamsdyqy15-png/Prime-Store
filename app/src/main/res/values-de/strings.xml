@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">Uhr &amp; Wecker</string>
     <string name="cat_calculators">Taschenrechner</string>
     <string name="cat_social_media_tools">Social-Media-Tools</string>
+
+    <string name="crash_dialog_title">App nach unerwartetem Absturz wiederhergestellt</string>
+    <string name="crash_dialog_body">Prime Store hat Diagnosedaten des letzten unerwarteten Stopps gespeichert. Sie können diesen Bericht kopieren oder teilen.</string>
+    <string name="crash_dialog_copy">Kopieren</string>
+    <string name="crash_dialog_share">Teilen</string>
+    <string name="crash_dialog_dismiss">Schließen</string>
+    <string name="crash_report_copied">Absturzbericht kopiert ✔</string>
+    <string name="diag_last_crash">Letzter Absturzbericht</string>
+    <string name="error_network_timeout">Zeitüberschreitung der Verbindung. Bitte erneut versuchen.</string>
+    <string name="error_network_offline">Keine Internetverbindung oder Server nicht erreichbar.</string>
+    <string name="error_network_ssl">Fehler bei der sicheren Verbindung. Bitte Datum oder Netzwerk prüfen.</string>
 </resources>

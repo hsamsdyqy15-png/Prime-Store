@@ -23,11 +23,16 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 object SupabaseClient {
 
@@ -63,7 +68,7 @@ object SupabaseClient {
     private val client: OkHttpClient by lazy {
         SecureLogger.attachRedactedLogging(
             OkHttpClient.Builder()
-                .connectTimeout(20, TimeUnit.SECONDS)
+                .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
         ).build()
@@ -72,6 +77,7 @@ object SupabaseClient {
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     private var appContext: Context? = null
+    @Volatile
     private var securePrefs: SharedPreferences? = null
     private val tokenMutex = Mutex()
 
@@ -89,23 +95,33 @@ object SupabaseClient {
     }
 
     private fun getEncryptedPrefs(): SharedPreferences? {
-        if (securePrefs != null) return securePrefs
+        securePrefs?.let { return it }
         val ctx = appContext ?: return null
-        securePrefs = try {
-            val masterKey = MasterKey.Builder(ctx)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                ctx,
-                "supabase_encrypted_session_store",
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (_: Exception) {
-            ctx.getSharedPreferences("supabase_encrypted_session_store_fallback", Context.MODE_PRIVATE)
+        return synchronized(this) {
+            securePrefs?.let { return@synchronized it }
+            val created = try {
+                val masterKey = MasterKey.Builder(ctx)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    ctx,
+                    "supabase_encrypted_session_store",
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (t: Throwable) {
+                SecureLogger.w(TAG, "ENC_PREFS_CORRUPT", "Resetting unreadable encrypted prefs: ${t.message}")
+                runCatching {
+                    val prefsDir = java.io.File(ctx.dataDir, "shared_prefs")
+                    val corruptFile = java.io.File(prefsDir, "supabase_encrypted_session_store.xml")
+                    if (corruptFile.exists()) corruptFile.delete()
+                }
+                ctx.getSharedPreferences("supabase_encrypted_session_store_fallback", Context.MODE_PRIVATE)
+            }
+            securePrefs = created
+            created
         }
-        return securePrefs
     }
 
     private fun extractJwtExpSeconds(jwt: String): Long {
@@ -179,6 +195,24 @@ object SupabaseClient {
             lower.contains("row-level security") ||
             lower.contains("42501") ||
             lower.contains("insufficient_privilege")
+    }
+
+    internal fun friendlyNetworkError(context: Context?, throwable: Throwable): String {
+        val ctx = context ?: appContext
+        return when (throwable) {
+            is SocketTimeoutException -> ctx?.getString(R.string.error_network_timeout)
+                ?: "Connection timed out. Please try again."
+            is UnknownHostException, is ConnectException -> ctx?.getString(R.string.error_network_offline)
+                ?: "Unable to reach server. Check your internet connection."
+            is SSLException -> ctx?.getString(R.string.error_network_ssl)
+                ?: "Secure connection failed. Please check your network or system clock."
+            else -> {
+                val raw = SecureLogger.sanitize(throwable.localizedMessage ?: throwable.message)
+                raw.ifBlank {
+                    ctx?.getString(R.string.error_unexpected) ?: "Unexpected network error"
+                }
+            }
+        }
     }
 
     data class RefreshResponse(
@@ -421,8 +455,7 @@ object SupabaseClient {
             SecureLogger.e(TAG, "SIGN_IN_NET", "Sign in network error", e)
             AuthResponse(
                 success = false,
-                errorMessage = appContext?.getString(R.string.github_connection_error, e.localizedMessage ?: "")
-                    ?: "Connection error: ${e.localizedMessage}"
+                errorMessage = friendlyNetworkError(appContext, e)
             )
         }
     }
@@ -474,8 +507,7 @@ object SupabaseClient {
             SecureLogger.e(TAG, "SIGN_UP_NET", "Sign up network error", e)
             AuthResponse(
                 success = false,
-                errorMessage = appContext?.getString(R.string.github_connection_error, e.localizedMessage ?: "")
-                    ?: "Connection error: ${e.localizedMessage}"
+                errorMessage = friendlyNetworkError(appContext, e)
             )
         }
     }
@@ -528,7 +560,7 @@ object SupabaseClient {
                 success = false,
                 httpCode = 0,
                 errorCode = "NETWORK",
-                errorMessage = SecureLogger.sanitize(e.localizedMessage ?: e.message ?: "Network error")
+                errorMessage = friendlyNetworkError(appContext, e)
             )
         }
     }
@@ -603,7 +635,7 @@ object SupabaseClient {
             SecretStatusResult(
                 success = false,
                 httpCode = 0,
-                errorMessage = SecureLogger.sanitize(e.localizedMessage ?: "Network error")
+                errorMessage = friendlyNetworkError(appContext, e)
             )
         }
     }
@@ -675,7 +707,7 @@ object SupabaseClient {
             SecureLogger.e(TAG, "SECRET_UPSERT_EXC", "Upsert secret '$key' exception", e)
             SupabaseMutationResult(
                 success = false,
-                message = SecureLogger.sanitize(e.localizedMessage ?: "Connection failed"),
+                message = friendlyNetworkError(appContext, e),
                 code = "NETWORK",
                 httpCode = 0
             )
@@ -733,7 +765,7 @@ object SupabaseClient {
             SecureLogger.e(TAG, "SECRET_DEL_EXC", "Delete secret '$key' exception", e)
             SupabaseMutationResult(
                 success = false,
-                message = SecureLogger.sanitize(e.localizedMessage ?: "Connection failed"),
+                message = friendlyNetworkError(appContext, e),
                 code = "NETWORK",
                 httpCode = 0
             )
@@ -853,7 +885,7 @@ object SupabaseClient {
             SecureLogger.e(TAG, "APPS_WRITE_CHECK_EXC", "Apps write permission check exception", e)
             SupabaseMutationResult(
                 success = false,
-                message = SecureLogger.sanitize(e.localizedMessage ?: "Network error"),
+                message = friendlyNetworkError(appContext, e),
                 code = "NETWORK",
                 httpCode = 0
             )

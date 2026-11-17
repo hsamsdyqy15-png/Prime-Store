@@ -18,14 +18,20 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,8 +52,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,9 +122,12 @@ private val TOP_LEVEL_ROUTES = setOf(
 
 @Composable
 fun PrimeStoreApp(
-    viewModel: PrimeStoreViewModel = viewModel()
+    viewModel: PrimeStoreViewModel = viewModel(),
+    deepLinkAppId: String? = null,
+    onDeepLinkConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsState()
     val apps by viewModel.apps.collectAsState()
@@ -246,14 +258,32 @@ fun PrimeStoreApp(
         }
     }
 
+    LaunchedEffect(deepLinkAppId, apps, isInitialLoading) {
+        val targetId = deepLinkAppId?.trim()
+        if (targetId.isNullOrBlank()) return@LaunchedEffect
+        val matched = apps.firstOrNull { it.id == targetId }
+        if (matched != null) {
+            if (uiState.showSplash) {
+                viewModel.dismissSplash()
+            }
+            navigateToDetails(matched.id)
+            onDeepLinkConsumed()
+        } else if (!isInitialLoading && apps.isNotEmpty()) {
+            onDeepLinkConsumed()
+        }
+    }
+
+    val lastSyncTime by viewModel.lastSyncTimeMillis.collectAsState()
     val colors = com.example.ui.theme.PrimeTheme.colors
     val diagnosticsReport = remember(
         uiState.isAdmin,
         uiState.currentLanguage,
         uiState.selectedLanguageTag,
-        apps.size
+        uiState.lastCrashReport,
+        apps.size,
+        lastSyncTime
     ) {
-        if (uiState.isAdmin) viewModel.buildDiagnosticsReport() else ""
+        viewModel.buildDiagnosticsReport()
     }
 
     Box(
@@ -865,8 +895,91 @@ fun PrimeStoreApp(
                     }
                 )
             }
+        }
 
-            // Top Floating Toast Banner
+        // Unread Previous Crash Recovery Dialog (available across screens)
+        if (uiState.showCrashDialog && !uiState.lastCrashReport.isNullOrBlank()) {
+            val crashText = viewModel.buildCrashShareText()
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissCrashDialog() },
+                containerColor = colors.card,
+                title = {
+                    Text(
+                        text = stringResource(R.string.crash_dialog_title),
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = stringResource(R.string.crash_dialog_body),
+                            color = colors.textSecondary,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(colors.background, RoundedCornerShape(10.dp))
+                                .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = crashText,
+                                color = colors.textPrimary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(
+                            onClick = {
+                                shareText(context, crashText)
+                                viewModel.dismissCrashDialog()
+                            }
+                        ) {
+                            Text(
+                                text = stringResource(R.string.crash_dialog_share),
+                                color = colors.accent
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(crashText))
+                                viewModel.emitToast(context.getString(R.string.crash_report_copied))
+                                viewModel.dismissCrashDialog()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.crash_dialog_copy),
+                                color = colors.textOnAccent,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissCrashDialog() }) {
+                        Text(
+                            text = stringResource(R.string.crash_dialog_dismiss),
+                            color = colors.textMuted
+                        )
+                    }
+                }
+            )
+        }
+
+        // Top Floating Toast Banner
             AnimatedVisibility(
                 visible = activeToast != null,
                 enter = slideInVertically { -it } + fadeIn(),
@@ -889,7 +1002,6 @@ fun PrimeStoreApp(
                 }
             }
         }
-    }
 
     // Close Drawer cleanly on Back
     BackHandler(enabled = drawerState.isOpen) {

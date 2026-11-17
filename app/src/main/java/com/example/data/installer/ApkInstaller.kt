@@ -28,7 +28,11 @@ object ApkInstaller {
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:${ctx.packageName}")
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            ctx.startActivity(intent)
+            try {
+                ctx.startActivity(intent)
+            } catch (_: Exception) {
+                openManageApplicationsSettings(ctx)
+            }
         }
     }
 
@@ -239,11 +243,51 @@ object ApkInstaller {
         if (bundleDir.exists() && bundleDir.isDirectory) {
             val apks = bundleDir.listFiles { f -> f.isFile && f.name.endsWith(".apk", true) && f.length() > 0L }
                 ?.sortedBy { if (it.name.contains("base", true)) "" else it.name }
-            if (!apks.isNullOrEmpty()) {
-                return apks.first()
+            val firstApk = apks?.firstOrNull()
+            if (firstApk != null) {
+                return firstApk
             }
         }
         return null
+    }
+
+    fun scanExistingPrimaryInstallFiles(ctx: Context): Map<String, File> {
+        val dir = getApksRootDir(ctx)
+        val entries = dir.listFiles() ?: return emptyMap()
+        val result = HashMap<String, File>(entries.size)
+        val priority = mapOf("apk" to 0, "apks" to 1, "xapk" to 2, "zip" to 3)
+        val bestPriority = HashMap<String, Int>()
+
+        for (entry in entries) {
+            val name = entry.name
+            if (entry.isFile && entry.length() > 0L) {
+                val dotIdx = name.lastIndexOf('.')
+                if (dotIdx > 0) {
+                    val ext = name.substring(dotIdx + 1).lowercase(Locale.US)
+                    val p = priority[ext] ?: continue
+                    val appId = name.substring(0, dotIdx)
+                    if (appId.isNotBlank()) {
+                        val prevP = bestPriority[appId]
+                        if (prevP == null || p < prevP) {
+                            bestPriority[appId] = p
+                            result[appId] = entry
+                        }
+                    }
+                }
+            } else if (entry.isDirectory && name.endsWith("_bundle")) {
+                val appId = name.removeSuffix("_bundle")
+                if (appId.isNotBlank() && !result.containsKey(appId)) {
+                    val firstApk = entry.listFiles { f ->
+                        f.isFile && f.name.endsWith(".apk", true) && f.length() > 0L
+                    }?.sortedBy { if (it.name.contains("base", true)) "" else it.name }
+                        ?.firstOrNull()
+                    if (firstApk != null) {
+                        result[appId] = firstApk
+                    }
+                }
+            }
+        }
+        return result
     }
 
     fun getBundleApkFiles(ctx: Context, appId: String): List<File> {

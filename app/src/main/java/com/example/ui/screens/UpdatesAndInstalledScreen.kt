@@ -390,9 +390,9 @@ fun UpdatesAndInstalledScreen(
     }
 
     // Confirmation Dialog for Uninstall
-    if (appToUninstall != null) {
-        val app = appToUninstall!!
-        val appDisplayName = app.app.nameAr.ifBlank { app.app.name }
+    val pendingUninstall = appToUninstall
+    if (pendingUninstall != null) {
+        val appDisplayName = pendingUninstall.app.nameAr.ifBlank { pendingUninstall.app.name }
         AlertDialog(
             onDismissRequest = { appToUninstall = null },
             containerColor = colors.card,
@@ -413,7 +413,7 @@ fun UpdatesAndInstalledScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val pkg = app.installedPackageName
+                        val pkg = pendingUninstall.installedPackageName
                         appToUninstall = null
                         onUninstallApp(pkg)
                     },

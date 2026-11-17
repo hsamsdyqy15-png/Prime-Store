@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">گھڑی اور الارم</string>
     <string name="cat_calculators">کیلکولیٹرز</string>
     <string name="cat_social_media_tools">سوشل میڈیا ٹولز</string>
+
+    <string name="crash_dialog_title">ایپ غیر متوقع کریش کے بعد بحال ہو گئی</string>
+    <string name="crash_dialog_body">Prime Store نے آخری غیر متوقع بندش کی تشخیصی تفصیلات محفوظ کر لی ہیں۔ آپ اس رپورٹ کو کاپی یا شیئر کر سکتے ہیں۔</string>
+    <string name="crash_dialog_copy">کاپی کریں</string>
+    <string name="crash_dialog_share">شیئر کریں</string>
+    <string name="crash_dialog_dismiss">بند کریں</string>
+    <string name="crash_report_copied">کریش رپورٹ کاپی ہو گئی ✔</string>
+    <string name="diag_last_crash">آخری کریش رپورٹ</string>
+    <string name="error_network_timeout">کنکشن کا وقت ختم ہو گیا۔ براہ کرم دوبارہ کوشش کریں۔</string>
+    <string name="error_network_offline">انٹرنیٹ کنکشن نہیں ہے یا سرور دستیاب نہیں ہے۔</string>
+    <string name="error_network_ssl">محفوظ کنکشن کی خرابی۔ براہ کرم آلے کی تاریخ یا نیٹ ورک چیک کریں۔</string>
 </resources>

@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -270,9 +271,11 @@ fun AppIconBadge(
     ) {
         val targetUrl = if (!imageUrl.isNullOrBlank()) imageUrl else if (emoji.startsWith("http")) emoji else null
         if (targetUrl != null) {
-            val request = remember(targetUrl, context) {
+            val sizePx = with(LocalDensity.current) { size.roundToPx().coerceAtLeast(1) }
+            val request = remember(targetUrl, sizePx, context) {
                 ImageRequest.Builder(context)
                     .data(targetUrl)
+                    .size(sizePx)
                     .crossfade(150)
                     .error(R.drawable.ic_app_default)
                     .fallback(R.drawable.ic_app_default)

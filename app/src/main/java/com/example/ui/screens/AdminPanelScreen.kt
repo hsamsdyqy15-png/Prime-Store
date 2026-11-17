@@ -969,8 +969,8 @@ fun AdminPanelScreen(
                                             itemType = StoreCategories.ITEM_TYPE_GAME
                                             if (selectedCategoryItem.type != StoreCategories.ITEM_TYPE_GAME) {
                                                 val fallback = allGameCategories.firstOrNull { !it.isHidden }?.let { categoriesRepo.toCategoryItem(it) }
-                                                    ?: StoreCategories.GAMES.first()
-                                                selectedCategoryItem = fallback
+                                                    ?: StoreCategories.GAMES.firstOrNull()
+                                                if (fallback != null) selectedCategoryItem = fallback
                                             }
                                         }
                                         .padding(vertical = 10.dp)
@@ -997,8 +997,8 @@ fun AdminPanelScreen(
                                             itemType = StoreCategories.ITEM_TYPE_APP
                                             if (selectedCategoryItem.type != StoreCategories.ITEM_TYPE_APP) {
                                                 val fallback = allAppCategories.firstOrNull { !it.isHidden }?.let { categoriesRepo.toCategoryItem(it) }
-                                                    ?: StoreCategories.APPS.first()
-                                                selectedCategoryItem = fallback
+                                                    ?: StoreCategories.APPS.firstOrNull()
+                                                if (fallback != null) selectedCategoryItem = fallback
                                             }
                                         }
                                         .padding(vertical = 10.dp)
@@ -2392,8 +2392,8 @@ fun AdminPanelScreen(
         )
     }
 
-    if (verifiedSavedApp != null) {
-        val app = verifiedSavedApp!!
+    val app = verifiedSavedApp
+    if (app != null) {
         AlertDialog(
             onDismissRequest = { verifiedSavedApp = null },
             containerColor = colors.card,
@@ -2444,8 +2444,8 @@ fun AdminPanelScreen(
         )
     }
 
-    if (supabaseErrorResult != null) {
-        val err = supabaseErrorResult!!
+    val err = supabaseErrorResult
+    if (err != null) {
         AlertDialog(
             onDismissRequest = { supabaseErrorResult = null },
             containerColor = colors.card,

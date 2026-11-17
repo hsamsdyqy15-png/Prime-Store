@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.data.supabase.SecureLogger
 
 class DownloadService : Service() {
 
@@ -31,10 +32,14 @@ class DownloadService : Service() {
                 action = ACTION_START
                 putExtra(EXTRA_APP_NAME, appName)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (t: Throwable) {
+                SecureLogger.w("DownloadService", "FGS_START_FALLBACK", "Could not start foreground download service: ${t.message}")
             }
         }
 
@@ -45,14 +50,20 @@ class DownloadService : Service() {
                 putExtra(EXTRA_PROGRESS, progress)
                 putExtra(EXTRA_SPEED, speed)
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (_: Throwable) {
+            }
         }
 
         fun stop(context: Context) {
             val intent = Intent(context, DownloadService::class.java).apply {
                 action = ACTION_STOP
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -67,24 +78,32 @@ class DownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action ?: return START_NOT_STICKY
+        val action = intent?.action
+        if (action == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         when (action) {
             ACTION_START -> {
                 currentAppName = intent.getStringExtra(EXTRA_APP_NAME)
                     ?: getString(R.string.dl_service_default_app)
                 val notification = buildNotification(0, "0 MB/s")
-                startForeground(NOTIFICATION_ID, notification)
+                try {
+                    startForeground(NOTIFICATION_ID, notification)
+                } catch (t: Throwable) {
+                    SecureLogger.w("DownloadService", "FGS_PROMOTE_ERR", "startForeground skipped: ${t.message}")
+                }
             }
             ACTION_UPDATE -> {
                 currentAppName = intent.getStringExtra(EXTRA_APP_NAME) ?: currentAppName
                 val progress = intent.getIntExtra(EXTRA_PROGRESS, 0)
                 val speed = intent.getStringExtra(EXTRA_SPEED) ?: ""
                 val notification = buildNotification(progress, speed)
-                notificationManager.notify(NOTIFICATION_ID, notification)
+                runCatching { notificationManager.notify(NOTIFICATION_ID, notification) }
             }
             ACTION_STOP -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
                 stopSelf()
             }
         }

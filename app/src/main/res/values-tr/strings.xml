@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">Saat ve Alarmlar</string>
     <string name="cat_calculators">Hesap Makineleri</string>
     <string name="cat_social_media_tools">Sosyal Medya Araçları</string>
+
+    <string name="crash_dialog_title">Uygulama beklenmeyen bir çökmeden kurtarıldı</string>
+    <string name="crash_dialog_body">Prime Store son beklenmeyen durdurmaya ait tanılama ayrıntılarını kaydetti. Bu raporu kopyalayabilir veya paylaşabilirsiniz.</string>
+    <string name="crash_dialog_copy">Kopyala</string>
+    <string name="crash_dialog_share">Paylaş</string>
+    <string name="crash_dialog_dismiss">Kapat</string>
+    <string name="crash_report_copied">Çökme raporu kopyalandı ✔</string>
+    <string name="diag_last_crash">Son Çökme Raporu</string>
+    <string name="error_network_timeout">Bağlantı zaman aşımına uğradı. Lütfen tekrar deneyin.</string>
+    <string name="error_network_offline">İnternet bağlantısı yok veya sunucuya ulaşılamıyor.</string>
+    <string name="error_network_ssl">Güvenli bağlantı hatası. Cihaz tarihini veya ağınızı kontrol edin.</string>
 </resources>

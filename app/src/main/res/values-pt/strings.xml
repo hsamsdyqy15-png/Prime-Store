@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">Relógio e alarmes</string>
     <string name="cat_calculators">Calculadoras</string>
     <string name="cat_social_media_tools">Ferramentas sociais</string>
+
+    <string name="crash_dialog_title">O app se recuperou de uma falha inesperada</string>
+    <string name="crash_dialog_body">O Prime Store salvou os detalhes de diagnóstico da última parada inesperada. Você pode copiar ou compartilhar este relatório.</string>
+    <string name="crash_dialog_copy">Copiar</string>
+    <string name="crash_dialog_share">Compartilhar</string>
+    <string name="crash_dialog_dismiss">Dispensar</string>
+    <string name="crash_report_copied">Relatório de falha copiado ✔</string>
+    <string name="diag_last_crash">Último relatório de falha</string>
+    <string name="error_network_timeout">Tempo limite de conexão esgotado. Tente novamente.</string>
+    <string name="error_network_offline">Sem conexão com a internet ou servidor inacessível.</string>
+    <string name="error_network_ssl">Erro de conexão segura. Verifique a data do dispositivo ou a rede.</string>
 </resources>

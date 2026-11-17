@@ -727,4 +727,16 @@
     <string name="cat_clock_alarm">الساعة والمنبه</string>
     <string name="cat_calculators">الآلات الحاسبة</string>
     <string name="cat_social_media_tools">أدوات التواصل الاجتماعي</string>
+
+    <!-- استعادة الأعطال وأخطاء الشبكة -->
+    <string name="crash_dialog_title">تعافى التطبيق من توقف غير متوقع</string>
+    <string name="crash_dialog_body">حفظ Prime Store تفاصيل التشخيص من آخر توقف غير متوقع. يمكنك نسخ التقرير أو مشاركته للمساعدة في حل المشكلة.</string>
+    <string name="crash_dialog_copy">نسخ</string>
+    <string name="crash_dialog_share">مشاركة</string>
+    <string name="crash_dialog_dismiss">تجاهل</string>
+    <string name="crash_report_copied">تم نسخ تقرير العطل ✔</string>
+    <string name="diag_last_crash">آخر تقرير عطل</string>
+    <string name="error_network_timeout">انتهت مهلة الاتصال. يرجى التحقق من الشبكة والمحاولة مجدداً.</string>
+    <string name="error_network_offline">لا يوجد اتصال بالإنترنت أو تعذر الوصول إلى الخادم.</string>
+    <string name="error_network_ssl">خطأ في الاتصال الآمن. يرجى التحقق من تاريخ الجهاز أو الشبكة.</string>
 </resources>

@@ -1037,17 +1037,15 @@ fun SettingsScreen(
                 )
             }
 
-            // 12.5 Owner/Admin Diagnostics Row
-            if (isAdmin) {
-                item {
-                    SettingsOptionItem(
-                        title = stringResource(R.string.diagnostics_title),
-                        subtitle = stringResource(R.string.diagnostics_subtitle),
-                        icon = Icons.Filled.BugReport,
-                        testTag = "diagnostics_row",
-                        onClick = { showDiagnosticsDialog = true }
-                    )
-                }
+            // 12.5 Diagnostics Row (available to all users for crash/error support)
+            item {
+                SettingsOptionItem(
+                    title = stringResource(R.string.diagnostics_title),
+                    subtitle = stringResource(R.string.diagnostics_subtitle),
+                    icon = Icons.Filled.BugReport,
+                    testTag = "diagnostics_row",
+                    onClick = { showDiagnosticsDialog = true }
+                )
             }
 
             // 13. About Store
@@ -1108,8 +1106,8 @@ fun SettingsScreen(
         }
 
         // Update Found Dialog
-        if (showUpdateFoundDialog && pendingUpdateInfo != null) {
-            val update = pendingUpdateInfo!!
+        val update = pendingUpdateInfo
+        if (showUpdateFoundDialog && update != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateFoundDialog = false },
                 containerColor = colors.card,
@@ -1417,10 +1415,11 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        if (!adminLoginError.isNullOrBlank()) {
+                        val loginErr = adminLoginError
+                        if (!loginErr.isNullOrBlank()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = adminLoginError!!,
+                                text = loginErr,
                                 color = colors.danger,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold

@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">Horloge et alarmes</string>
     <string name="cat_calculators">Calculatrices</string>
     <string name="cat_social_media_tools">Outils réseaux sociaux</string>
+
+    <string name="crash_dialog_title">L\u2019application s\u2019est remise d\u2019un arrêt inattendu</string>
+    <string name="crash_dialog_body">Prime Store a enregistré les détails de diagnostic du dernier arrêt inattendu. Vous pouvez copier ou partager ce rapport.</string>
+    <string name="crash_dialog_copy">Copier</string>
+    <string name="crash_dialog_share">Partager</string>
+    <string name="crash_dialog_dismiss">Ignorer</string>
+    <string name="crash_report_copied">Rapport de plantage copié ✔</string>
+    <string name="diag_last_crash">Dernier rapport de plantage</string>
+    <string name="error_network_timeout">Délai de connexion dépassé. Veuillez réessayer.</string>
+    <string name="error_network_offline">Aucune connexion Internet ou serveur inaccessible.</string>
+    <string name="error_network_ssl">Erreur de connexion sécurisée. Vérifiez la date ou le réseau.</string>
 </resources>

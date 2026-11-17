@@ -101,6 +101,7 @@ fun FavoritesScreen(
                 }
             }
         } else {
+            val distinctFavs = remember(favoriteApps) { favoriteApps.distinctBy { it.id } }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
@@ -108,8 +109,8 @@ fun FavoritesScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(
-                    items = favoriteApps,
-                    key = { it.id },
+                    items = distinctFavs,
+                    key = { "fav_${it.id}" },
                     contentType = { "fav_item" }
                 ) { app ->
                     FavoriteCardItem(

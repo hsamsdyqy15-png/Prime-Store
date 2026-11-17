@@ -517,7 +517,8 @@ object AdminPublishCoordinator {
             val resolvedObbUrl = workingDraft.obbUrl.trim()
             val pkgName = "com.primestore.${workingDraft.name.lowercase().replace(Regex("[^a-z0-9]"), "")}"
 
-            val mutationResult = if (workingDraft.editingAppId == null) {
+            val editingId = workingDraft.editingAppId
+            val mutationResult = if (editingId == null) {
                 SupabaseClient.insertApp(
                     accessToken = freshDbToken,
                     name = workingDraft.name,
@@ -541,7 +542,7 @@ object AdminPublishCoordinator {
             } else {
                 SupabaseClient.updateApp(
                     accessToken = freshDbToken,
-                    id = workingDraft.editingAppId!!,
+                    id = editingId,
                     name = workingDraft.name,
                     category = categoryKey,
                     rating = rating,

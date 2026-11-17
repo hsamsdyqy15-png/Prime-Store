@@ -116,7 +116,10 @@ object PackageHelper {
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:${context.packageName}")
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            try {
+                context.startActivity(intent)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -249,12 +252,37 @@ object PackageHelper {
         }
     }
 
+    fun getInstalledVersionSummary(
+        context: Context,
+        packageName: String
+    ): com.example.data.model.InstalledPackageSummary? {
+        if (packageName.isBlank()) return null
+        return try {
+            val info = context.packageManager.getPackageInfo(packageName, 0)
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+            com.example.data.model.InstalledPackageSummary(
+                packageName = packageName,
+                versionCode = versionCode,
+                versionName = info.versionName ?: "1.0.0"
+            )
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun isInstalled(context: Context, packageName: String): Boolean {
-        return getInstalledInfo(context, packageName) != null
+        return getInstalledVersionSummary(context, packageName) != null
     }
 
     fun getInstalledVersion(context: Context, packageName: String): Long? {
-        return getInstalledInfo(context, packageName)?.versionCode
+        return getInstalledVersionSummary(context, packageName)?.versionCode
     }
 
     fun checkInstallPreconditions(
@@ -687,8 +715,8 @@ object PackageHelper {
                 info.signatures
             }
 
-            if (!signatures.isNullOrEmpty()) {
-                val certBytes = signatures[0].toByteArray()
+            val certBytes = signatures?.firstOrNull()?.toByteArray()
+            if (certBytes != null && certBytes.isNotEmpty()) {
                 return sha256Hex(certBytes)
             }
         } catch (_: Exception) {}
@@ -721,7 +749,11 @@ class PackageInstallStatusReceiver : BroadcastReceiver() {
                 }
                 confirmIntent?.let {
                     it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(it)
+                    try {
+                        context.startActivity(it)
+                    } catch (_: Exception) {
+                        PackageEventBus.emit(PackageInstallEvent.Failure(appId, pkgName, -1, message))
+                    }
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {

@@ -257,6 +257,25 @@ fun CategoriesScreen(
                 }
             }
 
+            val allGamesCount = remember(allApps) {
+                allApps.count { StoreCategories.isGameApp(it) }
+            }
+            val allAppsCount = remember(allApps) {
+                allApps.count { StoreCategories.isNonGameApp(it) }
+            }
+            val gameCatPairsDistinct = remember(gameCatPairs) { gameCatPairs.distinctBy { it.first.key } }
+            val appCatPairsDistinct = remember(appCatPairs) { appCatPairs.distinctBy { it.first.key } }
+            val gameCountsByKey = remember(allApps, gameCatPairsDistinct) {
+                gameCatPairsDistinct.associate { (item, _) ->
+                    item.key to allApps.count { StoreCategories.matchesCategoryFilter(it, item.key, StoreCategories.ITEM_TYPE_GAME) }
+                }
+            }
+            val appCountsByKey = remember(allApps, appCatPairsDistinct) {
+                appCatPairsDistinct.associate { (item, _) ->
+                    item.key to allApps.count { StoreCategories.matchesCategoryFilter(it, item.key, StoreCategories.ITEM_TYPE_APP) }
+                }
+            }
+
             PullToRefreshBox(
                 isRefreshing = isPullRefreshing,
                 onRefresh = onRefresh,
@@ -270,9 +289,6 @@ fun CategoriesScreen(
                 ) {
                     if (activeRootTab == 0) {
                         item(key = "hub_all_games", contentType = "category_card") {
-                            val allGamesCount = remember(allApps) {
-                                allApps.count { StoreCategories.isGameApp(it) }
-                            }
                             HubEntryCard(
                                 emoji = "🎮",
                                 title = stringResource(id = R.string.hub_all_games_title),
@@ -282,13 +298,11 @@ fun CategoriesScreen(
                         }
 
                         items(
-                            items = gameCatPairs,
+                            items = gameCatPairsDistinct,
                             key = { (item, _) -> "game_cat_${item.key}" },
                             contentType = { "category_card" }
                         ) { (item, displayTitle) ->
-                            val count = remember(allApps, item.key) {
-                                allApps.count { StoreCategories.matchesCategoryFilter(it, item.key, StoreCategories.ITEM_TYPE_GAME) }
-                            }
+                            val count = gameCountsByKey[item.key] ?: 0
                             UnifiedCategoryCard(
                                 item = item,
                                 displayTitle = displayTitle,
@@ -298,9 +312,6 @@ fun CategoriesScreen(
                         }
                     } else {
                         item(key = "hub_all_apps", contentType = "category_card") {
-                            val allAppsCount = remember(allApps) {
-                                allApps.count { StoreCategories.isNonGameApp(it) }
-                            }
                             HubEntryCard(
                                 emoji = "📱",
                                 title = stringResource(id = R.string.hub_all_apps_title),
@@ -310,13 +321,11 @@ fun CategoriesScreen(
                         }
 
                         items(
-                            items = appCatPairs,
+                            items = appCatPairsDistinct,
                             key = { (item, _) -> "app_cat_${item.key}" },
                             contentType = { "category_card" }
                         ) { (item, displayTitle) ->
-                            val count = remember(allApps, item.key) {
-                                allApps.count { StoreCategories.matchesCategoryFilter(it, item.key, StoreCategories.ITEM_TYPE_APP) }
-                            }
+                            val count = appCountsByKey[item.key] ?: 0
                             UnifiedCategoryCard(
                                 item = item,
                                 displayTitle = displayTitle,
@@ -630,7 +639,10 @@ fun CategoryAppsList(
         mutableIntStateOf(20)
     }
     val visibleApps = remember(filteredApps, displayLimit) {
-        filteredApps.take(displayLimit)
+        filteredApps.distinctBy { it.id }.take(displayLimit)
+    }
+    val downloadsByAppId = remember(downloads) {
+        downloads.associateBy { it.appId }
     }
 
     val showFossToggle = (destination as? CategoryDestination.SingleCategory)?.category != AppCategory.OPEN_SOURCE
@@ -753,7 +765,7 @@ fun CategoryAppsList(
                 ) {
                     itemsIndexed(
                         items = visibleApps,
-                        key = { _, it -> it.id },
+                        key = { _, it -> "cat_app_${it.id}" },
                         contentType = { _, _ -> "cat_app" }
                     ) { index, app ->
                         if (index >= visibleApps.lastIndex - 3 && visibleApps.size < filteredApps.size) {
@@ -761,7 +773,7 @@ fun CategoryAppsList(
                                 displayLimit += 20
                             }
                         }
-                        val dlItem = downloads.find { it.appId == app.id }
+                        val dlItem = downloadsByAppId[app.id]
                         val installedInfo = installedPkgByAppId[app.id]
                         val actionState = resolveAppActionState(
                             app = app,

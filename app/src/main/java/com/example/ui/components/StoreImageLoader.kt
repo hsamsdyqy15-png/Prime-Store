@@ -20,7 +20,7 @@ object StoreImageLoader {
         return ImageLoader.Builder(appContext)
             .memoryCache {
                 MemoryCache.Builder(appContext)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.15)
                     .build()
             }
             .diskCache {

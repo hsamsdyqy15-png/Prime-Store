@@ -89,56 +89,118 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    private fun readThemeMode(): ThemeMode {
-        val raw = prefs.getString(KEY_THEME_MODE, null)
-            ?: legacyAuthPrefs.getString("ps_theme_mode", "DARK")
-            ?: "DARK"
+    private fun readAnyPref(key: String): Any? {
         return try {
-            ThemeMode.valueOf(raw.uppercase())
+            prefs.all[key]
+        } catch (_: Throwable) {
+            null
+        } ?: try {
+            legacyAuthPrefs.all[key]
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun readSafeString(primaryKey: String, legacyKey: String? = null, default: String): String {
+        val raw = try {
+            prefs.all[primaryKey]
+        } catch (_: Throwable) {
+            null
+        } ?: legacyKey?.let { lk ->
+            try {
+                legacyAuthPrefs.all[lk]
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        return when (raw) {
+            is String -> raw
+            is Number, is Boolean -> raw.toString()
+            else -> default
+        }
+    }
+
+    private fun readSafeLong(primaryKey: String, legacyKey: String? = null, default: Long): Long {
+        val raw = try {
+            prefs.all[primaryKey]
+        } catch (_: Throwable) {
+            null
+        } ?: legacyKey?.let { lk ->
+            try {
+                legacyAuthPrefs.all[lk]
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        return when (raw) {
+            is Long -> raw
+            is Int -> raw.toLong()
+            is Number -> raw.toLong()
+            is String -> raw.trim().toLongOrNull()
+                ?: raw.trim().removePrefix("0x").removePrefix("0X").toLongOrNull(16)
+                ?: default
+            else -> default
+        }
+    }
+
+    private fun readSafeBoolean(primaryKey: String, legacyKey: String? = null, default: Boolean): Boolean {
+        val raw = try {
+            prefs.all[primaryKey]
+        } catch (_: Throwable) {
+            null
+        } ?: legacyKey?.let { lk ->
+            try {
+                legacyAuthPrefs.all[lk]
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        return when (raw) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> when (raw.trim().lowercase()) {
+                "true", "1", "yes" -> true
+                "false", "0", "no" -> false
+                else -> default
+            }
+            else -> default
+        }
+    }
+
+    private fun readThemeMode(): ThemeMode {
+        val raw = readSafeString(KEY_THEME_MODE, "ps_theme_mode", "DARK")
+        return try {
+            ThemeMode.valueOf(raw.trim().uppercase())
         } catch (_: Exception) {
             ThemeMode.DARK
         }
     }
 
     private fun readAccentHex(): Long {
-        return if (prefs.contains(KEY_ACCENT_HEX)) {
-            prefs.getLong(KEY_ACCENT_HEX, AccentOption.PURPLE.hex)
-        } else {
-            legacyAuthPrefs.getLong("ps_theme_accent", AccentOption.PURPLE.hex)
-        }
+        return readSafeLong(KEY_ACCENT_HEX, "ps_theme_accent", AccentOption.PURPLE.hex)
     }
 
     private fun readLanguageTag(): String {
-        val stored = prefs.getString(KEY_LANGUAGE_TAG, null)
-            ?: legacyAuthPrefs.getString("ps_language", "auto")
-            ?: "auto"
+        val stored = readSafeString(KEY_LANGUAGE_TAG, "ps_language", "auto")
         return normalizeLanguageTag(stored)
     }
 
     private fun readAutoTranslateEnabled(): Boolean {
-        return if (prefs.contains(KEY_AUTO_TRANSLATE)) {
-            prefs.getBoolean(KEY_AUTO_TRANSLATE, true)
-        } else {
-            legacyAuthPrefs.getBoolean("ps_auto_translate", true)
-        }
+        return readSafeBoolean(KEY_AUTO_TRANSLATE, "ps_auto_translate", true)
     }
 
     private fun readWifiOnlyTranslation(): Boolean {
-        return if (prefs.contains(KEY_WIFI_ONLY_TRANSLATE)) {
-            prefs.getBoolean(KEY_WIFI_ONLY_TRANSLATE, false)
-        } else {
-            legacyAuthPrefs.getBoolean("ps_wifi_only_translate", false)
-        }
+        return readSafeBoolean(KEY_WIFI_ONLY_TRANSLATE, "ps_wifi_only_translate", false)
     }
 
     private fun readNotificationsEnabled(): Boolean =
-        prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true)
+        readSafeBoolean(KEY_NOTIFICATIONS_ENABLED, "ps_notifications_enabled", true)
 
     private fun readDeleteApkAfterInstall(): Boolean =
-        prefs.getBoolean(KEY_DELETE_APK_AFTER_INSTALL, true)
+        readSafeBoolean(KEY_DELETE_APK_AFTER_INSTALL, null, true)
 
     private fun readShizukuRootInstallEnabled(): Boolean =
-        prefs.getBoolean(KEY_SHIZUKU_ROOT_MODE, false)
+        readSafeBoolean(KEY_SHIZUKU_ROOT_MODE, null, false)
 
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
@@ -212,7 +274,7 @@ class SettingsRepository(context: Context) {
         if (saved != "auto") return saved
         val appLocales = AppCompatDelegate.getApplicationLocales()
         if (!appLocales.isEmpty) {
-            val first = appLocales[0]?.language?.lowercase()
+            val first = appLocales.get(0)?.language?.lowercase()
             val norm = normalizeLanguageTag(first)
             if (norm != "auto") return norm
         }

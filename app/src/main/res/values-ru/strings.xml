@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">Часы и будильник</string>
     <string name="cat_calculators">Калькуляторы</string>
     <string name="cat_social_media_tools">Инструменты для соцсетей</string>
+
+    <string name="crash_dialog_title">Приложение восстановлено после сбоя</string>
+    <string name="crash_dialog_body">Prime Store сохранил диагностические данные о последнем неожиданном завершении работы. Вы можете скопировать или отправить отчёт.</string>
+    <string name="crash_dialog_copy">Копировать</string>
+    <string name="crash_dialog_share">Поделиться</string>
+    <string name="crash_dialog_dismiss">Закрыть</string>
+    <string name="crash_report_copied">Отчёт о сбое скопирован ✔</string>
+    <string name="diag_last_crash">Последний отчёт о сбое</string>
+    <string name="error_network_timeout">Превышено время ожидания соединения. Повторите попытку.</string>
+    <string name="error_network_offline">Нет подключения к интернету или сервер недоступен.</string>
+    <string name="error_network_ssl">Ошибка защищённого соединения. Проверьте дату или сеть.</string>
 </resources>

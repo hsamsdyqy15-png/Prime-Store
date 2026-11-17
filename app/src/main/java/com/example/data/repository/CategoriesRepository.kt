@@ -34,6 +34,7 @@ class CategoriesRepository private constructor(context: Context) {
         dao.observeAll().flowOn(Dispatchers.IO)
 
     suspend fun ensureSeeded() = withContext(Dispatchers.IO) {
+        if (dao.getCount() >= 94) return@withContext
         dao.insertIgnoreAll(PrimeStoreDatabase.defaultCategorySeedEntities())
     }
 

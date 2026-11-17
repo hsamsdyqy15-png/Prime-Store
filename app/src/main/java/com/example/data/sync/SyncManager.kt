@@ -7,6 +7,8 @@ import android.os.Bundle
 import com.example.data.repository.AppsRepository
 import com.example.data.supabase.SecureLogger
 import com.example.data.supabase.SupabaseClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,22 +21,17 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
-import org.json.JSONArray
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 class SyncManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
     private val appsRepository = AppsRepository.getInstance(appContext)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable is CancellationException) throw throwable
+        SecureLogger.e(TAG, "SYNC_SCOPE_EXC", "Unhandled coroutine exception: ${throwable.message}", throwable)
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private val syncMutex = Mutex()
 
     private val _isSyncing = MutableStateFlow(false)
@@ -49,27 +46,17 @@ class SyncManager private constructor(context: Context) {
     private val _lastSyncResult = MutableStateFlow("Not synced")
     val lastSyncResult: StateFlow<String> = _lastSyncResult.asStateFlow()
 
-    private val _isForeground = MutableStateFlow(false)
+    private val isForeground = AtomicBoolean(false)
     private var startedActivityCount = 0
     private val lifecycleRegistered = AtomicBoolean(false)
 
     private var pollingJob: Job? = null
-    private var heartbeatJob: Job? = null
-    private var reconnectJob: Job? = null
-    private var webSocket: WebSocket? = null
-    private val wsRefCounter = AtomicInteger(1)
-    private var wsBackoffMs = 5_000L
 
     @Volatile
     private var lastEtag: String? = null
 
-    private val wsClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .pingInterval(25, TimeUnit.SECONDS)
-            .build()
-    }
+    @Volatile
+    private var lastSyncTriggerMs: Long = 0L
 
     fun attachToApplication(application: Application) {
         if (!lifecycleRegistered.compareAndSet(false, true)) return
@@ -97,31 +84,34 @@ class SyncManager private constructor(context: Context) {
     }
 
     fun onForegroundStarted() {
-        val wasForeground = _isForeground.getAndSet(true)
+        val wasForeground = isForeground.getAndSet(true)
         if (!wasForeground) {
             startPolling()
-            connectRealtimeWebSocket()
         }
+        triggerDebouncedSync()
+    }
+
+    fun onForegroundResumed() {
+        if (!isForeground.get()) {
+            onForegroundStarted()
+        } else {
+            triggerDebouncedSync()
+        }
+    }
+
+    private fun triggerDebouncedSync() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastSyncTriggerMs < RESUME_DEBOUNCE_MS) return
+        lastSyncTriggerMs = now
         scope.launch {
             syncNow(forceFull = false, suppressNewBanner = false)
         }
     }
 
-    fun onForegroundResumed() {
-        if (!_isForeground.value) {
-            onForegroundStarted()
-        } else {
-            scope.launch {
-                syncNow(forceFull = false, suppressNewBanner = false)
-            }
-        }
-    }
-
     fun onBackgrounded() {
-        _isForeground.value = false
+        isForeground.set(false)
         pollingJob?.cancel()
         pollingJob = null
-        disconnectRealtimeWebSocket()
     }
 
     fun consumeNewAppsBanner() {
@@ -136,9 +126,9 @@ class SyncManager private constructor(context: Context) {
         pollingJob?.cancel()
         pollingJob = scope.launch {
             var currentDelayMs = BASE_POLL_INTERVAL_MS
-            while (isActive && _isForeground.value) {
+            while (isActive && isForeground.get()) {
                 delay(currentDelayMs)
-                if (!isActive || !_isForeground.value) break
+                if (!isActive || !isForeground.get()) break
                 val ok = syncNow(forceFull = false, suppressNewBanner = false)
                 currentDelayMs = if (ok) {
                     BASE_POLL_INTERVAL_MS
@@ -203,7 +193,6 @@ class SyncManager private constructor(context: Context) {
                     emptyList()
                 }
 
-                // If network failed to fetch expected new/changed rows, keep DB safe and retry later
                 if (idsToFetch.isNotEmpty() && fetchedApps.isEmpty()) {
                     _lastSyncResult.value = "Failed to fetch changed rows"
                     SecureLogger.w(TAG, "SYNC_ROWS_FAIL", "Failed to fetch ${idsToFetch.size} changed rows")
@@ -222,6 +211,8 @@ class SyncManager private constructor(context: Context) {
                 _lastSyncTimeMillis.value = System.currentTimeMillis()
                 _lastSyncResult.value = "OK (+${newIds.size}/~${changedIds.size}/-${deleteIds.size})"
                 true
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _lastSyncResult.value = "Error: ${e.message ?: "unknown"}"
                 SecureLogger.w(TAG, "SYNC_ERR", "Delta sync error: ${e.message}")
@@ -232,151 +223,11 @@ class SyncManager private constructor(context: Context) {
         }
     }
 
-    private fun connectRealtimeWebSocket() {
-        if (!_isForeground.value) return
-        if (webSocket != null) return
-        reconnectJob?.cancel()
-
-        val wsHost = SupabaseClient.SUPABASE_URL.replaceFirst("https://", "wss://")
-        val wsUrl = "$wsHost/realtime/v1/websocket?apikey=${SupabaseClient.SUPABASE_KEY}&vsn=1.0.0"
-
-        val request = Request.Builder()
-            .url(wsUrl)
-            .build()
-
-        webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
-                wsBackoffMs = 5_000L
-                sendPhoenixJoin(ws)
-                startRealtimeHeartbeat(ws)
-            }
-
-            override fun onMessage(ws: WebSocket, text: String) {
-                handleRealtimeMessage(text)
-            }
-
-            override fun onClosing(ws: WebSocket, code: Int, reason: String) {
-                ws.close(1000, null)
-            }
-
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                cleanupSocketReference(ws)
-                scheduleRealtimeReconnect()
-            }
-
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                cleanupSocketReference(ws)
-                scheduleRealtimeReconnect()
-            }
-        })
-    }
-
-    private fun sendPhoenixJoin(ws: WebSocket) {
-        try {
-            val pgChange = JSONObject().apply {
-                put("event", "*")
-                put("schema", "public")
-                put("table", "apps")
-            }
-            val config = JSONObject().apply {
-                put("postgres_changes", JSONArray().put(pgChange))
-            }
-            val payload = JSONObject().apply {
-                put("config", config)
-            }
-            val joinFrame = JSONObject().apply {
-                put("topic", REALTIME_TOPIC)
-                put("event", "phx_join")
-                put("payload", payload)
-                put("ref", wsRefCounter.getAndIncrement().toString())
-            }
-            ws.send(joinFrame.toString())
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun startRealtimeHeartbeat(ws: WebSocket) {
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
-            while (isActive && _isForeground.value && webSocket === ws) {
-                delay(25_000L)
-                if (!isActive || !_isForeground.value || webSocket !== ws) break
-                try {
-                    val hb = JSONObject().apply {
-                        put("topic", "phoenix")
-                        put("event", "heartbeat")
-                        put("payload", JSONObject())
-                        put("ref", wsRefCounter.getAndIncrement().toString())
-                    }
-                    ws.send(hb.toString())
-                } catch (_: Exception) {
-                    break
-                }
-            }
-        }
-    }
-
-    private fun handleRealtimeMessage(text: String) {
-        try {
-            val msg = JSONObject(text)
-            val event = msg.optString("event", "")
-            if (event == "postgres_changes") {
-                lastEtag = null
-                scope.launch {
-                    syncNow(forceFull = false, suppressNewBanner = false)
-                }
-            } else if (event == "phx_error") {
-                scheduleRealtimeReconnect()
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun cleanupSocketReference(ws: WebSocket) {
-        if (webSocket === ws) {
-            webSocket = null
-        }
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-    }
-
-    private fun scheduleRealtimeReconnect() {
-        if (!_isForeground.value) return
-        if (reconnectJob?.isActive == true) return
-        val delayMs = wsBackoffMs
-        wsBackoffMs = (wsBackoffMs * 2).coerceAtMost(60_000L)
-        reconnectJob = scope.launch {
-            delay(delayMs)
-            if (isActive && _isForeground.value && webSocket == null) {
-                connectRealtimeWebSocket()
-            }
-        }
-    }
-
-    private fun disconnectRealtimeWebSocket() {
-        reconnectJob?.cancel()
-        reconnectJob = null
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-        val ws = webSocket
-        webSocket = null
-        try {
-            ws?.close(1000, "background")
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun MutableStateFlow<Boolean>.getAndSet(newValue: Boolean): Boolean {
-        val old = value
-        value = newValue
-        return old
-    }
-
     companion object {
         private const val TAG = "SyncManager"
         private const val BASE_POLL_INTERVAL_MS = 20_000L
         private const val MAX_BACKOFF_INTERVAL_MS = 300_000L
-        private const val REALTIME_TOPIC = "realtime:public:apps"
+        private const val RESUME_DEBOUNCE_MS = 3_000L
 
         @Volatile
         private var INSTANCE: SyncManager? = null

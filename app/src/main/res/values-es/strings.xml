@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">Reloj y alarmas</string>
     <string name="cat_calculators">Calculadoras</string>
     <string name="cat_social_media_tools">Herramientas sociales</string>
+
+    <string name="crash_dialog_title">La app se recuperó de un cierre inesperado</string>
+    <string name="crash_dialog_body">Prime Store guardó detalles de diagnóstico del último cierre inesperado. Puedes copiar o compartir este informe.</string>
+    <string name="crash_dialog_copy">Copiar</string>
+    <string name="crash_dialog_share">Compartir</string>
+    <string name="crash_dialog_dismiss">Descartar</string>
+    <string name="crash_report_copied">Informe de error copiado ✔</string>
+    <string name="diag_last_crash">Último informe de error</string>
+    <string name="error_network_timeout">Tiempo de conexión agotado. Inténtalo de nuevo.</string>
+    <string name="error_network_offline">Sin conexión a internet o servidor inaccesible.</string>
+    <string name="error_network_ssl">Error de conexión segura. Revisa la fecha del dispositivo o la red.</string>
 </resources>

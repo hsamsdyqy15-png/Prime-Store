@@ -669,4 +669,15 @@
     <string name="cat_clock_alarm">घड़ी और अलार्म</string>
     <string name="cat_calculators">कैलकुलेटर</string>
     <string name="cat_social_media_tools">सोशल मीडिया टूल्स</string>
+
+    <string name="crash_dialog_title">ऐप अनपेक्षित क्रैश से रिकवर हो गया</string>
+    <string name="crash_dialog_body">Prime Store ने पिछली अनपेक्षित रुकावट की डायग्नोस्टिक जानकारी सहेज ली है। आप इसे कॉपी या शेयर कर सकते हैं।</string>
+    <string name="crash_dialog_copy">कॉपी करें</string>
+    <string name="crash_dialog_share">शेयर करें</string>
+    <string name="crash_dialog_dismiss">बंद करें</string>
+    <string name="crash_report_copied">क्रैश रिपोर्ट कॉपी की गई ✔</string>
+    <string name="diag_last_crash">पिछली क्रैश रिपोर्ट</string>
+    <string name="error_network_timeout">कनेक्शन समय समाप्त हो गया। कृपया नेटवर्क जांचें और पुनः प्रयास करें।</string>
+    <string name="error_network_offline">इंटरनेट कनेक्शन नहीं है या सर्वर उपलब्ध नहीं है।</string>
+    <string name="error_network_ssl">सुरक्षित कनेक्शन त्रुटि। कृपया डिवाइस की दिनांक या नेटवर्क जांचें।</string>
 </resources>

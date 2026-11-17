@@ -39,6 +39,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -214,6 +215,10 @@ fun SearchScreen(
             }
         }
 
+        val distinctHistory = remember(searchHistory) { searchHistory.distinct() }
+        val distinctResults = remember(searchResults) { searchResults.distinctBy { it.id } }
+        val downloadsByAppId = remember(downloads) { downloads.associateBy { it.appId } }
+
         PullToRefreshBox(
             isRefreshing = isPullRefreshing,
             onRefresh = onRefresh,
@@ -270,7 +275,7 @@ fun SearchScreen(
                     }
 
                     // Recent Search History
-                    if (searchHistory.isNotEmpty()) {
+                    if (distinctHistory.isNotEmpty()) {
                         item(key = "recent_header", contentType = "history_header") {
                             Column(modifier = Modifier.padding(top = 16.dp)) {
                                 Row(
@@ -311,7 +316,7 @@ fun SearchScreen(
                         }
 
                         items(
-                            items = searchHistory,
+                            items = distinctHistory,
                             key = { "hist_$it" },
                             contentType = { "history_item" }
                         ) { historyItem ->
@@ -363,11 +368,11 @@ fun SearchScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "(${searchResults.size})", color = colors.accent, fontSize = 14.sp)
+                            Text(text = "(${distinctResults.size})", color = colors.accent, fontSize = 14.sp)
                         }
                     }
 
-                    if (searchResults.isEmpty()) {
+                    if (distinctResults.isEmpty()) {
                         item(key = "results_empty", contentType = "empty") {
                             Box(
                                 modifier = Modifier
@@ -388,11 +393,11 @@ fun SearchScreen(
                         }
                     } else {
                         items(
-                            items = searchResults,
+                            items = distinctResults,
                             key = { "res_${it.id}" },
                             contentType = { "search_result" }
                         ) { app ->
-                            val dlItem = downloads.find { it.appId == app.id }
+                            val dlItem = downloadsByAppId[app.id]
                             val installedInfo = installedPkgByAppId[app.id]
                             val actionState = resolveAppActionState(
                                 app = app,

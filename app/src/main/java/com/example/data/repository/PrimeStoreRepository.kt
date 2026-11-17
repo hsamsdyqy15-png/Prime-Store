@@ -7,9 +7,12 @@ import com.example.data.model.AppCategory
 import com.example.data.model.AppItem
 import com.example.data.model.DownloadItem
 import com.example.data.model.ReviewItem
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,6 +27,7 @@ import com.example.data.download.DownloadService
 import com.example.data.installer.ApkInstaller
 import com.example.data.installer.PackageHelper
 import com.example.data.model.DownloadStatus
+import com.example.data.supabase.SecureLogger
 import com.example.data.supabase.SupabaseClient
 import com.example.data.sync.SyncManager
 import okhttp3.OkHttpClient
@@ -39,9 +43,22 @@ class PrimeStoreRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("prime_store_prefs", Context.MODE_PRIVATE)
 
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable is CancellationException) throw throwable
+        SecureLogger.e("PrimeStoreRepo", "REPO_SCOPE_EXC", "Coroutine error: ${throwable.message}", throwable)
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + exceptionHandler)
     private val appsRepository = AppsRepository.getInstance(context.applicationContext)
     private val syncManager = SyncManager.getInstance(context.applicationContext)
+
+    private val downloadClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
 
     var remoteAppsUrl: String = ""
 
@@ -246,7 +263,7 @@ class PrimeStoreRepository(private val context: Context) {
                 validSplits.forEach { if (!contains(it)) add(it) }
             }
             val useSplitBundle = urlsToDownload.size > 1
-            val primaryExt = ApkInstaller.resolveExtensionFromUrl(urlsToDownload.first())
+            val primaryExt = ApkInstaller.resolveExtensionFromUrl(urlsToDownload.firstOrNull())
             val primaryTargetFile = if (useSplitBundle) {
                 File(bundleDir, "00_base.apk")
             } else {
@@ -255,12 +272,7 @@ class PrimeStoreRepository(private val context: Context) {
             val activeTempFiles = mutableListOf<File>()
 
             try {
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(120, TimeUnit.SECONDS)
-                    .followRedirects(true)
-                    .followSslRedirects(true)
-                    .build()
+                val client = downloadClient
 
                 var cumulativeBytes = 0L
                 val totalParts = urlsToDownload.size
@@ -457,7 +469,7 @@ class PrimeStoreRepository(private val context: Context) {
                 DownloadService.stop(context)
                 activeDownloadJobs.remove(appId)
                 val failedLabel = context.getString(R.string.status_failed)
-                val errorMsg = e.message ?: failedLabel
+                val errorMsg = SupabaseClient.friendlyNetworkError(context, e)
                 _downloads.value = _downloads.value.map { d ->
                     if (d.appId == appId) {
                         d.copy(

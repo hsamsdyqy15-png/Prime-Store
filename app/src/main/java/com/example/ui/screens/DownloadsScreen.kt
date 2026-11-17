@@ -200,6 +200,7 @@ fun DownloadsScreen(
                 }
             }
         } else {
+            val distinctDownloads = remember(displayedList) { displayedList.distinctBy { it.appId } }
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -209,8 +210,8 @@ fun DownloadsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(
-                    items = displayedList,
-                    key = { it.appId },
+                    items = distinctDownloads,
+                    key = { "dl_${it.appId}" },
                     contentType = { if (!it.isCompleted && it.status != DownloadStatus.COMPLETED) "active_dl" else "completed_dl" }
                 ) { item ->
                     if (!item.isCompleted && item.status != DownloadStatus.COMPLETED) {

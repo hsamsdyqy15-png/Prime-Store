@@ -161,8 +161,13 @@ fun HomeScreen(
     val colors = PrimeTheme.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val shimmerBrush = rememberShimmerBrush()
+    val showSkeleton = isInitialLoading && pagedApps.isEmpty()
+    val shimmerBrush = if (showSkeleton) rememberShimmerBrush() else null
     val categoriesRepo = remember(context) { CategoriesRepository.getInstance(context) }
+
+    val downloadsByAppId = remember(downloads) {
+        downloads.associateBy { it.appId }
+    }
 
     val sectionApps = remember(allApps, homeSection) {
         if (homeSection == HomeSection.GAMES) {
@@ -174,34 +179,26 @@ fun HomeScreen(
 
     val sectionCategoryPairs = remember(visibleCategories, homeSection, targetLanguageCode) {
         if (visibleCategories.isNotEmpty()) {
-            visibleCategories.map { entity ->
-                categoriesRepo.toCategoryItem(entity) to CategoriesRepository.resolveDisplayTitle(context, entity)
-            }
+            visibleCategories
+                .distinctBy { it.key }
+                .map { entity ->
+                    categoriesRepo.toCategoryItem(entity) to CategoriesRepository.resolveDisplayTitle(context, entity)
+                }
         } else {
             val fallback = if (homeSection == HomeSection.GAMES) StoreCategories.GAMES else StoreCategories.APPS
-            fallback.map { item -> item to context.getString(item.titleRes) }
+            fallback.distinctBy { it.key }.map { item -> item to context.getString(item.titleRes) }
         }
     }
 
     val newlyAddedApps = remember(sectionApps, pagedApps) {
         val source = if (sectionApps.isNotEmpty()) sectionApps else pagedApps
-        source.sortedByDescending { maxOf(it.updatedAtMillis, it.createdAtMillis) }.take(6)
+        source.distinctBy { it.id }
+            .sortedByDescending { maxOf(it.updatedAtMillis, it.createdAtMillis) }
+            .take(6)
     }
 
-    val filteredPagedApps = remember(pagedApps, activeFilter) {
-        when (activeFilter) {
-            HomeFilterType.ALL -> pagedApps
-            HomeFilterType.SMALL_SIZE -> pagedApps.filter {
-                if (it.sizeBytes > 0L) {
-                    it.sizeBytes < 35L * 1024L * 1024L
-                } else {
-                    val sizeClean = it.size.trim().lowercase()
-                    sizeClean.contains("kb") || (sizeClean.contains("mb") && (sizeClean.filter { c -> c.isDigit() || c == '.' }.toDoubleOrNull() ?: 100.0) < 35.0)
-                }
-            }
-            HomeFilterType.TOP_RATED -> pagedApps.sortedByDescending { it.rating }
-            HomeFilterType.NEWEST -> pagedApps.sortedByDescending { maxOf(it.updatedAtMillis, it.createdAtMillis) }
-        }
+    val filteredPagedApps = remember(pagedApps) {
+        pagedApps.distinctBy { it.id }
     }
 
     val featuredApp = remember(sectionApps, pagedApps) {
@@ -290,7 +287,7 @@ fun HomeScreen(
 
                 // 2. Hero Banner
                 item(key = "hero_banner", contentType = "hero") {
-                    val featuredDl = featuredApp?.let { f -> downloads.find { it.appId == f.id } }
+                    val featuredDl = featuredApp?.let { f -> downloadsByAppId[f.id] }
                     val featuredInstalled = featuredApp?.let { installedPkgByAppId[it.id] }
                     val featuredAction = featuredApp?.let { f ->
                         resolveAppActionState(
@@ -352,7 +349,7 @@ fun HomeScreen(
                         key = { "new_${it.id}" },
                         contentType = { "app_card" }
                     ) { app ->
-                        val dlItem = downloads.find { it.appId == app.id }
+                        val dlItem = downloadsByAppId[app.id]
                         val installedInfo = installedPkgByAppId[app.id]
                         val actionState = resolveAppActionState(
                             app = app,
@@ -492,7 +489,7 @@ fun HomeScreen(
                 }
 
                 // 5. Vertical Catalog List
-                if (isInitialLoading && pagedApps.isEmpty()) {
+                if (showSkeleton && shimmerBrush != null) {
                     items(
                         count = 4,
                         key = { "skel_$it" },
@@ -540,7 +537,7 @@ fun HomeScreen(
                             }
                         }
 
-                        val dlItem = downloads.find { it.appId == app.id }
+                        val dlItem = downloadsByAppId[app.id]
                         val installedInfo = installedPkgByAppId[app.id]
                         val actionState = resolveAppActionState(
                             app = app,
@@ -1118,7 +1115,12 @@ fun StoreHeroBanner(
     val colors = PrimeTheme.colors
     val context = LocalContext.current
 
-    val baseSnippet = remember(featuredApp?.id, targetLanguageCode) {
+    val baseSnippet = remember(
+        featuredApp?.id,
+        featuredApp?.descriptionAr,
+        featuredApp?.descriptionEn,
+        targetLanguageCode
+    ) {
         if (featuredApp == null) {
             ""
         } else if (targetLanguageCode.equals("ar", ignoreCase = true)) {
@@ -1128,11 +1130,25 @@ fun StoreHeroBanner(
         }.take(120)
     }
 
-    var translatedHeroDesc by remember(featuredApp?.id, targetLanguageCode, autoTranslateEnabled) {
+    val knownSourceHint = remember(
+        featuredApp?.id,
+        featuredApp?.descriptionAr,
+        featuredApp?.descriptionEn,
+        targetLanguageCode
+    ) {
+        when {
+            featuredApp == null -> null
+            targetLanguageCode.equals("ar", ignoreCase = true) && featuredApp.descriptionAr.isNotBlank() -> "ar"
+            targetLanguageCode.equals("en", ignoreCase = true) && featuredApp.descriptionEn.isNotBlank() -> "en"
+            else -> null
+        }
+    }
+
+    var translatedHeroDesc by remember(featuredApp?.id, baseSnippet, targetLanguageCode, autoTranslateEnabled) {
         mutableStateOf<String?>(null)
     }
 
-    LaunchedEffect(featuredApp?.id, targetLanguageCode, autoTranslateEnabled, wifiOnlyTranslation) {
+    LaunchedEffect(featuredApp?.id, baseSnippet, targetLanguageCode, autoTranslateEnabled, wifiOnlyTranslation) {
         if (featuredApp == null || !autoTranslateEnabled || baseSnippet.isBlank()) {
             translatedHeroDesc = null
             return@LaunchedEffect
@@ -1143,7 +1159,8 @@ fun StoreHeroBanner(
             field = "hero_desc",
             originalText = baseSnippet,
             targetLanguageCode = targetLanguageCode,
-            wifiOnly = wifiOnlyTranslation
+            wifiOnly = wifiOnlyTranslation,
+            knownSourceHint = knownSourceHint
         )
         translatedHeroDesc = if (outcome is TranslationOutcome.Success) {
             outcome.translatedText
